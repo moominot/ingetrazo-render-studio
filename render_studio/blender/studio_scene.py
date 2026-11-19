@@ -844,7 +844,7 @@ def apply_material_specs(specs, with_sets=()):
                 val = _map_value(mat, bsdf, m)
                 if val is not None:
                     mat.node_tree.links.new(_scaled(mat, val, spec[key]), bsdf.inputs[names[0]])
-        if kind in ("generic", "glow"):
+        if kind in ("generic", "glow", "grass"):
             core["_set"](bsdf, ("Transmission Weight", "Transmission"), 0.0)
         elif kind == "glass" and "transparency" in spec:
             # Glass refracts instead of blending: the slider is how much it lets through.
@@ -881,6 +881,246 @@ def apply_material_specs(specs, with_sets=()):
         done += 1
     if done:
         say("materials", done, "set in the material editor")
+
+
+# ---- grass ------------------------------------------------------------------------------
+#
+# A material of type «grass» grows blades on every face that wears it, in the render
+# only: tufts of a few bent blades scattered over the faces (geometry nodes, instanced,
+# so a lawn costs little memory), standing up whatever the face's slope, as tall as the
+# editor's «Grass height». Their colour is the material's own: its picture read where
+# each tuft stands (a lawn picture gives a lawn's patches), else its colour, darker at
+# the root and a little lighter at the tip, each tuft a little different. The face
+# under them keeps its own look and fills the gaps.
+
+#: Tufts per square metre for short grass (each of GRASS_BLADES blades); taller grass
+#: is sparser (fewer, bigger tufts) down to GRASS_DENSITY_MIN.
+GRASS_DENSITY = 260.0
+GRASS_DENSITY_MIN = 60.0
+GRASS_BLADES = 9
+#: The most tufts in one render: past it the whole lawn gets sparser (memory and time).
+GRASS_MAX_TUFTS = 250_000
+GRASS_TUFT_RADIUS = 0.35            # × the height
+GRASS_BLADE_WIDTH = 0.045           # × the height, at the root
+
+
+def grass_density(height):
+    """Tufts per m² for grass ``height`` metres tall."""
+    h = max(0.005, float(height))
+    return max(GRASS_DENSITY_MIN, min(GRASS_DENSITY, GRASS_DENSITY * 0.10 / h))
+
+
+def _grass_tuft_mesh(name, seed=0):
+    """One tuft, 1 m tall (scaled per instance): GRASS_BLADES tapered, bent blades
+    around the origin, with ``grass_h`` (0 root … 1 tip) on its points."""
+    import random
+    rng = random.Random(seed)
+    verts, faces, hs = [], [], []
+    segs = 4
+    for _b in range(GRASS_BLADES):
+        a = rng.uniform(0, 2 * math.pi)
+        r = GRASS_TUFT_RADIUS * math.sqrt(rng.random())
+        ox, oy = r * math.cos(a), r * math.sin(a)
+        yaw = rng.uniform(0, 2 * math.pi)
+        tall = rng.uniform(0.65, 1.0)
+        bend = rng.uniform(0.15, 0.45) * tall
+        dx, dy = math.cos(yaw), math.sin(yaw)                 # the way it bends
+        wx, wy = -dy, dx                                      # across the blade
+        w0 = GRASS_BLADE_WIDTH * rng.uniform(0.7, 1.2)
+        base = len(verts)
+        for i in range(segs + 1):
+            t = i / segs
+            z = tall * (t - 0.25 * bend * t * t)
+            off = bend * t * t
+            w = w0 * (1.0 - t) ** 0.8 * 0.5
+            cx, cy = ox + dx * off, oy + dy * off
+            if i < segs:
+                verts += [(cx - wx * w, cy - wy * w, z), (cx + wx * w, cy + wy * w, z)]
+                hs += [t, t]
+            else:
+                verts.append((cx, cy, z))
+                hs.append(1.0)
+        for i in range(segs - 1):
+            k = base + 2 * i
+            faces.append((k, k + 1, k + 3, k + 2))
+        k = base + 2 * (segs - 1)
+        faces.append((k, k + 1, k + 2))
+    me = bpy.data.meshes.new(name)
+    me.from_pydata(verts, [], faces)
+    attr = me.attributes.new("grass_h", "FLOAT", "POINT")
+    attr.data.foreach_set("value", hs)
+    for poly in me.polygons:
+        poly.use_smooth = True
+    me.update()
+    return me
+
+
+def _grass_material(mat, uv_name):
+    """The blades' material: ``mat``'s picture read at each tuft's place (the UVs
+    the tuft carries from the face), else its colour; root to tip, tuft to tuft."""
+    nodes_src = mat.node_tree.nodes
+    bsdf_src = next((n for n in nodes_src if n.type == "BSDF_PRINCIPLED"), None)
+    _sock, pic = _colour_source(nodes_src, bsdf_src) if bsdf_src is not None else (None, None)
+    gm = bpy.data.materials.new("studio grass " + mat.name)
+    if gm.node_tree is None:                     # Blender before 5: nodes are switched on
+        gm.use_nodes = True
+    nt = gm.node_tree
+    nodes, links = nt.nodes, nt.links
+    out = next(n for n in nodes if n.type == "OUTPUT_MATERIAL")
+    bsdf = next(n for n in nodes if n.type == "BSDF_PRINCIPLED")
+    if pic is not None:
+        uv = nodes.new("ShaderNodeAttribute")
+        uv.attribute_type = "INSTANCER"
+        uv.attribute_name = uv_name
+        tex = nodes.new("ShaderNodeTexImage")
+        tex.image = pic.image
+        tex.extension = getattr(pic, "extension", "REPEAT")
+        links.new(uv.outputs["Vector"], tex.inputs["Vector"])
+        colour = tex.outputs["Color"]
+    else:
+        rgb = nodes.new("ShaderNodeRGB")
+        rgb.outputs[0].default_value = tuple(bsdf_src.inputs["Base Color"].default_value) if bsdf_src else (0.2, 0.4, 0.1, 1)
+        colour = rgb.outputs[0]
+    # each tuft a little lighter or darker; the root in shade, the tip in the light
+    info = nodes.new("ShaderNodeObjectInfo")
+    vary = nodes.new("ShaderNodeMapRange")
+    vary.inputs["To Min"].default_value, vary.inputs["To Max"].default_value = 0.75, 1.15
+    links.new(info.outputs["Random"], vary.inputs["Value"])
+    h = nodes.new("ShaderNodeAttribute")
+    h.attribute_type = "GEOMETRY"
+    h.attribute_name = "grass_h"
+    root = nodes.new("ShaderNodeMapRange")
+    root.inputs["To Min"].default_value, root.inputs["To Max"].default_value = 0.45, 1.05
+    links.new(h.outputs["Fac"], root.inputs["Value"])
+    k = nodes.new("ShaderNodeMath"); k.operation = "MULTIPLY"
+    links.new(vary.outputs["Result"], k.inputs[0]); links.new(root.outputs["Result"], k.inputs[1])
+    mix = nodes.new("ShaderNodeMix")
+    mix.data_type = "RGBA"; mix.blend_type = "MULTIPLY"; mix.clamp_result = True
+    _socket(mix, "Factor_Float", 0).default_value = 1.0
+    links.new(colour, _socket(mix, "A_Color", 6))
+    links.new(k.outputs[0], _socket(mix, "B_Color", 7))
+    tint = next(s for s in mix.outputs if s.identifier == "Result_Color")
+    links.new(tint, bsdf.inputs["Base Color"])
+    core["_set"](bsdf, ("Roughness",), 0.55)
+    core["_set"](bsdf, ("Specular IOR Level", "Specular"), 0.35)
+    # light through the blades
+    trans = nodes.new("ShaderNodeBsdfTranslucent")
+    links.new(tint, trans.inputs["Color"])
+    both = nodes.new("ShaderNodeMixShader")
+    both.inputs["Fac"].default_value = 0.3
+    links.new(bsdf.outputs["BSDF"], both.inputs[1])
+    links.new(trans.outputs["BSDF"], both.inputs[2])
+    links.new(both.outputs["Shader"], out.inputs["Surface"])
+    return gm
+
+
+def _grass_area(obj, mat_indices):
+    """World-space area of ``obj``'s faces wearing those material slots (m²)."""
+    mw = obj.matrix_world
+    area = 0.0
+    me = obj.data
+    for poly in me.polygons:
+        if poly.material_index in mat_indices:
+            pts = [mw @ me.vertices[i].co for i in poly.vertices]
+            for i in range(1, len(pts) - 1):
+                area += 0.5 * (pts[i] - pts[0]).cross(pts[i + 1] - pts[0]).length
+    return area
+
+
+def _grass_node_group(name, branches):
+    """Geometry nodes: the mesh, plus for each (material, tuft object, density,
+    height, seed) tufts scattered on the faces wearing it, upright, turned and sized
+    at random."""
+    ng = bpy.data.node_groups.new(name, "GeometryNodeTree")
+    ng.interface.new_socket("Geometry", in_out="INPUT", socket_type="NodeSocketGeometry")
+    ng.interface.new_socket("Geometry", in_out="OUTPUT", socket_type="NodeSocketGeometry")
+    nodes, links = ng.nodes, ng.links
+    gin = nodes.new("NodeGroupInput")
+    gout = nodes.new("NodeGroupOutput")
+    join = nodes.new("GeometryNodeJoinGeometry")
+    links.new(gin.outputs[0], join.inputs[0])
+    for mat, tuft, density, height, seed in branches:
+        sel = nodes.new("GeometryNodeMaterialSelection")
+        sel.inputs["Material"].default_value = mat
+        dist = nodes.new("GeometryNodeDistributePointsOnFaces")
+        dist.distribute_method = "RANDOM"
+        links.new(gin.outputs[0], dist.inputs["Mesh"])
+        links.new(sel.outputs["Selection"], dist.inputs["Selection"])
+        dist.inputs["Density"].default_value = float(density)
+        dist.inputs["Seed"].default_value = int(seed)
+        src = nodes.new("GeometryNodeObjectInfo")
+        src.inputs["Object"].default_value = tuft
+        inst = nodes.new("GeometryNodeInstanceOnPoints")
+        links.new(dist.outputs["Points"], inst.inputs["Points"])
+        links.new(src.outputs["Geometry"], inst.inputs["Instance"])
+        turn = nodes.new("FunctionNodeRandomValue")
+        turn.data_type = "FLOAT"
+        turn.inputs["Min"].default_value = 0.0
+        turn.inputs["Max"].default_value = 2 * math.pi
+        turn.inputs["Seed"].default_value = int(seed) + 1
+        rot = nodes.new("ShaderNodeCombineXYZ")
+        links.new(turn.outputs["Value"], rot.inputs["Z"])
+        links.new(rot.outputs["Vector"], inst.inputs["Rotation"])
+        size = nodes.new("FunctionNodeRandomValue")
+        size.data_type = "FLOAT"
+        size.inputs["Min"].default_value = 0.75 * float(height)
+        size.inputs["Max"].default_value = 1.15 * float(height)
+        size.inputs["Seed"].default_value = int(seed) + 2
+        links.new(size.outputs["Value"], inst.inputs["Scale"])
+        links.new(inst.outputs["Instances"], join.inputs[0])
+    links.new(join.outputs[0], gout.inputs[0])
+    return ng
+
+
+def build_grass(specs):
+    """Grow the grass of every material of type «grass» (see above). Returns the
+    number of tufts asked for."""
+    kinds = {}
+    for mat in bpy.data.materials:
+        spec = _spec_for(mat, specs)
+        if spec and spec.get("type") == "grass" and mat.node_tree:
+            kinds[mat.name] = float(spec.get("grass_height", 0.08))
+    if not kinds:
+        return 0
+    hidden = bpy.data.collections.new("studio grass tufts")
+    bpy.context.scene.collection.children.link(hidden)
+    hidden.hide_render = True
+    hidden.hide_viewport = True
+    plan, total = [], 0.0
+    for obj in [o for o in bpy.context.scene.objects if o.type == "MESH"]:
+        slots = {i: s.material for i, s in enumerate(obj.material_slots)
+                 if s.material is not None and s.material.name in kinds}
+        if not slots:
+            continue
+        for i, mat in slots.items():
+            area = _grass_area(obj, {i})
+            if area <= 0.0:
+                continue
+            d = grass_density(kinds[mat.name])
+            plan.append((obj, mat, d, area))
+            total += d * area
+    if not plan:
+        return 0
+    thin = min(1.0, GRASS_MAX_TUFTS / max(total, 1.0))
+    tufts = {}
+    per_obj = {}
+    for n, (obj, mat, d, area) in enumerate(plan):
+        if mat.name not in tufts:
+            uv = obj.data.uv_layers.active.name if obj.data.uv_layers.active else "UVMap"
+            me = _grass_tuft_mesh("studio grass " + mat.name, seed=len(tufts))
+            me.materials.append(_grass_material(mat, uv))
+            tob = bpy.data.objects.new("studio grass " + mat.name, me)
+            hidden.objects.link(tob)
+            tufts[mat.name] = tob
+        per_obj.setdefault(obj.name, (obj, []))[1].append(
+            (mat, tufts[mat.name], d * thin, kinds[mat.name], 17 * n + 3))
+    for obj, branches in per_obj.values():
+        mod = obj.modifiers.new("Studio grass", "NODES")
+        mod.node_group = _grass_node_group("studio grass " + obj.name, branches)
+    count = int(total * thin)
+    say("grass", ", ".join(f"{m} {h * 100:.0f} cm" for m, h in kinds.items()),
+        f"- {count} tufts" + (f" (thinned to {thin:.0%})" if thin < 1.0 else ""))
+    return count
 
 
 # ---- full texture sets ------------------------------------------------------------------
@@ -1353,6 +1593,8 @@ def main():
         apply_material_specs(specs, sets)
     if sets and not st.get("white_model"):
         apply_texture_sets(sets, specs)
+    if specs and st.get("grass", True):
+        build_grass(specs)
     if st.get("albedo_cap", 0.8):
         cap_albedo(float(st.get("albedo_cap", 0.8)))
     if st.get("white_model"):

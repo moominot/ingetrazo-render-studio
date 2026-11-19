@@ -115,6 +115,17 @@ The settings are saved in the document, one undo step per change. **Back
 to automatic** returns the material to IngeTrazo's own finish. Map files
 are linked by their path, not embedded in the document.
 
+### Grass
+
+A material of type **Grass** grows blades of grass on every face that wears it, **in the render only**
+(the model stays flat). **Grass height** sets how tall they are (1–60 cm); the **Lawn** (6 cm) and
+**Tall grass** (30 cm) presets start from there. In Blender they are tufts of a few bent blades
+scattered by geometry nodes over the faces of that material (instanced: a lawn costs little memory),
+upright, turned and sized at random; their colour is the material's picture read at each tuft's UVs,
+else its colour, darker at the root. Short grass gets 260 tufts per m², taller grass fewer and bigger;
+past 250 000 tufts in one render the whole lawn is thinned (the log says by how much). The job carries
+it in the material's settings: `{"type": "grass", "grass_height": 0.08}`.
+
 ### Full texture sets (normal, roughness, AO, displacement, metalness, opacity)
 
 IngeTrazo gives a face only its colour picture. When that picture has companion maps beside it,
@@ -141,7 +152,9 @@ own UVs (same tile size and rotation). They are found, in this order:
    `_NormalDX`, `_Roughness`, `_AmbientOcclusion`, `_Displacement`, `_Metalness`, `_Opacity`.
 3. Nothing found: the picture alone, exactly as before.
 
-A tinted picture looks for the maps of its original. In the render:
+A tinted picture looks for the maps of its original. The material editor shows the set: a line lists the
+maps found, and the first choice of Roughness, Metal and Relief becomes «Texture set: …» with a preview
+of that map; choosing another one there replaces it. In the render:
 - **Normal**: the OpenGL map; else the DirectX one with its green flipped. It replaces the
   *automatic* relief guessed from the picture; a relief source chosen in the editor stays, on top.
   Without a normal map the **displacement** map is the relief (a bump, 1 cm black to white).
@@ -264,6 +277,10 @@ Render tab).
 - `tests/test_texture_swap_offline.py` changes a material's picture on loose faces, nested
   components and painted objects, and checks placement, proportions, tint, undo and save/reopen.
 - `tests/test_help_offline.py` checks the help against the code.
+- `tests/test_grass_sets_editor_offline.py` checks the Grass type in the editor (height slider, presets, cube
+  preview) and how the editor shows a picture's texture set.
+- `tests/test_grass_blender.py` renders a lawn with a real Blender (EEVEE and Cycles): the blades grow on the lawn
+  only, take its picture's colour where they stand, follow the height slider and leave the model's mesh alone.
 - `tests/test_pbr_offline.py` (plain Python) finds texture sets by manifest and by the two libraries' names,
   refuses manifest entries that leave the picture's folder, and collects the model's pictures.
 - `tests/test_pbr_job_offline.py` writes a job with the panel's own code and IngeTrazo's own GLB (a set on a

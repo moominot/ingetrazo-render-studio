@@ -29,6 +29,7 @@ PRESET_NOTES = {
     "metal_brushed": "metal, half polished", "chrome": "metal, almost a mirror",
     "glass": "clear and transparent", "glass_frosted": "transparent but diffuse",
     "water": "reflective and transparent surface", "light": "a panel that shines by itself",
+    "lawn": "short mown grass, 6 cm", "meadow": "long, uncut grass, 30 cm",
 }
 
 
@@ -151,9 +152,9 @@ image's shape (the tile width stays); off, the tile size stays and a different s
 a picture already; paint it with a texture first if it has only a colour. The image is copied into IngeTrazo's texture
 cache and travels with the document when you save.</td></tr>
 <tr><td valign='top'><b>Start from</b></td><td>A ready-made starting point; then adjust it. See the list below.</td></tr>
-<tr><td valign='top'><b>Type</b></td><td><b>Generic</b> (opaque), <b>Glass</b> (transparent), <b>Water</b> (transparent, with ripples), or
+<tr><td valign='top'><b>Type</b></td><td><b>Generic</b> (opaque), <b>Glass</b> (transparent), <b>Water</b> (transparent, with ripples),
 <b>Glowing</b> (it shines by itself and lights what is around it; the exposure meter ignores it so it does not darken the
-picture).</td></tr>
+picture), or <b>Grass</b> (blades of grass grow on it in the render).</td></tr>
 <tr><td valign='top'><b>Transparency</b></td><td>How much light the material lets through: 0 is opaque, up to 95 %. It changes IngeTrazo's own material
 <b>in the model</b> (every face and object that wears it, one undo step, so the 3D view shows it too) and so the render sees it: water and
 other materials become see-through (the floor shows below), tinted by the material's colour or picture. For <b>Glass</b> it is how much the
@@ -171,6 +172,12 @@ it changes gently (wood grain): for that, raise the map's <b>Contrast</b>, or us
 usual «easy water» recipe of Blender, laid out in metres so a ripple has the same size everywhere. Fine ripples look like grain from far away,
 broad ones read as water; the sun then glints on them.</td></tr>
 <tr><td valign='top'><b>Glow</b></td><td>0 to 50: how brightly it shines (type Glowing): screens, light panels.</td></tr>
+<tr><td valign='top'><b>Grass height</b></td><td>Grass only: how tall the blades are, 1 to 60 cm (a mown lawn is 4 to 8 cm).
+The blades exist <b>only in the render</b>: the model stays flat and light to work with. They grow on every face that wears
+the material, upright whatever the slope, in small tufts turned and sized at random. Their colour is the material's
+<b>picture</b> where each tuft stands (a lawn picture gives the lawn's patches), or its colour, darker at the root; the
+face under them fills the gaps. Taller grass grows in fewer, bigger tufts. A very large lawn is thinned a little so the
+render stays quick (the status line says so). The cube preview shows the height.</td></tr>
 <tr><td valign='top'><b>Map image size</b></td><td>How big one image of a map file is on the model, in metres. Used when
 the material has no picture of its own; with a picture, the maps follow its size and placement.</td></tr>
 <tr><td valign='top'><b>Back to automatic</b></td><td>Forgets these settings: IngeTrazo's own finish for the material.</td></tr>
@@ -213,6 +220,9 @@ A roughness map you chose here wins.</li>
 <li><b>Glass</b> and <b>Water</b> take only the normal map. <b>White model</b> ignores the sets.</li>
 <li>The cube preview shows the picture only; the sets show in the render.</li>
 </ul>
+<p>The editor shows the set: a line under the picture lists the maps found, and the first choice under <b>Roughness</b>,
+<b>Metal</b> and <b>Relief</b> reads <b>Texture set: …</b> with a small preview of that map (for a packed map, the channel used).
+Pick another map there to replace it.</p>
 
 <h4>Starting points</h4>
 {_material_presets()}

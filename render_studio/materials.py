@@ -6,9 +6,10 @@ A material's render settings live in the document (the extension's
 document data, ``{"materials": {name: spec}}``), so they are saved with the
 ``.igz`` and undone like any edit. A spec::
 
-    {"type": "generic" | "glass" | "water" | "glow",
+    {"type": "generic" | "glass" | "water" | "glow" | "grass",
      "roughness": 0..1, "metallic": 0..1, "bump": 0..1,
-     "glow": nits-ish 0..50, "coat": 0..1, "sheen": 0..1}
+     "glow": nits-ish 0..50, "coat": 0..1, "sheen": 0..1,
+     "grass_height": metres (grass only)}
 
 Missing keys keep what IngeTrazo's own finish gives. In the render job they
 are keyed by the material's EXPORT name (what the GLB, and so Blender,
@@ -21,8 +22,12 @@ DEFAULT_RIPPLE_SIZE = 0.8
 #: What choosing the type gives to start with (0 = opaque): see-through, not a solid slab.
 DEFAULT_TRANSPARENCY = {"glass": 0.85, "water": 0.7}
 
-TYPES = ("generic", "glass", "water", "glow")
-TYPE_LABELS = {"generic": "Generic", "glass": "Glass", "water": "Water", "glow": "Glowing"}
+#: Grass: blades grown on the faces in the render only (not in the model). Height in metres.
+DEFAULT_GRASS_HEIGHT = 0.08
+GRASS_HEIGHT_RANGE = (0.01, 0.60)
+
+TYPES = ("generic", "glass", "water", "glow", "grass")
+TYPE_LABELS = {"generic": "Generic", "glass": "Glass", "water": "Water", "glow": "Glowing", "grass": "Grass"}
 
 #: Starting points, Enscape-like. key → (labels, spec)
 PRESETS = {
@@ -54,6 +59,10 @@ PRESETS = {
                       {"type": "glass", "roughness": 0.35, "metallic": 0.0, "bump": 0.0, "transparency": 0.6}),
     "water": ({"en": "Water", "ca": "Aigua", "es": "Agua"},
               {"type": "water", "roughness": 0.02, "metallic": 0.0, "bump": 0.5, "ripple_size": 0.8, "transparency": 0.7}),
+    "lawn": ({"en": "Lawn", "ca": "Gespa", "es": "Césped"},
+             {"type": "grass", "roughness": 0.85, "metallic": 0.0, "bump": 0.0, "grass_height": 0.06}),
+    "meadow": ({"en": "Tall grass", "ca": "Herba alta", "es": "Hierba alta"},
+               {"type": "grass", "roughness": 0.9, "metallic": 0.0, "bump": 0.0, "grass_height": 0.30}),
     "light": ({"en": "Light panel (glows)", "ca": "Panell de llum (brilla)", "es": "Panel de luz (brilla)"},
               {"type": "glow", "roughness": 0.5, "metallic": 0.0, "bump": 0.0, "glow": 12.0}),
 }
