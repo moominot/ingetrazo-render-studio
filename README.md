@@ -49,6 +49,17 @@ wood grain), otherwise from a fine grain. A glowing material lights what
 is around it, and the exposure meter ignores it, so it doesn't darken the
 picture.
 
+### Change the picture, in the model
+
+**Change picture…** in the material editor replaces the picture of the material **in the
+IngeTrazo model itself**, not only in the render: every face, component and object that wears
+the material changes, in the viewport too, as one undo step. Each face keeps where its texture
+was placed, and a colour tint is kept over the new image. **Keep proportions** makes the tile
+height follow the new image's shape. The new image is copied into IngeTrazo's texture cache and
+travels with the document. It needs a material that already has a picture. This is the one
+control of Render Studio that edits IngeTrazo's own material; every other setting only affects
+the render.
+
 ### Maps
 
 Each setting can vary over the surface by following a map. The setting's
@@ -126,6 +137,9 @@ Render tab).
 
 ## Tests
 
+- `tests/test_texture_swap_offline.py` changes a material's picture on loose faces, nested
+  components and painted objects, and checks placement, proportions, tint, undo and save/reopen.
+- `tests/test_help_offline.py` checks the help against the code.
 - `tests/test_offline.py` writes a job with the panel's own code and
   renders it with Blender. It then adjusts and saves the image in the image
   window, without IngeTrazo running.

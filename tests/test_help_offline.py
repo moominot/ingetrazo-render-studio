@@ -22,6 +22,7 @@ ok(all(presets.label(k) in page for k in presets.ORDER), "every look name is in 
 ok(all(M.preset_label(k) in page for k in M.PRESETS), "every material preset name is in the help")
 ok(all(label in page for label, *_ in presets.SLIDERS.values()), "every panel slider is explained")
 ok(all(f"<b>{label}</b>" in page for _k, label, *_ in ME._FIELDS), "every material setting is explained")
+ok("Change picture…" in page and "Keep proportions" in page, "the help explains Change picture")
 ok(all(a in page for a in ('name="panel"', 'name="image"', 'name="materials"', 'name="hdri"')), "anchors present")
 from core import render_blender as rb
 ok(f"{rb.SAMPLES['eevee'][0]} / {rb.SAMPLES['eevee'][1]} / {rb.SAMPLES['eevee'][2]}" in page

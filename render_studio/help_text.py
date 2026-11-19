@@ -128,6 +128,13 @@ without rendering again, and what you see is what you save.</p>
 materials used in the model (hover one for its number of faces). <b>From the selection</b> jumps to the material of the
 selected face or group. Changes apply to the <b>next render</b>, are saved in the document, and each one is an undo step.</p>
 <table cellspacing='0' cellpadding='3' width='100%'>
+<tr><td valign='top'><b>Change picture…</b></td><td>Replaces the material's picture <b>in the model itself</b>, not only in
+the render: the viewport changes too, on every face, component and object that wears the material, as <b>one undo
+step</b> (this is the one control here that edits IngeTrazo's own material). Each face keeps where its texture was
+placed, and a colour tint is kept over the new image. <b>Keep proportions</b> makes the tile height follow the new
+image's shape (the tile width stays); off, the tile size stays and a different shape is stretched. The material needs
+a picture already; paint it with a texture first if it has only a colour. The image is copied into IngeTrazo's texture
+cache and travels with the document when you save.</td></tr>
 <tr><td valign='top'><b>Start from</b></td><td>A ready-made starting point; then adjust it. See the list below.</td></tr>
 <tr><td valign='top'><b>Type</b></td><td><b>Generic</b> (opaque), <b>Glass</b> (transparent), <b>Water</b>, or
 <b>Glowing</b> (it shines by itself and lights what is around it; the exposure meter ignores it so it does not darken the

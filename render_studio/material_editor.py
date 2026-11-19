@@ -185,6 +185,10 @@ class MapRow(QWidget):
 class MaterialEditor(QDialog):
     """``app`` is the extension's handle: its document data holds the specs."""
 
+    HINT = ("Changes apply to the next render. They are saved with the document. "
+            "With a map, a setting's slider scales it. «Change picture…» is the one "
+            "exception: it changes the material in the model itself.")
+
     def __init__(self, app, lang="en", parent=None):
         super().__init__(parent)
         self.app = app
@@ -223,6 +227,19 @@ class MaterialEditor(QDialog):
         self.title = QLabel("")
         self.title.setStyleSheet("font-weight: bold")
         form.addRow(self.title)
+        picrow = QHBoxLayout()
+        self.pic_btn = QPushButton("Change picture…")
+        self.pic_btn.setToolTip("Replace the picture of this material in the MODEL (not only in the "
+                                "render): every face and object that wears it changes, one undo step.")
+        self.pic_btn.clicked.connect(self.change_picture)
+        self.keep_ratio = QCheckBox("Keep proportions")
+        self.keep_ratio.setChecked(True)
+        self.keep_ratio.setToolTip("The tile height follows the new image's proportions. Off: the "
+                                   "tile size stays and a different shape is stretched.")
+        picrow.addWidget(self.pic_btn)
+        picrow.addWidget(self.keep_ratio)
+        picrow.addStretch(1)
+        form.addRow(picrow)
         self.preset = QComboBox()
         self.preset.addItem("—", "")
         for key in M.PRESETS:
@@ -267,11 +284,11 @@ class MaterialEditor(QDialog):
         self.reset_btn.setToolTip("Forget these settings: IngeTrazo's own finish for this material.")
         self.reset_btn.clicked.connect(self._reset)
         form.addRow(self.reset_btn)
-        hint = QLabel("Changes apply to the next render. They are saved with the document. "
-                      "With a map, a setting's slider scales it.")
+        hint = QLabel(self.HINT)
         hint.setWordWrap(True)
         hint.setStyleSheet("color: gray")
         form.addRow(hint)
+        self.hint = hint
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -337,6 +354,23 @@ class MaterialEditor(QDialog):
     def _help(self):
         from . import ui_help
         ui_help.show(self, "materials")
+
+    def change_picture(self):
+        """Replace the material's picture in the model (see texture_swap)."""
+        from . import texture_swap
+        name = self.current_name()
+        start = str(QSettings().value(_SETTINGS + "picture_dir", "") or "")
+        path, _f = QFileDialog.getOpenFileName(self, "New picture for the material", start,
+                                               "Images (*.png *.jpg *.jpeg *.tif *.tiff *.bmp *.webp *.tga)")
+        if not path:
+            return
+        done, message = texture_swap.swap_picture(self.app, name, path, self.keep_ratio.isChecked())
+        if done:
+            QSettings().setValue(_SETTINGS + "picture_dir", str(Path(path).parent))
+            self.refresh()
+            self.select(name)
+        self.title.setToolTip(message)
+        self.hint.setText(message)
 
     def pick_selection(self):
         name = M.selection_material(self.app.scene)
