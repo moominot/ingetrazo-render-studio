@@ -1,6 +1,6 @@
 # Render Studio for IngeTrazo
 
-Enscape-like renders from IngeTrazo with one click: pick a look, press
+Photographic renders from IngeTrazo with one click: pick a look, press
 **Render**, then fine-tune the image live without rendering again.
 
 It drives the same Blender that IngeTrazo's own Render tab uses (Blender
@@ -34,7 +34,7 @@ Every look shares:
 ## Materials
 
 **Materials…**, on the panel or in the menu, opens a simple material
-editor, like Enscape's. The list shows the materials used in the model.
+editor. The list shows the materials used in the model.
 **From the selection** jumps to the material of the selected face or group.
 
 For each material you can:
@@ -200,7 +200,7 @@ points, and a few tips.
 
 ## Releases
 
-The packaged extension of each version is in `releases/` and tagged (`v0.9.0` → `releases/render_studio-0.9.0.zip`),
+The packaged extension of each version is in `releases/` and tagged (`v0.9.1` → `releases/render_studio-0.9.1.zip`),
 so the catalog can pin the exact file by tag and SHA-256. Unpack it in IngeTrazo's plugins folder, or install it from
 **Extensions ▸ Manage extensions…**.
 

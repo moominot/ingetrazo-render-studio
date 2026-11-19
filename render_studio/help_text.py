@@ -135,7 +135,7 @@ without rendering again, and what you see is what you save.</p>
 
 <a name="materials"></a>
 <h3>The material editor</h3>
-<p>Controls how each material of the model <b>renders</b>, as Enscape's material editor does. The list shows the
+<p>Controls how each material of the model <b>renders</b>, in a few simple settings. The list shows the
 materials used in the model (hover one for its number of faces). <b>From the selection</b> jumps to the material of the
 selected face or group. Changes apply to the <b>next render</b>, are saved in the document, and each one is an undo step.</p>
 <table cellspacing='0' cellpadding='3' width='100%'>
