@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QF
                                QFormLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
                                QPushButton, QScrollArea, QSlider, QToolButton, QVBoxLayout, QWidget)
 
+from . import cube_preview
 from . import materials as M
 
 _FIELDS = (  # key, label, lo, hi, tip
@@ -227,6 +228,17 @@ class MaterialEditor(QDialog):
         self.title = QLabel("")
         self.title.setStyleSheet("font-weight: bold")
         form.addRow(self.title)
+        prev = QHBoxLayout()
+        self.cube = QLabel()
+        self.cube.setFixedSize(150, 150)
+        self.cube.setToolTip("A quick preview on a one-metre cube")
+        note = QLabel("Quick preview on a 1 m cube. It follows the sliders, the picture and the colour; "
+                      "the maps and Blender's lighting only show in the render.")
+        note.setWordWrap(True)
+        note.setStyleSheet("color: gray")
+        prev.addWidget(self.cube)
+        prev.addWidget(note, 1)
+        form.addRow(prev)
         picrow = QHBoxLayout()
         self.pic_btn = QPushButton("Change picture…")
         self.pic_btn.setToolTip("Replace the picture of this material in the MODEL (not only in the "
@@ -406,6 +418,7 @@ class MaterialEditor(QDialog):
             w.setEnabled(enabled)
         self.title.setText(name or "No material is used in the model.")
         if not enabled:
+            self.cube.clear()
             return
         spec = dict(M.DEFAULT)
         spec.update(self.specs().get(name) or {})
@@ -421,6 +434,31 @@ class MaterialEditor(QDialog):
         self.map_size.setValue(float(size))
         self._loading = False
         self._enable_glow()
+        self._update_cube()
+
+    def cube_params(self, name=None) -> dict:
+        """What the cube preview draws: the material's colour and picture from
+        the model, and the type and sliders as they are now in the editor."""
+        name = name or self.current_name()
+        mat = self.app.scene.materials.get(name) if name else None
+        tex = (getattr(mat, "texture", None) or {}) if mat is not None else {}
+        return {
+            "color": getattr(mat, "color", None) if mat is not None else None,
+            "texture": self._picture(name) if name else "",
+            "tile": (float(tex.get("sw", 1.0) or 1.0), float(tex.get("sh", 1.0) or 1.0)),
+            "kind": self.kind.currentData(),
+            "roughness": self._get("roughness"), "metallic": self._get("metallic"),
+            "bump": self._get("bump"), "glow": self._get("glow"),
+        }
+
+    def _update_cube(self):
+        if self.current_name() is None:
+            self.cube.clear()
+            return
+        try:
+            self.cube.setPixmap(cube_preview.render(self.cube_params(), 150))
+        except Exception:  # noqa: BLE001 - a preview must never break the editor
+            self.cube.clear()
 
     def _enable_glow(self):
         on = self.kind.currentData() == "glow"
@@ -443,6 +481,7 @@ class MaterialEditor(QDialog):
         if self._loading:
             return
         self._enable_glow()
+        self._update_cube()
         name = self.current_name()
         if name is None:
             return

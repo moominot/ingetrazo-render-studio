@@ -49,6 +49,14 @@ wood grain), otherwise from a fine grain. A glowing material lights what
 is around it, and the exposure meter ignores it, so it doesn't darken the
 picture.
 
+### Cube preview
+
+The material editor shows the material on a **one-metre cube**, drawn on the CPU, so it follows
+the sliders instantly and needs no Blender. It uses the picture and its tile size, the colour,
+the type (glass and water see-through, glowing ones with a halo) and the Roughness, Metal,
+Relief and Glow sliders. It is an approximation: the maps and Blender's lighting only show in
+the render.
+
 ### Change the picture, in the model
 
 **Change picture…** in the material editor replaces the picture of the material **in the
@@ -172,6 +180,7 @@ Render tab).
 
 ## Tests
 
+- `tests/test_cube_preview_offline.py` checks the cube preview (picture, tile, colour, polish, metal, relief, glass, glow) and its wiring in the editor.
 - `tests/test_live_offline.py` runs the live view against a stand-in for Blender (`tests/fake_blender.py`, same protocol): first draft, camera moves, model/look changes, a final render, switching off.
 - `tests/test_doc_settings_offline.py` checks the settings kept in the document.
 - `tests/test_materials_list_offline.py` checks the material list (faces, groups painted whole, nested, registry).

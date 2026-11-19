@@ -139,6 +139,10 @@ without rendering again, and what you see is what you save.</p>
 materials used in the model (hover one for its number of faces). <b>From the selection</b> jumps to the material of the
 selected face or group. Changes apply to the <b>next render</b>, are saved in the document, and each one is an undo step.</p>
 <table cellspacing='0' cellpadding='3' width='100%'>
+<tr><td valign='top'><b>Cube preview</b></td><td>At the top, a quick preview of the material on a one-metre cube. It follows
+the picture (and its tile size), the colour, the <b>type</b> (glass and water are see-through, glowing ones get a halo) and
+the <b>Roughness</b>, <b>Metal</b>, <b>Relief</b> and <b>Glow</b> sliders, instantly and without Blender. It is only an idea of the
+look: the <b>maps</b> and Blender's lighting show only in the render.</td></tr>
 <tr><td valign='top'><b>Change picture…</b></td><td>Replaces the material's picture <b>in the model itself</b>, not only in
 the render: the viewport changes too, on every face, component and object that wears the material, as <b>one undo
 step</b> (this is the one control here that edits IngeTrazo's own material). Each face keeps where its texture was
