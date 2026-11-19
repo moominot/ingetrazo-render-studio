@@ -129,6 +129,93 @@ def add_clouds(scene, coverage, scale=1.0, brightness=1.0, seed=0.0, tint=(1.0, 
     say("clouds", round(coverage, 2))
 
 
+def night_sky(scene, stars=1.0, density=0.14, seed=0.0,
+              zenith=(0.004, 0.007, 0.020), horizon=(0.020, 0.026, 0.045)):
+    """A night sky in the world's Background: deep blue overhead, a little
+    paler at the horizon (the glow of towns and the air), and stars: points
+    on a sphere of Voronoi cells, ``density`` of the cells lit, each with
+    its own brightness and a hint of colour, faded out near the horizon.
+    Clouds added afterwards (:func:`add_clouds`) hide them."""
+    nodes, links = _world_nodes(scene)
+    bg = next((n for n in nodes if n.type == "BACKGROUND"), None)
+    if bg is None:
+        return
+    coord = nodes.new("ShaderNodeTexCoord")
+    sep = nodes.new("ShaderNodeSeparateXYZ")
+    links.new(coord.outputs["Generated"], sep.inputs["Vector"])
+    # The gradient: horizon colour at z = 0, zenith colour from z ≈ 0.5.
+    grad = nodes.new("ShaderNodeMapRange")
+    grad.inputs["From Min"].default_value = 0.0
+    grad.inputs["From Max"].default_value = 0.5
+    links.new(sep.outputs["Z"], grad.inputs["Value"])
+    sky = nodes.new("ShaderNodeMix"); sky.data_type = "RGBA"
+    links.new(grad.outputs["Result"], sky.inputs["Factor"])
+    sky.inputs["A"].default_value = (*horizon, 1.0)
+    sky.inputs["B"].default_value = (*zenith, 1.0)
+    out = sky.outputs["Result"]
+    if stars > 0.0:
+        # Stars: the distance to the nearest Voronoi point, a sharp falloff
+        # makes each lit cell one small dot (about a pixel at 1920 px).
+        vor = nodes.new("ShaderNodeTexVoronoi")
+        vor.feature = "F1"
+        vor.voronoi_dimensions = "4D" if seed else "3D"
+        links.new(coord.outputs["Generated"], vor.inputs["Vector"])
+        vor.inputs["Scale"].default_value = 160.0
+        if seed and "W" in vor.inputs:
+            vor.inputs["W"].default_value = seed
+        dot = nodes.new("ShaderNodeMapRange")
+        dot.inputs["From Min"].default_value = 0.0
+        dot.inputs["From Max"].default_value = 0.14
+        dot.inputs["To Min"].default_value = 1.0
+        dot.inputs["To Max"].default_value = 0.0
+        links.new(vor.outputs["Distance"], dot.inputs["Value"])
+        # Which cells shine, and how much: the cell's random colour.
+        rnd = nodes.new("ShaderNodeSeparateColor")
+        links.new(vor.outputs["Color"], rnd.inputs["Color"])
+        lit = nodes.new("ShaderNodeMapRange")       # top ``density`` of cells
+        lit.inputs["From Min"].default_value = 1.0 - density
+        lit.inputs["From Max"].default_value = 1.0
+        links.new(rnd.outputs["Red"], lit.inputs["Value"])
+        bright = nodes.new("ShaderNodeMath"); bright.operation = "POWER"
+        bright.inputs[1].default_value = 3.0           # many faint, few bright
+        links.new(lit.outputs["Result"], bright.inputs[0])
+        star = nodes.new("ShaderNodeMath"); star.operation = "MULTIPLY"
+        links.new(dot.outputs["Result"], star.inputs[0])
+        links.new(bright.outputs[0], star.inputs[1])
+        # None near the horizon (thick air), full from about 12°.
+        high = nodes.new("ShaderNodeMapRange")
+        high.inputs["From Min"].default_value = 0.03
+        high.inputs["From Max"].default_value = 0.2
+        links.new(sep.outputs["Z"], high.inputs["Value"])
+        star2 = nodes.new("ShaderNodeMath"); star2.operation = "MULTIPLY"
+        links.new(star.outputs[0], star2.inputs[0])
+        links.new(high.outputs["Result"], star2.inputs[1])
+        level = nodes.new("ShaderNodeMath"); level.operation = "MULTIPLY"
+        level.inputs[1].default_value = 6.0 * stars
+        links.new(star2.outputs[0], level.inputs[0])
+        # Colour: from orange-white to blue-white, by another random channel.
+        hue = nodes.new("ShaderNodeValToRGB")
+        hue.color_ramp.elements[0].color = (1.0, 0.82, 0.62, 1.0)
+        hue.color_ramp.elements[1].color = (0.75, 0.85, 1.0, 1.0)
+        mid = hue.color_ramp.elements.new(0.5)
+        mid.color = (1.0, 1.0, 1.0, 1.0)
+        links.new(rnd.outputs["Green"], hue.inputs["Fac"])
+        tinted = nodes.new("ShaderNodeMix"); tinted.data_type = "RGBA"
+        tinted.blend_type = "MULTIPLY"
+        tinted.inputs["Factor"].default_value = 1.0
+        links.new(hue.outputs["Color"], tinted.inputs["A"])
+        links.new(level.outputs[0], tinted.inputs["B"])
+        add = nodes.new("ShaderNodeMix"); add.data_type = "RGBA"
+        add.blend_type = "ADD"
+        add.inputs["Factor"].default_value = 1.0
+        links.new(out, add.inputs["A"])
+        links.new(tinted.outputs["Result"], add.inputs["B"])
+        out = add.outputs["Result"]
+    links.new(out, bg.inputs["Color"])
+    bg.inputs["Strength"].default_value = 1.0
+    say("night sky, stars", round(stars, 2))
+
+
 def kelvin_rgb(kelvin):
     """Blackbody colour of ``kelvin`` (Tanner Helland's fit), 0..1, scaled
     so its brightest channel is 1."""
@@ -467,6 +554,13 @@ def main():
     if ambience == "night":
         core["set_plain_world"](scene, (0.010, 0.016, 0.035), 1.0, "night")
         core["add_moon"](scene)
+        night_sky(scene, stars=float(st.get("stars", 1.0)), seed=float(st.get("cloud_seed", 0.0)))
+        if st.get("clouds", 0.0) > 0.0:
+            # Moonlit: a blue-grey a little brighter than the sky, darker
+            # where thick; they hide the stars behind them.
+            add_clouds(scene, float(st["clouds"]), scale=st.get("cloud_scale", 1.0),
+                       brightness=0.05 * float(st.get("cloud_brightness", 1.0)),
+                       seed=st.get("cloud_seed", 0.0), tint=(0.80, 0.90, 1.25))
     elif ambience == "overcast":
         core["set_world"](scene, golden_sun(job.get("sun"), 35.0))
         bg = next(n for n in scene.world.node_tree.nodes if n.type == "BACKGROUND")

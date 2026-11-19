@@ -59,7 +59,7 @@ PRESETS = {
     "night": ({"en": "Night", "ca": "Nit", "es": "Noche"}, "night",
               # Metered low and capped: without lamps a night stays dark (the
               # meter would otherwise lift the moonlight to a flat blue day).
-              {"white_balance": 8500, "exposure_target": 0.07, "exposure_white": 3.0,
+              {"clouds": 0.35, "stars": 1.0, "white_balance": 8500, "exposure_target": 0.07, "exposure_white": 3.0,
                "exposure_max": 2.5, "saturation": 0.95, "bloom": 0.2, "vignette": 0.25}),
 }
 
