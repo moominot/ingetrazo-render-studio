@@ -198,6 +198,12 @@ window (with search) at the right section: how Render Studio works, every contro
 the 360° background, the image adjustments, the material editor with its maps and starting
 points, and a few tips.
 
+## Releases
+
+The packaged extension of each version is in `releases/` and tagged (`v0.9.0` → `releases/render_studio-0.9.0.zip`),
+so the catalog can pin the exact file by tag and SHA-256. Unpack it in IngeTrazo's plugins folder, or install it from
+**Extensions ▸ Manage extensions…**.
+
 ## Install
 
 Copy the `render_studio` folder into IngeTrazo's plugins folder
