@@ -82,9 +82,20 @@ it, up to 2. Not available while a 360° background lights the scene.</td></tr>
 <tr><td valign='top'><b>Saturation</b></td><td>Intensity of the colours: 0 is black and white, 1.6 is vivid.</td></tr>
 <tr><td valign='top'><b>Vignette</b></td><td>Darkens the corners of the picture to draw the eye to the centre.</td></tr>
 <tr><td valign='top'><b>Materials…</b></td><td>Opens the material editor (see below).</td></tr>
+<tr><td valign='top'><b>Live view</b></td><td>Keeps Blender open with your scene and look loaded: a <b>draft</b> image
+(small, few samples) follows the 3D view. Move the camera and stop: after a moment the image updates. Change the
+model, the look, a slider, the 360° background or a material setting and the scene is loaded into Blender again
+(it takes a few seconds). Press <b>Render</b> for the final image: the live Blender is closed first and the live view stays
+off afterwards, so the draft does not draw over your picture; tick the box again to bring it back.</td></tr>
 <tr><td valign='top'><b>Render</b></td><td>Starts the render. It is disabled while one is running. The line below the
 bar says what is happening, or why it could not start (for example, Blender was not found).</td></tr>
 </table>
+
+<h4>Settings are saved in the document</h4>
+<p>The look, engine, quality, width, sliders and 360° background are kept <b>inside the IngeTrazo document</b>
+(next to the materials' render settings), a moment after each change, one undo step per pause. Save the drawing and
+they come back with it; another tab or file shows its own. Undo and redo move them too. The format is public
+(see the README), so other tools that read the document can use it.</p>
 
 <h4>The looks</h4>
 {_looks()}

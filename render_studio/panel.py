@@ -16,13 +16,14 @@ import shutil
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QLocale, QProcess, QProcessEnvironment, QSettings, Qt, Signal
+from PySide6.QtCore import QLocale, QProcess, QProcessEnvironment, QSettings, Qt, QTimer, Signal
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QHBoxLayout,
                                QLabel, QProgressBar, QPushButton, QScrollArea, QSizePolicy,
                                QSlider, QSpinBox, QToolButton, QVBoxLayout, QWidget)
 
-from . import materials as mats, post, presets
+from . import materials as mats, post, presets, settings_store
+from .live import LiveSession
 
 _log = logging.getLogger(__name__)
 _SETTINGS = "render_studio/"
@@ -134,6 +135,10 @@ class ImageWindow(QDialog):
         self.view.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         self.view.setMinimumSize(320, 200)
         lay.addWidget(self.view, 1)
+        self.note = QLabel("")
+        self.note.setStyleSheet("color: gray")
+        self.note.setVisible(False)
+        lay.addWidget(self.note)
         form = QFormLayout()
         self.adj = {}
         for key, label, lo, hi, val in (("exposure", "Exposure (EV)", -2.0, 2.0, 0.0),
@@ -160,6 +165,10 @@ class ImageWindow(QDialog):
         row.addStretch(1)
         row.addWidget(save)
         lay.addLayout(row)
+
+    def set_note(self, text: str):
+        self.note.setText(text)
+        self.note.setVisible(bool(text))
 
     def _help(self):
         from . import ui_help
@@ -313,6 +322,13 @@ class StudioPanel(QWidget):
         mrow.addWidget(self.help_btn)
         outer.addLayout(mrow)
         self.editor = None
+        self._live = None
+        self._live_resume = False
+        self.live_box = QCheckBox("Live view")
+        self.live_box.setToolTip("Keeps Blender open: a draft image follows the 3D view and updates when "
+                                 "you stop moving the camera or change the model or the look.")
+        self.live_box.toggled.connect(self._live_toggled)
+        outer.addWidget(self.live_box)
         self.render_btn = QPushButton("Render")
         self.render_btn.clicked.connect(self.render)
         outer.addWidget(self.render_btn)
@@ -323,6 +339,180 @@ class StudioPanel(QWidget):
         self.status = QLabel("")
         self.status.setWordWrap(True)
         outer.addWidget(self.status)
+        self._init_document_settings()
+
+    # -- live view ----------------------------------------------------------------
+    def blender(self):
+        from core import render_blender as rb
+        return rb.find_blender(str(QSettings().value(rb.SETTINGS_KEY, "") or "") or None)
+
+    def live_key(self):
+        """What the live scene depends on besides the camera: the model, the
+        look and every setting, the materials' render settings, the proportions."""
+        try:
+            doc = json.dumps(self.settings_dict(), sort_keys=True)
+            mats_ = json.dumps(self.material_specs(), sort_keys=True, default=str)
+        except Exception:  # noqa: BLE001
+            doc = mats_ = ""
+        scene = self.app.scene
+        return (id(scene), getattr(scene, "content_version", 0), doc, mats_, round(self._aspect(), 3))
+
+    def live_job(self, work: Path, width: int, height: int):
+        """The job of the live Blender: the current look and settings, draft
+        quality, in serve mode."""
+        return write_studio_job(
+            self.app.scene, self.app.viewport.camera, work, self.preset.currentData(),
+            self.slider_values(), engine=self.engine.currentData(), quality=0, width=width,
+            height=height, hdri=self.hdri_settings(), materials=self.material_specs(), serve=True)
+
+    def _live_toggled(self, on: bool):
+        if on:
+            if self._live is None:
+                self._live = LiveSession(self)
+                self._live.image.connect(self._live_image)
+                self._live.state.connect(self.status.setText)
+            if self.blender() is None:
+                self.status.setText("Blender was not found. Set it up in IngeTrazo's Render tab first.")
+                self.live_box.blockSignals(True)
+                self.live_box.setChecked(False)
+                self.live_box.blockSignals(False)
+                return
+            self._live.start()
+        elif self._live is not None:
+            self._live.stop()
+            self.status.setText("Live view off.")
+
+    def _live_image(self, path):
+        if not Path(path).is_file():
+            return
+        if self.window is None:
+            self.window = ImageWindow(self.app.window if hasattr(self.app, "window") else None)
+        self.window.set_image(Path(path))
+        self.window.set_note("Draft from the live view. Press Render for the final image.")
+        self.window.show()
+
+    def _pause_live(self):
+        """A final render and the live Blender should not run together."""
+        self._live_resume = bool(self._live is not None and self._live.active)
+        if self._live_resume:
+            self._live.stop()
+
+    def _resume_live(self, keep_final: bool = False):
+        """After a render. ``keep_final``: the final image is on screen, so the
+        live view stays off (it would draw its draft over it); the box is
+        unticked and ticking it again brings the live view back."""
+        resume = getattr(self, "_live_resume", False)
+        self._live_resume = False
+        if not resume or self._live is None or not self.live_box.isChecked():
+            return
+        if keep_final:
+            self.live_box.blockSignals(True)
+            self.live_box.setChecked(False)
+            self.live_box.blockSignals(False)
+        else:
+            self._live.start()
+
+    # -- the settings, in the document --------------------------------------------
+    def _init_document_settings(self):
+        """Keep the panel's settings in the IngeTrazo document (see
+        ``settings_store`` for the format): saved a moment after each change,
+        and put back when the document, or its tab, changes."""
+        self._applying = False
+        self._save_timer = QTimer(self)
+        self._save_timer.setSingleShot(True)
+        self._save_timer.setInterval(700)
+        self._save_timer.timeout.connect(self._save_document_settings)
+        for combo in (self.preset, self.engine, self.quality, self.hdri):
+            combo.currentIndexChanged.connect(self._schedule_save)
+        self.width.valueChanged.connect(self._schedule_save)
+        for sl in (*self.sliders.values(), self.hdri_rotation, self.hdri_strength):
+            sl.valueChanged.connect(self._schedule_save)
+        self.hdri_light.toggled.connect(self._schedule_save)
+        self._scene_id = id(self.app.scene) if hasattr(self.app, "scene") else None
+        self._known = self._stored_settings()
+        if self._known is not None:
+            self.apply_settings(self._known)
+
+    def _stored_settings(self):
+        try:
+            return settings_store.clean((self.app.document_data({}) or {}).get("settings"))
+        except Exception:  # noqa: BLE001 - an old IngeTrazo: no document data
+            return None
+
+    def settings_dict(self) -> dict:
+        """The panel's settings in the document format."""
+        hdri = self.hdri.currentData()
+        return {
+            "version": settings_store.VERSION,
+            "look": self.preset.currentData(),
+            "engine": self.engine.currentData(),
+            "quality": self.quality.currentIndex(),
+            "width": self.width.value(),
+            "sliders": {k: round(_value(s), 4) for k, s in self.sliders.items()},
+            "hdri": ({"path": hdri, "rotation": round(_value(self.hdri_rotation), 3),
+                      "brightness": round(_value(self.hdri_strength), 3),
+                      "light": self.hdri_light.isChecked()}
+                     if hdri and hdri != _CHOOSE else None),
+        }
+
+    def apply_settings(self, data: dict) -> None:
+        """Put ``data`` (the document's settings) in the controls, without
+        saving them again."""
+        data = settings_store.clean(data)
+        if data is None:
+            return
+        self._applying = True
+        widgets = [self.preset, self.engine, self.quality, self.width, self.hdri,
+                   self.hdri_rotation, self.hdri_strength, self.hdri_light, *self.sliders.values()]
+        for w in widgets:
+            w.blockSignals(True)
+        try:
+            self.preset.setCurrentIndex(max(0, self.preset.findData(data["look"])))
+            self.engine.setCurrentIndex(max(0, self.engine.findData(data["engine"])))
+            self.quality.setCurrentIndex(data["quality"])
+            self.width.setValue(data["width"])
+            block, _amb = presets.studio(self.preset.currentData())
+            for key, (_label, lo, hi, default, _unit) in presets.SLIDERS.items():
+                value = data["sliders"].get(key, default if default is not None else block.get(key, 0.0))
+                sl = self.sliders[key]
+                sl.setValue(int(round((float(value) - lo) / (hi - lo) * sl.maximum())))
+            h = data["hdri"]
+            if h and Path(h["path"]).is_file():
+                i = self.hdri.findData(h["path"])
+                if i < 0:
+                    i = self.hdri.count() - 1             # before «Choose a file…»
+                    self.hdri.insertItem(i, Path(h["path"]).name, h["path"])
+                self.hdri.setCurrentIndex(i)
+                self.hdri_rotation.setValue(int(round(h["rotation"] / 360.0 * self.hdri_rotation.maximum())))
+                self.hdri_strength.setValue(int(round((h["brightness"] + 3.0) / 6.0 * self.hdri_strength.maximum())))
+                self.hdri_light.setChecked(h["light"])
+            else:
+                self.hdri.setCurrentIndex(0)
+            self._hdri_prev = self.hdri.currentIndex()
+        finally:
+            for w in widgets:
+                w.blockSignals(False)
+            self._applying = False
+        self._hdri_enable()
+
+    def _schedule_save(self, *_a):
+        if not self._applying:
+            self._save_timer.start()
+
+    def _save_document_settings(self):
+        """One undo step per pause, and nothing when nothing changed."""
+        if self._applying:
+            return
+        new = settings_store.clean(self.settings_dict())
+        try:
+            data = dict(self.app.document_data({}) or {})
+        except Exception:  # noqa: BLE001 - an old IngeTrazo: no document data
+            return
+        if new == settings_store.clean(data.get("settings")):
+            return
+        data["settings"] = new
+        self._known = new
+        self.app.set_document_data(data)
 
     # -- settings ---------------------------------------------------------------
     def _preset_changed(self, _i):
@@ -405,6 +595,16 @@ class StudioPanel(QWidget):
     def document_changed(self):
         if self.editor is not None and self.editor.isVisible():
             self.editor.refresh()
+        if getattr(self, "_save_timer", None) is None or self._save_timer.isActive():
+            return                       # a change of ours is waiting to be saved
+        sid = id(self.app.scene)
+        stored = self._stored_settings()
+        # Another tab, or the saved settings changed under us (undo, redo, a
+        # reopened file): put them in the controls.
+        if sid != self._scene_id or stored != self._known:
+            self._scene_id, self._known = sid, stored
+            if stored is not None:
+                self.apply_settings(stored)
 
     def material_specs(self) -> dict:
         if self.editor is not None:
@@ -447,6 +647,7 @@ class StudioPanel(QWidget):
             self.finished.emit(None)
             return
         self._remember()
+        self._pause_live()
         stamp = time.strftime("%Y%m%d-%H%M%S")
         self.work = rb.work_base().parent / "render-studio" / stamp
         width = self.width.value()
@@ -461,6 +662,7 @@ class StudioPanel(QWidget):
         except Exception as exc:  # noqa: BLE001 - say it, never crash the app
             _log.exception("render job failed")
             self.status.setText(f"Could not prepare the render: {exc}")
+            self._resume_live()
             self.finished.emit(None)
             return
         argv = [*found.command, "-b", "--factory-startup", "--python", str(script), "--", str(job)]
@@ -495,7 +697,9 @@ class StudioPanel(QWidget):
         self.proc = None
         self.render_btn.setEnabled(True)
         self.bar.setVisible(False)
-        if code != 0 or not self.output.exists():
+        failed = code != 0 or not self.output.exists()
+        self._resume_live(keep_final=not failed)
+        if failed:
             tail = "\n".join(l for l in self._log_lines if "Error" in l or "INGETRAZO" in l)[-600:]
             self.status.setText(f"The render failed (code {code}).\n{tail}")
             self.finished.emit(None)
@@ -503,6 +707,7 @@ class StudioPanel(QWidget):
         self.status.setText(f"Done: {self.output.name}")
         if self.window is None:
             self.window = ImageWindow(self.app.window if hasattr(self.app, "window") else None)
+        self.window.set_note("")
         self.window.set_image(self.output)
         self.window.show()
         self.window.raise_()

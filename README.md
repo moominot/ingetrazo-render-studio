@@ -121,6 +121,41 @@ the image as PNG or JPEG.
 
 ![Panel](docs/panel.png)
 
+## Live view
+
+**Live view** (a box in the panel) keeps Blender open with the scene and the look loaded, and a
+draft image follows the 3D view: move the camera and stop, and it updates. Changing the model,
+the look, a slider, the 360° background or a material setting loads the scene again. It speaks
+the protocol of IngeTrazo's own «Sync with the view» (Blender in `serve` mode), so the draft has
+the look, sky and materials of the final render, at draft quality. **Render** closes the live
+Blender first and leaves the live view off, so the draft does not cover the final image.
+
+## Settings in the document
+
+The panel's settings are saved in the IngeTrazo document (a moment after each change, one undo
+step per pause, and only when something changed): `scene.plugin_data["render_studio"]`, saved in
+the `.igz`. Tabs and reopened files show their own; undo and redo move them. The format is
+meant to be read by other tools, such as IngeTrazo's own Blender render (its Render tab does not
+apply them yet: that needs a change in IngeTrazo):
+
+```
+plugin_data["render_studio"] = {
+  "materials": { "<material name>": { …render settings of that material… } },
+  "settings": {
+    "version": 1,
+    "look": "clear",            # clear partly_cloudy golden_hour overcast white_model interior night
+    "engine": "eevee",          # or "cycles"
+    "quality": 1,               # 0 draft, 1 medium, 2 high
+    "width": 1920,              # pixels; the height follows the 3D view
+    "sliders": { "exposure_bias": 0.0, "clouds": 0.25, "sun_scale": 1.0,
+                 "warmth": 0.0, "saturation": 1.06, "vignette": 0.16 },
+    "hdri": null                # or {"path": "...", "rotation": 0..360, "brightness": stops, "light": true}
+  } }
+```
+
+`render_studio/settings_store.py` reads and cleans it (unknown looks fall back, numbers are
+clamped) and has no Qt dependency.
+
 ## Help
 
 A **?** button in the panel, in the image window and in the material editor opens a help
@@ -137,6 +172,9 @@ Render tab).
 
 ## Tests
 
+- `tests/test_live_offline.py` runs the live view against a stand-in for Blender (`tests/fake_blender.py`, same protocol): first draft, camera moves, model/look changes, a final render, switching off.
+- `tests/test_doc_settings_offline.py` checks the settings kept in the document.
+- `tests/test_materials_list_offline.py` checks the material list (faces, groups painted whole, nested, registry).
 - `tests/test_texture_swap_offline.py` changes a material's picture on loose faces, nested
   components and painted objects, and checks placement, proportions, tint, undo and save/reopen.
 - `tests/test_help_offline.py` checks the help against the code.
