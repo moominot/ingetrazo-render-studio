@@ -9,7 +9,9 @@ Render panel does — model, finishes, camera, figures, sun, sky, lights,
 ground, engine. This script adds what the job's ``"studio"`` block asks for:
 
 * a sky with clouds (a procedural layer over the physical sky), a sun moved
-  to the golden hour, an overcast or a night;
+  to the golden hour, an overcast or a night with stars;
+* or a 360° image (HDRI) as the world: lighting the scene, or only seen
+  behind it;
 * a white model (every material white and matte, glass kept);
 * automatic exposure: a small, quick pre-pass measured in scene-linear
   light, then the exposure that puts it at a pleasant grey;
@@ -216,6 +218,56 @@ def night_sky(scene, stars=1.0, density=0.14, seed=0.0,
     say("night sky, stars", round(stars, 2))
 
 
+def set_hdri(scene, path, rotation_deg=0.0, strength=1.0, light=True):
+    """A 360° image (equirectangular HDRI/EXR, or a JPEG/PNG panorama) as the
+    world. ``light``: it lights the scene too (the look's sun and sky go);
+    otherwise the look still lights everything and the image is only what
+    the camera sees behind the model. ``rotation_deg`` turns it about the
+    vertical. Returns the image, or None when it could not be read."""
+    try:
+        image = bpy.data.images.load(str(path), check_existing=True)
+    except (RuntimeError, OSError) as exc:
+        say("hdri unreadable", path, exc)
+        return None
+    if scene.world is None:
+        core["set_plain_world"](scene, (0.05, 0.05, 0.05), 1.0, "hdri")
+    nodes, links = _world_nodes(scene)
+    out = next((n for n in nodes if n.type == "OUTPUT_WORLD"), None)
+    if out is None:
+        out = nodes.new("ShaderNodeOutputWorld")
+    look_link = next(iter(out.inputs["Surface"].links), None)
+    look_shader = look_link.from_socket if look_link else None
+    coord = nodes.new("ShaderNodeTexCoord")
+    mapping = nodes.new("ShaderNodeMapping")
+    mapping.name = "hdri_mapping"
+    mapping.inputs["Rotation"].default_value[2] = math.radians(rotation_deg)
+    links.new(coord.outputs["Generated"], mapping.inputs["Vector"])
+    env = nodes.new("ShaderNodeTexEnvironment")
+    env.name = "hdri"
+    env.image = image
+    links.new(mapping.outputs["Vector"], env.inputs["Vector"])
+    bg = nodes.new("ShaderNodeBackground")
+    bg.name = "hdri_background"
+    bg.inputs["Strength"].default_value = strength
+    links.new(env.outputs["Color"], bg.inputs["Color"])
+    if light or look_shader is None:
+        links.new(bg.outputs["Background"], out.inputs["Surface"])
+        for ob in list(scene.objects):            # its own sun is in the image
+            if ob.type == "LIGHT" and ob.data.type == "SUN":
+                bpy.data.objects.remove(ob, do_unlink=True)
+    else:
+        path_node = nodes.new("ShaderNodeLightPath")
+        mix = nodes.new("ShaderNodeMixShader")
+        links.new(path_node.outputs["Is Camera Ray"], mix.inputs["Fac"])
+        links.new(look_shader, mix.inputs[1])
+        links.new(bg.outputs["Background"], mix.inputs[2])
+        links.new(mix.outputs["Shader"], out.inputs["Surface"])
+    w, h = image.size[:2] if image.size else (0, 0)
+    say("hdri", os.path.basename(str(path)), f"{w}x{h}", "lights the scene" if light else "background only",
+        f"rotation {rotation_deg:.0f}°")
+    return image
+
+
 def kelvin_rgb(kelvin):
     """Blackbody colour of ``kelvin`` (Tanner Helland's fit), 0..1, scaled
     so its brightest channel is 1."""
@@ -311,11 +363,33 @@ def haze_ground(scene, near=120.0, far=1200.0):
         return
     wnodes = scene.world.node_tree.nodes
     wsky = next((n for n in wnodes if n.type == "TEX_SKY"), None)
-    bg = next((n for n in wnodes if n.type == "BACKGROUND"), None)
+    whdri = wnodes.get("hdri")
+    bg = wnodes.get("hdri_background") or next((n for n in wnodes if n.type == "BACKGROUND"), None)
     strength = bg.inputs["Strength"].default_value if bg else 1.0
     emit = nodes.new("ShaderNodeEmission")
     emit.inputs["Strength"].default_value = strength
-    if wsky is not None:
+    if whdri is not None:
+        # The 360° image looked up level with the horizon, turned as the
+        # world is: the ground melts into what the image shows there.
+        env = nodes.new("ShaderNodeTexEnvironment")
+        env.image = whdri.image
+        geo = nodes.new("ShaderNodeNewGeometry")
+        neg = nodes.new("ShaderNodeVectorMath"); neg.operation = "SCALE"
+        neg.inputs["Scale"].default_value = -1.0
+        links.new(geo.outputs["Incoming"], neg.inputs[0])
+        sep = nodes.new("ShaderNodeSeparateXYZ")
+        links.new(neg.outputs["Vector"], sep.inputs["Vector"])
+        comb = nodes.new("ShaderNodeCombineXYZ")
+        links.new(sep.outputs["X"], comb.inputs["X"]); links.new(sep.outputs["Y"], comb.inputs["Y"])
+        comb.inputs["Z"].default_value = 0.02
+        mapping = nodes.new("ShaderNodeMapping")
+        wmap = wnodes.get("hdri_mapping")
+        if wmap is not None:
+            mapping.inputs["Rotation"].default_value = wmap.inputs["Rotation"].default_value
+        links.new(comb.outputs["Vector"], mapping.inputs["Vector"])
+        links.new(mapping.outputs["Vector"], env.inputs["Vector"])
+        links.new(env.outputs["Color"], emit.inputs["Color"])
+    elif wsky is not None:
         sky = nodes.new("ShaderNodeTexSky")
         for attr in ("sky_type", "sun_elevation", "sun_rotation", "sun_direction", "altitude",
                      "air_density", "aerosol_density", "ozone_density", "sun_size",
@@ -586,14 +660,25 @@ def main():
             add_clouds(scene, float(st["clouds"]), scale=st.get("cloud_scale", 1.0),
                        brightness=st.get("cloud_brightness", 1.0), seed=st.get("cloud_seed", 0.0),
                        tint=tint)
+    if st.get("hdri"):
+        set_hdri(scene, st["hdri"], float(st.get("hdri_rotation", 0.0)),
+                 float(st.get("hdri_strength", 1.0)), bool(st.get("hdri_light", True)))
     core["add_lights"](scene, job.get("lights") or [])
     ground = job.get("ground")
     if ground:
         color = st.get("ground_color") or ground["color"]
         core["add_ground"](scene, ground["z"], ground["size"], color)
         if st.get("haze", True):
-            haze_ground(scene, float(st.get("haze_near", 120.0)), float(st.get("haze_far", 1200.0)))
+            # A photo's horizon is near (trees, buildings): melt sooner.
+            near, far = (30.0, 300.0) if st.get("hdri") else (120.0, 1200.0)
+            haze_ground(scene, float(st.get("haze_near", near)), float(st.get("haze_far", far)))
     core["set_engine"](scene, job.get("engine", "eevee"), int(job.get("samples", 64)))
+    if job.get("engine") != "cycles" and st.get("hdri") and scene.world is not None:
+        wld = scene.world
+        for attr, value in (("use_sun_shadow", True), ("sun_threshold", float(st.get("hdri_sun_threshold", 10.0)))):
+            if hasattr(wld, attr):
+                setattr(wld, attr, value)
+        say("world sun", {a: getattr(wld, a) for a in ("sun_threshold", "sun_angle", "use_sun_shadow") if hasattr(wld, a)})
     if job.get("engine") != "cycles":
         ev = scene.eevee
         for attr, value in (("use_fast_gi", True), ("fast_gi_method", "GLOBAL_ILLUMINATION"),

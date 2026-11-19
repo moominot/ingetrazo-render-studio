@@ -29,6 +29,23 @@ Every look shares:
 - **Albedo capped at 80 %.** Paper-white surfaces don't glow under a path tracer.
 - **Finish.** A light saturation and vignette pass in Blender's compositor.
 
+## 360° background (HDRI)
+
+Any equirectangular image (.hdr, .exr, .jpg) as the world:
+- **Lights the scene** (on): the image lights the model, and its sun casts
+  the shadows. The look's sky and sun are replaced; its exposure and
+  finish stay.
+- **Lights the scene** (off): the look lights the model, and the image is
+  only what the camera sees behind it.
+- **Rotation** turns the image, and **Brightness** sets it in stops.
+- The ground melts into the image's horizon.
+
+Blender's own eight HDRIs (CC0, Poly Haven) are offered in the list. They
+are 1K: good light, but soft behind the model. For a sharp background,
+choose a 4K or larger file, for example a free one from polyhaven.com.
+
+![HDRI](docs/hdri.png)
+
 ![Night with the document's lamps](docs/night.png)
 
 ![Interior and live adjustments](docs/interior.png)
@@ -40,7 +57,8 @@ Every look shares:
 - the engine: EEVEE (fast, about 3 s) or Cycles (best, about 5 s on an RTX GPU);
 - the quality and the width;
 - sliders that change the render itself: exposure (EV), clouds, sun, warmth,
-  saturation and vignette.
+  saturation and vignette;
+- a 360° background (HDRI), with rotation, brightness and "Lights the scene".
 
 The finished image opens in its own window. There you can adjust
 exposure, contrast, saturation, warmth and vignette instantly, then save

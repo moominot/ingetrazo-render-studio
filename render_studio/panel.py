@@ -2,7 +2,8 @@
 """Render Studio's side-tray tab and its image window.
 
 The tab: a look (preset), the engine and size, a few sliders that change
-the render (clouds, sun, exposure, warmth, saturation, vignette), Render.
+the render (clouds, sun, exposure, warmth, saturation, vignette), an
+optional 360° background (HDRI) that can light the scene too, Render.
 The window: the image, with live adjustments that need no new render, and
 Save. Blender is the one IngeTrazo's Render tab found; the lights placed
 there are used (they matter for Night and Interior).
@@ -17,7 +18,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QLocale, QProcess, QProcessEnvironment, QSettings, Qt, Signal
 from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtWidgets import (QComboBox, QDialog, QFileDialog, QFormLayout, QHBoxLayout,
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QHBoxLayout,
                                QLabel, QProgressBar, QPushButton, QScrollArea, QSizePolicy,
                                QSlider, QSpinBox, QVBoxLayout, QWidget)
 
@@ -26,6 +27,11 @@ from . import post, presets
 _log = logging.getLogger(__name__)
 _SETTINGS = "render_studio/"
 HERE = Path(__file__).resolve().parent
+_CHOOSE = "__choose__"
+HDRI_FILTER = "360° images (*.hdr *.exr *.jpg *.jpeg *.png)"
+HDRI_TIP = ("An equirectangular 360° image (.hdr, .exr, .jpg). Blender's own are 1K: "
+            "good light, soft behind the model; for a sharp background use 4K or "
+            "more (for example the free ones at polyhaven.com).")
 
 
 def _lang() -> str:
@@ -43,12 +49,42 @@ def document_lights(scene) -> list:
         return []
 
 
+def bundled_hdris() -> list:
+    """The 360° images Blender ships (CC0, from Poly Haven; 1K), found next
+    to the Blender IngeTrazo uses. Empty when there is none."""
+    from core import render_blender as rb
+    try:
+        found = rb.find_blender(str(QSettings().value(rb.SETTINGS_KEY, "") or "") or None)
+        if found is None or not found.command:
+            return []
+        exe = Path(found.command[0])
+        return sorted(exe.parent.glob("*/datafiles/studiolights/world/*.exr"))
+    except Exception:  # noqa: BLE001 - no list, no harm
+        return []
+
+
+def apply_hdri(block: dict, hdri: dict | None) -> dict:
+    """The look's block with a 360° background: ``hdri`` = {path, rotation
+    (degrees), strength (multiplier), light (it lights the scene)}. When it
+    lights the scene the white balance goes neutral: the photo has its own."""
+    if not hdri or not hdri.get("path"):
+        return block
+    light = bool(hdri.get("light", True))
+    if light:
+        block["white_balance"] = 6500
+    block.update(hdri=str(hdri["path"]), hdri_rotation=float(hdri.get("rotation", 0.0)),
+                 hdri_strength=float(hdri.get("strength", 1.0)), hdri_light=light)
+    return block
+
+
 def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, *,
-                     engine: str, quality: int, width: int, height: int, ground: bool = True):
-    """Export the model (IngeTrazo's own job writer) and add the look. Returns
-    (job path, studio script path)."""
+                     engine: str, quality: int, width: int, height: int, ground: bool = True,
+                     hdri: dict | None = None):
+    """Export the model (IngeTrazo's own job writer) and add the look (and
+    the 360° background, if any). Returns (job path, studio script path)."""
     from core import render_blender as rb
     block, ambience = presets.studio(preset_key)
+    block = apply_hdri(block, hdri)
     block = presets.apply_sliders(block, sliders)
     job = rb.write_job(scene, camera, work, engine=engine, quality=quality, width=width,
                        height=height, ground=ground, ambience=ambience,
@@ -218,6 +254,36 @@ class StudioPanel(QWidget):
             self.sliders[key] = s
             form.addRow(label, s)
         self.preset.currentIndexChanged.connect(self._preset_changed)
+        # The 360° background.
+        self.hdri = QComboBox()
+        self.hdri.setToolTip(HDRI_TIP)
+        self.hdri.addItem("None", "")
+        for path in bundled_hdris():
+            self.hdri.addItem(f"{path.stem.capitalize()} (Blender, 1K)", str(path))
+        for path in st.value(_SETTINGS + "hdri_recent", []) or []:
+            if path and Path(path).is_file() and self.hdri.findData(path) < 0:
+                self.hdri.addItem(Path(path).name, path)
+        self.hdri.addItem("Choose a file…", _CHOOSE)
+        saved = str(st.value(_SETTINGS + "hdri", "") or "")
+        if saved and self.hdri.findData(saved) < 0 and Path(saved).is_file():
+            self.hdri.insertItem(self.hdri.count() - 1, Path(saved).name, saved)
+        self.hdri.setCurrentIndex(max(0, self.hdri.findData(saved)))
+        self._hdri_prev = self.hdri.currentIndex()
+        self.hdri.currentIndexChanged.connect(self._hdri_changed)
+        form.addRow("360° background", self.hdri)
+        self.hdri_rotation = _slider(0.0, 360.0, float(st.value(_SETTINGS + "hdri_rotation", 0.0)), 360)
+        self.hdri_rotation.setToolTip("Turns the image about the vertical (degrees).")
+        form.addRow("Rotation", self.hdri_rotation)
+        self.hdri_strength = _slider(-3.0, 3.0, float(st.value(_SETTINGS + "hdri_strength", 0.0)), 120)
+        self.hdri_strength.setToolTip("The image's brightness in stops, against the lamps and the look's light.")
+        form.addRow("Brightness", self.hdri_strength)
+        self.hdri_light = QCheckBox("Lights the scene")
+        self.hdri_light.setToolTip("On: the image lights the model (its sun casts the shadows). "
+                                   "Off: the look lights it, the image is only seen behind it.")
+        self.hdri_light.setChecked(str(st.value(_SETTINGS + "hdri_light", "true")).lower() != "false")
+        self.hdri_light.toggled.connect(self._hdri_enable)
+        form.addRow("", self.hdri_light)
+        self._hdri_enable()
         scroll.setWidget(host)
         scroll.setMinimumHeight(host.sizeHint().height() + 8)
         outer.addWidget(scroll, 1)
@@ -247,6 +313,54 @@ class StudioPanel(QWidget):
             self.engine.setCurrentIndex(max(0, self.engine.findData(hint)))
             self.status.setText("Interiors need Cycles: light bounces through the window.")
 
+    def _hdri_changed(self, i):
+        if self.hdri.itemData(i) == _CHOOSE:
+            start = str(QSettings().value(_SETTINGS + "hdri_dir", "") or "")
+            path, _f = QFileDialog.getOpenFileName(self, "360° background", start, HDRI_FILTER)
+            if path:
+                self.set_hdri_path(path)
+            else:
+                self.hdri.blockSignals(True)
+                self.hdri.setCurrentIndex(self._hdri_prev)
+                self.hdri.blockSignals(False)
+        self._hdri_prev = self.hdri.currentIndex()
+        self._hdri_enable()
+
+    def set_hdri_path(self, path: str):
+        """Select ``path`` as the 360° background, adding it to the list."""
+        path = str(Path(path))
+        i = self.hdri.findData(path)
+        if i < 0:
+            i = self.hdri.count() - 1             # before "Choose a file…"
+            self.hdri.insertItem(i, Path(path).name, path)
+        self.hdri.blockSignals(True)
+        self.hdri.setCurrentIndex(i)
+        self.hdri.blockSignals(False)
+        self._hdri_prev = i
+        st = QSettings()
+        st.setValue(_SETTINGS + "hdri_dir", str(Path(path).parent))
+        if "datafiles" not in path:
+            recent = [p for p in (st.value(_SETTINGS + "hdri_recent", []) or []) if p != path]
+            st.setValue(_SETTINGS + "hdri_recent", ([path] + recent)[:6])
+        self._hdri_enable()
+
+    def _hdri_enable(self, *_a):
+        on = bool(self.hdri.currentData())
+        for w in (self.hdri_rotation, self.hdri_strength, self.hdri_light):
+            w.setEnabled(on)
+        lit = on and self.hdri_light.isChecked()
+        # The image's own sky and sun replace the look's: these do nothing then.
+        for key in ("clouds", "sun_scale"):
+            if key in self.sliders:
+                self.sliders[key].setEnabled(not lit)
+
+    def hdri_settings(self) -> dict | None:
+        path = self.hdri.currentData()
+        if not path or path == _CHOOSE:
+            return None
+        return {"path": path, "rotation": _value(self.hdri_rotation),
+                "strength": 2.0 ** _value(self.hdri_strength), "light": self.hdri_light.isChecked()}
+
     def slider_values(self) -> dict:
         return {k: _value(s) for k, s in self.sliders.items()}
 
@@ -256,6 +370,11 @@ class StudioPanel(QWidget):
         st.setValue(_SETTINGS + "engine", self.engine.currentData())
         st.setValue(_SETTINGS + "quality", self.quality.currentIndex())
         st.setValue(_SETTINGS + "width", self.width.value())
+        data = self.hdri.currentData()
+        st.setValue(_SETTINGS + "hdri", data if data != _CHOOSE else "")
+        st.setValue(_SETTINGS + "hdri_rotation", _value(self.hdri_rotation))
+        st.setValue(_SETTINGS + "hdri_strength", _value(self.hdri_strength))
+        st.setValue(_SETTINGS + "hdri_light", self.hdri_light.isChecked())
 
     # -- rendering ----------------------------------------------------------------
     def _aspect(self) -> float:
@@ -284,7 +403,7 @@ class StudioPanel(QWidget):
                 self.app.viewport.scene, self.app.viewport.camera, self.work,
                 self.preset.currentData(), self.slider_values(),
                 engine=self.engine.currentData(), quality=self.quality.currentIndex(),
-                width=width, height=height)
+                width=width, height=height, hdri=self.hdri_settings())
         except Exception as exc:  # noqa: BLE001 - say it, never crash the app
             _log.exception("render job failed")
             self.status.setText(f"Could not prepare the render: {exc}")

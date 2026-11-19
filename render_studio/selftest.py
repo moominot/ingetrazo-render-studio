@@ -68,14 +68,25 @@ def schedule(app, panel, config_path: str):
     def next_one():
         if not keys:
             return wrap_up()
-        key = keys[0]
-        panel.preset.setCurrentIndex(panel.preset.findData(key))
+        run = keys[0]
+        # A run is a preset key, or {"name", "preset", "hdri", "rotation", "light"}.
+        spec = run if isinstance(run, dict) else {"name": run, "preset": run}
+        key = spec["name"]
+        panel.preset.setCurrentIndex(panel.preset.findData(spec["preset"]))
+        if spec.get("hdri"):
+            panel.set_hdri_path(spec["hdri"])
+            s = panel.hdri_rotation
+            s.setValue(int(round(float(spec.get("rotation", 0.0)) / 360.0 * s.maximum())))
+            panel.hdri_light.setChecked(bool(spec.get("light", True)))
+        else:
+            panel.hdri.setCurrentIndex(0)
         log.setdefault("t", {})[key] = time.time()
-        note("render", key)
+        note("render", key, json.dumps(panel.hdri_settings()))
         panel.render()
 
     def done(path):
-        key = keys.pop(0)
+        run = keys.pop(0)
+        key = run["name"] if isinstance(run, dict) else run
         took = time.time() - log["t"][key]
         if path is None:
             note("FAILED", key, panel.status.text())
