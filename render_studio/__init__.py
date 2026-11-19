@@ -11,7 +11,7 @@ own scene script plus ``blender/studio_scene.py`` for the look.
 """
 from __future__ import annotations
 
-__version__ = "0.3.0"
+__version__ = "0.9.0"
 
 import logging
 import os

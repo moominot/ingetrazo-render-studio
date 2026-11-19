@@ -45,9 +45,55 @@ For each material you can:
 - adjust **Roughness**, **Metal**, **Relief** and **Glow**, each with an optional map.
 
 Relief comes from the material's picture when it has one (mortar joints,
-wood grain), otherwise from a fine grain. A glowing material lights what
+wood grain), otherwise from a fine grain. With the picture, the **Relief** slider is the height of the relief, up to 3 cm from black to
+white, at full strength. The picture is first turned into a smooth height map (reduced to at most
+1024 px, blurred, stretched to use the whole range, inverted and given contrast if asked): used
+raw, its grain became noise and a joint a pixel or two wide gave only a thin outline (0.5.x to
+0.7.0 did that; 0.7.1 only made it stronger). It shows where the picture changes clearly; for
+gentle changes (wood grain) raise the map's contrast or use a height map. A glowing material lights what
 is around it, and the exposure meter ignores it, so it doesn't darken the
 picture.
+
+### Transparency
+
+The **Transparency** slider (0 = opaque, up to 95 %) sets how much light the material lets
+through, **in the IngeTrazo model itself**: the opacity of the registry material, of every face
+that wears it (nested components included) and of every object painted whole, as one undo step.
+The 3D view shows it and so does the render, because the render reads the same value (a see-through
+water shows the floor below, tinted by the material's colour or picture). For **Glass** the slider
+is also how much the refracting glass transmits. Choosing the Water or Glass type, or their presets,
+gives a transparency to start with. (Before 0.9.0 the Water type only changed the finish, and a sea
+texture painted opaque stayed opaque.) With «Change picture…» these are the only controls that edit
+IngeTrazo's own material; every other setting only affects the render.
+
+### Water
+
+For the **Water** type, **Relief** is the height of the ripples and **Ripple size** their size,
+from fine to broad waves. They follow the «easiest water in Blender» recipe: a 3-D noise (detail
+16, roughness 0.442, scale 108.6 at the finest) turned into a bump (distance 0.1 at the maximum
+relief) on the glossy surface, laid out in world metres so a ripple has the same size everywhere.
+Fine ripples read as grain from far away; the default (0.8, about 7 waves a metre) reads as water
+and makes the sun glint. Relief 0 gives a flat, mirror-like water. Materials saved before 0.8.0
+keep IngeTrazo's own ripples until their settings are changed here.
+
+### Cube preview
+
+The material editor shows the material on a **one-metre cube**, drawn on the CPU, so it follows
+the sliders instantly and needs no Blender. It uses the picture and its tile size, the colour,
+the type (glass and water see-through, glowing ones with a halo) and the Roughness, Metal,
+Relief and Glow sliders. It is an approximation: the maps and Blender's lighting only show in
+the render.
+
+### Change the picture, in the model
+
+**Change picture…** in the material editor replaces the picture of the material **in the
+IngeTrazo model itself**, not only in the render: every face, component and object that wears
+the material changes, in the viewport too, as one undo step. Each face keeps where its texture
+was placed, and a colour tint is kept over the new image. **Keep proportions** makes the tile
+height follow the new image's shape. The new image is copied into IngeTrazo's texture cache and
+travels with the document. It needs a material that already has a picture. This is the one
+control of Render Studio that edits IngeTrazo's own material; every other setting only affects
+the render.
 
 ### Maps
 
@@ -110,6 +156,48 @@ the image as PNG or JPEG.
 
 ![Panel](docs/panel.png)
 
+## Live view
+
+**Live view** (a box in the panel) keeps Blender open with the scene and the look loaded, and a
+draft image follows the 3D view: move the camera and stop, and it updates. Changing the model,
+the look, a slider, the 360° background or a material setting loads the scene again. It speaks
+the protocol of IngeTrazo's own «Sync with the view» (Blender in `serve` mode), so the draft has
+the look, sky and materials of the final render, at draft quality. **Render** closes the live
+Blender first and leaves the live view off, so the draft does not cover the final image.
+
+## Settings in the document
+
+The panel's settings are saved in the IngeTrazo document (a moment after each change, one undo
+step per pause, and only when something changed): `scene.plugin_data["render_studio"]`, saved in
+the `.igz`. Tabs and reopened files show their own; undo and redo move them. The format is
+meant to be read by other tools, such as IngeTrazo's own Blender render (its Render tab does not
+apply them yet: that needs a change in IngeTrazo):
+
+```
+plugin_data["render_studio"] = {
+  "materials": { "<material name>": { …render settings of that material… } },
+  "settings": {
+    "version": 1,
+    "look": "clear",            # clear partly_cloudy golden_hour overcast white_model interior night
+    "engine": "eevee",          # or "cycles"
+    "quality": 1,               # 0 draft, 1 medium, 2 high
+    "width": 1920,              # pixels; the height follows the 3D view
+    "sliders": { "exposure_bias": 0.0, "clouds": 0.25, "sun_scale": 1.0,
+                 "warmth": 0.0, "saturation": 1.06, "vignette": 0.16 },
+    "hdri": null                # or {"path": "...", "rotation": 0..360, "brightness": stops, "light": true}
+  } }
+```
+
+`render_studio/settings_store.py` reads and cleans it (unknown looks fall back, numbers are
+clamped) and has no Qt dependency.
+
+## Help
+
+A **?** button in the panel, in the image window and in the material editor opens a help
+window (with search) at the right section: how Render Studio works, every control, the looks,
+the 360° background, the image adjustments, the material editor with its maps and starting
+points, and a few tips.
+
 ## Install
 
 Copy the `render_studio` folder into IngeTrazo's plugins folder
@@ -119,6 +207,16 @@ Render tab).
 
 ## Tests
 
+- `tests/test_opacity_offline.py` checks the transparency in the model (reach, undo, the editor); `tests/test_opacity_e2e.py` goes IngeTrazo → GLB → real Blender and checks the floor shows through (needs `BPY_PYTHON`).
+- `tests/test_water_editor_offline.py` checks the water controls of the editor.
+- `tests/test_relief_bpy.py` renders a brick wall and a pool with a REAL Blender (the `bpy` module, `pip install bpy`) with and without relief and checks the height map and the difference; skipped when `bpy` is missing.
+- `tests/test_cube_preview_offline.py` checks the cube preview (picture, tile, colour, polish, metal, relief, glass, glow) and its wiring in the editor.
+- `tests/test_live_offline.py` runs the live view against a stand-in for Blender (`tests/fake_blender.py`, same protocol): first draft, camera moves, model/look changes, a final render, switching off.
+- `tests/test_doc_settings_offline.py` checks the settings kept in the document.
+- `tests/test_materials_list_offline.py` checks the material list (faces, groups painted whole, nested, registry).
+- `tests/test_texture_swap_offline.py` changes a material's picture on loose faces, nested
+  components and painted objects, and checks placement, proportions, tint, undo and save/reopen.
+- `tests/test_help_offline.py` checks the help against the code.
 - `tests/test_offline.py` writes a job with the panel's own code and
   renders it with Blender. It then adjusts and saves the image in the image
   window, without IngeTrazo running.
