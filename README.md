@@ -19,7 +19,7 @@ It drives the same Blender that IngeTrazo's own Render tab uses (Blender
 | Overcast | Soft sun through full cloud cover, low contrast |
 | White model | Every material white (study model), neutral finish |
 | Interior | Exposed for the room, window allowed to burn out; switches to **Cycles** (EEVEE can't fill a window-lit room) |
-| Night | Moonlight kept dark, the document's lamps glow (light bloom) |
+| Night | Moonlight kept dark, stars and moonlit clouds; the document's lamps glow (light bloom) |
 
 Every look shares:
 - **Automatic exposure.** A quarter-size pre-render is metered, with a
@@ -28,6 +28,8 @@ Every look shares:
 - **Distance haze.** The ground fades into the horizon sky.
 - **Albedo capped at 80 %.** Paper-white surfaces don't glow under a path tracer.
 - **Finish.** A light saturation and vignette pass in Blender's compositor.
+
+![Night with the document's lamps](docs/night.png)
 
 ![Interior and live adjustments](docs/interior.png)
 
