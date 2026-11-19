@@ -72,46 +72,76 @@ def export_name(name: str) -> str:
     return base
 
 
+def _paint_name(group):
+    """The material a group or component is painted WHOLE with (its own
+    ``material`` paint, not its faces'), or None."""
+    paint = getattr(group, "material", None)
+    return paint.get("mat") if isinstance(paint, dict) and paint.get("mat") else None
+
+
 def used_materials(scene) -> dict:
-    """name → number of faces painted with it, over the whole model (loose
-    geometry, groups and components, nested)."""
+    """name → number of places painted with it: faces over the whole model
+    (loose geometry, groups and components, nested) and groups or components
+    painted whole. Every material of the document's registry is listed too,
+    with 0 when nothing wears it yet, so the list is never empty while the
+    model has named materials."""
     counts: dict = {}
     seen: set = set()
 
+    def add(name):
+        if name:
+            counts[name] = counts.get(name, 0) + 1
+
     def mesh_faces(mesh):
         for f in getattr(mesh, "faces", ()) or ():
-            name = (getattr(f, "attrs", None) or {}).get("mat")
-            if name:
-                counts[name] = counts.get(name, 0) + 1
+            add((getattr(f, "attrs", None) or {}).get("mat"))
 
     def walk(groups):
         for g in groups or ():
             if id(g) in seen:
                 continue
             seen.add(id(g))
-            name = (getattr(g, "attrs", None) or {}).get("mat")
-            if name:
-                counts[name] = counts.get(name, 0) + 1
+            add(_paint_name(g))
+            add((getattr(g, "attrs", None) or {}).get("mat"))
             mesh_faces(getattr(g, "mesh", None))
             walk(getattr(g, "children", None))
 
     mesh_faces(getattr(scene, "mesh", None))
     walk(getattr(scene, "groups", None))
+    for name in (getattr(scene, "materials", None) or {}):
+        counts.setdefault(name, 0)
     return counts
 
 
 def selection_material(scene):
-    """The material of what is selected (a face, or the first painted face
-    of a selected group), or None."""
+    """The material of what is selected: a face's, a group or component's own
+    paint, or the first painted face inside it (nested ones included); None
+    when nothing selected wears a named material."""
+    def first_in(g, seen):
+        if g is None or id(g) in seen:
+            return None
+        seen.add(id(g))
+        name = _paint_name(g)
+        if name:
+            return name
+        for f in getattr(getattr(g, "mesh", None), "faces", ()) or ():
+            name = (getattr(f, "attrs", None) or {}).get("mat")
+            if name:
+                return name
+        for c in getattr(g, "children", None) or ():
+            name = first_in(c, seen)
+            if name:
+                return name
+        return None
+
     for ent in list(getattr(scene, "selection", ()) or ()):
         name = (getattr(ent, "attrs", None) or {}).get("mat")
         if name:
             return name
-        mesh = getattr(ent, "mesh", None)
-        for f in getattr(mesh, "faces", ()) or ():
-            name = (getattr(f, "attrs", None) or {}).get("mat")
-            if name:
-                return name
+        owner = getattr(ent, "owner", None)
+        name = first_in(ent, set()) or (first_in(owner, set()) if owner is not None else None)
+        if name:
+            return name
     return None
 
 

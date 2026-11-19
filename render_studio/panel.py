@@ -79,9 +79,12 @@ def apply_hdri(block: dict, hdri: dict | None) -> dict:
 
 def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, *,
                      engine: str, quality: int, width: int, height: int, ground: bool = True,
-                     hdri: dict | None = None, materials: dict | None = None):
+                     hdri: dict | None = None, materials: dict | None = None,
+                     serve: bool = False):
     """Export the model (IngeTrazo's own job writer) and add the look (and
-    the 360° background, if any). Returns (job path, studio script path)."""
+    the 360° background, if any). ``serve``: Blender builds the scene and then
+    waits for cameras on its input (the live view). Returns (job path, studio
+    script path)."""
     from core import render_blender as rb
     block, ambience = presets.studio(preset_key)
     block = apply_hdri(block, hdri)
@@ -90,7 +93,7 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
         block["materials"] = mats.job_block(materials)
     job = rb.write_job(scene, camera, work, engine=engine, quality=quality, width=width,
                        height=height, ground=ground, ambience=ambience,
-                       lights=document_lights(scene))
+                       lights=document_lights(scene), serve=serve)
     data = json.loads(job.read_text(encoding="utf-8"))
     data["studio"] = block
     job.write_text(json.dumps(data, indent=2), encoding="utf-8")

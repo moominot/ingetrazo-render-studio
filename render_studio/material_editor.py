@@ -330,7 +330,8 @@ class MaterialEditor(QDialog):
             item = QListWidgetItem(_swatch(mat) if mat is not None else QIcon(),
                                    ("● " if name in specs else "") + name)
             item.setData(Qt.UserRole, name)
-            item.setToolTip(f"{used[name]} faces")
+            item.setToolTip(f"{used[name]} painted with it" if used[name]
+                            else "In the model's materials, not worn by anything yet")
             self.list.addItem(item)
         self._loading = False
         if current:
@@ -375,7 +376,8 @@ class MaterialEditor(QDialog):
     def pick_selection(self):
         name = M.selection_material(self.app.scene)
         if not name or not self.select(name):
-            self.title.setText("The selection has no named material.")
+            self.title.setText("The selection has no named material. Paint it with a material "
+                               "(Paint tool) so it can be edited here.")
 
     # -- the settings ------------------------------------------------------------------
     def _set_slider(self, key, value):
