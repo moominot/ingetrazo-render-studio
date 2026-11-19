@@ -157,7 +157,9 @@ picture).</td></tr>
 <tr><td valign='top'><b>Roughness</b></td><td>0 is a mirror-like polish, 1 fully matte.</td></tr>
 <tr><td valign='top'><b>Metal</b></td><td>1 for metals: the reflection takes the material's colour.</td></tr>
 <tr><td valign='top'><b>Relief</b></td><td>How strongly the surface looks raised. Automatic: from the light and dark of the
-material's picture when it has one (mortar joints, wood grain), otherwise a fine grain.</td></tr>
+material's picture when it has one (mortar joints, wood grain), otherwise a fine grain. With the picture, the slider is the
+<b>height</b> of the relief (0 to 2.5 cm from black to white). It shows where the picture changes sharply (joints, edges), and
+barely where it changes gently: for that, raise the map's <b>Contrast</b>, or use a <b>height map file</b>.</td></tr>
 <tr><td valign='top'><b>Glow</b></td><td>0 to 50: how brightly it shines (type Glowing): screens, light panels.</td></tr>
 <tr><td valign='top'><b>Map image size</b></td><td>How big one image of a map file is on the model, in metres. Used when
 the material has no picture of its own; with a picture, the maps follow its size and placement.</td></tr>

@@ -61,6 +61,10 @@ ok(bright_pixels(img({"color": (0.6, 0.1, 0.1), "roughness": 0.05})) > bright_pi
 m0, m1 = mean(img({"color": (0.8, 0.8, 0.8), "roughness": 0.4})), mean(img({"color": (0.8, 0.8, 0.8), "roughness": 0.4, "metallic": 1.0}))
 ok(sum(m1) < sum(m0) - 30, "metal darkens the body")
 ok(grain(img({"color": (0.5, 0.5, 0.5), "roughness": 0.9, "bump": 1.0})) > grain(img({"color": (0.5, 0.5, 0.5), "roughness": 0.9, "bump": 0.0})) + 3, "relief adds grain")
+# relief taken from the PICTURE: a picture with joints gets lit/shadowed edges that a flat colour does not
+ok(grain(img({"texture": str(chk), "tile": (0.5, 0.5), "roughness": 0.9, "bump": 1.0})) > grain(img({"texture": str(chk), "tile": (0.5, 0.5), "roughness": 0.9, "bump": 0.0})) + 2,
+   "relief from the picture shows its edges")
+ok(img({"texture": str(chk), "tile": (0.5, 0.5), "roughness": 0.9, "bump": 0.3}) != img({"texture": str(chk), "tile": (0.5, 0.5), "roughness": 0.9, "bump": 1.0}), "and grows with the slider")
 solid = img({"color": (0.2, 0.4, 0.6), "roughness": 0.9}); glass = img({"kind": "glass", "color": (0.2, 0.4, 0.6), "roughness": 0.9})
 ok(mean(glass)[2] > mean(solid)[2] + 20 and variance(glass) > variance(solid) + 5, "glass is see-through: lighter, with the checkerboard showing")
 g0, g1 = img({"kind": "glow", "color": (1.0, 0.7, 0.2), "glow": 0.0}), img({"kind": "glow", "color": (1.0, 0.7, 0.2), "glow": 20.0})

@@ -45,7 +45,10 @@ For each material you can:
 - adjust **Roughness**, **Metal**, **Relief** and **Glow**, each with an optional map.
 
 Relief comes from the material's picture when it has one (mortar joints,
-wood grain), otherwise from a fine grain. A glowing material lights what
+wood grain), otherwise from a fine grain. With the picture, the **Relief** slider is the height
+of the relief, up to 2.5 cm from black to white, at full strength (before 0.5.2 a fixed 4 mm was
+scaled by a strength below 1, too faint to see in a render). It shows where the picture changes
+sharply; for gentle changes raise the map's contrast or use a height map. A glowing material lights what
 is around it, and the exposure meter ignores it, so it doesn't darken the
 picture.
 

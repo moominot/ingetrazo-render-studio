@@ -147,11 +147,22 @@ def render(params: dict, size: int = 180) -> QPixmap:
         p.drawPolygon(poly)
         # a fine relief: grain, stronger with the slider
         if bump > 0.0:
-            grain = QBrush(_noise())
-            grain.setTransform(QTransform.fromScale(1.4, 1.4))
-            p.setOpacity(0.28 * bump)
-            p.setBrush(grain)
-            p.drawPolygon(poly)
+            if texture is not None:
+                # relief from the picture itself: its light and dark, lit from the
+                # upper left (what the render reads), over the same tiles
+                relief = QBrush(_emboss(texture, params.get("texture")))
+                relief.setTransform(_tile_to_face(tf, sw, sh, texture))
+                p.setCompositionMode(QPainter.CompositionMode_HardLight)
+                p.setOpacity(min(1.0, 1.1 * bump))
+                p.setBrush(relief)
+                p.drawPolygon(poly)
+                p.setCompositionMode(QPainter.CompositionMode_SourceOver)
+            else:
+                grain = QBrush(_noise())
+                grain.setTransform(QTransform.fromScale(1.4, 1.4))
+                p.setOpacity(0.28 * bump)
+                p.setBrush(grain)
+                p.drawPolygon(poly)
             p.setOpacity(1.0)
         # metals: dark body, mirror-like sheen of a sky over a ground
         if metal > 0.0 and not clear:
@@ -210,6 +221,36 @@ def _union_region(faces):
     for poly in faces.values():
         reg = reg.united(QRegion(QPolygonF(list(poly)).toPolygon()))
     return reg
+
+
+_emboss_cache: dict = {}
+
+
+def _emboss(img: QImage, key) -> QImage:
+    """The picture's light and dark as a relief lit from the upper left: grey
+    (neutral) where it is flat, lighter on slopes that face the light, darker on
+    the others."""
+    try:
+        stamp = Path(str(key)).stat().st_mtime_ns
+    except OSError:
+        stamp = 0
+    ck = (str(key), stamp, img.width(), img.height())
+    if ck not in _emboss_cache:
+        small = img if max(img.width(), img.height()) <= 256 else img.scaled(
+            256, 256, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        w, h = small.width(), small.height()
+        lum = [[small.pixelColor(x, y).lightnessF() for x in range(w)] for y in range(h)]
+        out = QImage(w, h, QImage.Format_ARGB32)
+        for y in range(h):
+            for x in range(w):
+                d = lum[(y + 1) % h][(x + 1) % w] - lum[(y - 1) % h][(x - 1) % w]
+                v = max(0, min(255, int(128 - 255 * 0.9 * d)))
+                out.setPixelColor(x, y, QColor(v, v, v, 255))
+        if len(_emboss_cache) > 16:
+            _emboss_cache.clear()
+        _emboss_cache[ck] = out.scaled(img.width(), img.height(), Qt.IgnoreAspectRatio,
+                                       Qt.SmoothTransformation) if out.size() != img.size() else out
+    return _emboss_cache[ck]
 
 
 def _load_texture(path):

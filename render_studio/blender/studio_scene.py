@@ -636,13 +636,22 @@ def _add_bump(mat, bsdf, amount, m=None):
     elif src == "auto" and pic is not None:
         height = _map_value(mat, bsdf, {"source": "picture"})
     bump = nodes.new("ShaderNodeBump")
-    bump.inputs["Strength"].default_value = min(1.0, amount)
+    amount = max(0.0, float(amount))
     if height is not None:
         links.new(height, bump.inputs["Height"])
-        # A height map means it: 1 cm from black to white. A photo's light
-        # and dark only hints at relief: less.
-        bump.inputs["Distance"].default_value = 0.01 if src == "file" else 0.004
+        if src == "file":
+            # A height map means it: 1 cm from black to white.
+            bump.inputs["Strength"].default_value = min(1.0, amount)
+            bump.inputs["Distance"].default_value = 0.01
+        else:
+            # The picture's own light and dark. The slider is the HEIGHT of
+            # the relief (up to 2.5 cm from black to white), at full strength:
+            # a fixed 4 mm scaled by a strength below 1 was too faint to see in
+            # a render, whatever the slider said.
+            bump.inputs["Strength"].default_value = 1.0
+            bump.inputs["Distance"].default_value = 0.025 * min(1.0, amount)
     else:
+        bump.inputs["Strength"].default_value = min(1.0, amount)
         coord = nodes.new("ShaderNodeTexCoord")
         noise = nodes.new("ShaderNodeTexNoise")
         noise.inputs["Scale"].default_value = 28.0      # grains of a few cm
