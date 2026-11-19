@@ -77,7 +77,8 @@ def render(params: dict, size: int = 180) -> QPixmap:
     glow = max(0.0, float(params.get("glow", 0.0))) if kind == "glow" else 0.0
     color = params.get("color") or (0.8, 0.8, 0.8)
     base = QColor.fromRgbF(*[max(0.0, min(1.0, float(c))) for c in tuple(color)[:3]])
-    clear = kind in ("glass", "water")
+    alpha = max(0.05, min(1.0, float(params.get("opacity", 1.0))))
+    clear = kind in ("glass", "water") or alpha < 0.97
 
     px = QPixmap(size, size)
     px.fill(Qt.transparent)
@@ -122,7 +123,7 @@ def render(params: dict, size: int = 180) -> QPixmap:
     sw, sh = params.get("tile") or (1.0, 1.0)
     sw, sh = max(0.01, float(sw)), max(0.01, float(sh))
 
-    face_alpha = 0.35 if clear else 1.0
+    face_alpha = (alpha if alpha < 0.97 else 0.35) if clear else 1.0
     for name in ("left", "right", "top"):
         poly = QPolygonF(list(faces[name]))
         tf = maps[name]

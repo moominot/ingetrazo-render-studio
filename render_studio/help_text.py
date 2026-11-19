@@ -145,7 +145,7 @@ the <b>Roughness</b>, <b>Metal</b>, <b>Relief</b> and <b>Glow</b> sliders, insta
 look: the <b>maps</b> and Blender's lighting show only in the render.</td></tr>
 <tr><td valign='top'><b>Change picture…</b></td><td>Replaces the material's picture <b>in the model itself</b>, not only in
 the render: the viewport changes too, on every face, component and object that wears the material, as <b>one undo
-step</b> (this is the one control here that edits IngeTrazo's own material). Each face keeps where its texture was
+step</b> (together with <b>Transparency</b>, the controls here that edit IngeTrazo's own material). Each face keeps where its texture was
 placed, and a colour tint is kept over the new image. <b>Keep proportions</b> makes the tile height follow the new
 image's shape (the tile width stays); off, the tile size stays and a different shape is stretched. The material needs
 a picture already; paint it with a texture first if it has only a colour. The image is copied into IngeTrazo's texture
@@ -154,6 +154,11 @@ cache and travels with the document when you save.</td></tr>
 <tr><td valign='top'><b>Type</b></td><td><b>Generic</b> (opaque), <b>Glass</b> (transparent), <b>Water</b> (transparent, with ripples), or
 <b>Glowing</b> (it shines by itself and lights what is around it; the exposure meter ignores it so it does not darken the
 picture).</td></tr>
+<tr><td valign='top'><b>Transparency</b></td><td>How much light the material lets through: 0 is opaque, up to 95 %. It changes IngeTrazo's own material
+<b>in the model</b> (every face and object that wears it, one undo step, so the 3D view shows it too) and so the render sees it: water and
+other materials become see-through (the floor shows below), tinted by the material's colour or picture. For <b>Glass</b> it is how much the
+refracting glass transmits. A material painted opaque stays opaque however it is typed: choosing Water or Glass gives it a transparency to
+start with, and so do the Water and Glass presets.</td></tr>
 <tr><td valign='top'><b>Roughness</b></td><td>0 is a mirror-like polish, 1 fully matte.</td></tr>
 <tr><td valign='top'><b>Metal</b></td><td>1 for metals: the reflection takes the material's colour.</td></tr>
 <tr><td valign='top'><b>Relief</b></td><td>How strongly the surface looks raised. Automatic: from the light and dark of the

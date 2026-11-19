@@ -843,6 +843,10 @@ def apply_material_specs(specs):
                     mat.node_tree.links.new(_scaled(mat, val, spec[key]), bsdf.inputs[names[0]])
         if kind in ("generic", "glow"):
             core["_set"](bsdf, ("Transmission Weight", "Transmission"), 0.0)
+        elif kind == "glass" and "transparency" in spec:
+            # Glass refracts instead of blending: the slider is how much it lets through.
+            core["_set"](bsdf, ("Transmission Weight", "Transmission"),
+                         max(0.0, min(1.0, float(spec["transparency"]))))
         if spec.get("coat"):
             core["_set"](bsdf, ("Coat Weight", "Clearcoat"), float(spec["coat"]))
             core["_set"](bsdf, ("Coat Roughness", "Clearcoat Roughness"), 0.05)

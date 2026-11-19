@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QF
                                QPushButton, QScrollArea, QSlider, QToolButton, QVBoxLayout, QWidget)
 
 from . import cube_preview
+from . import opacity as opacity_mod
 from . import materials as M
 
 _FIELDS = (  # key, label, lo, hi, tip
@@ -188,8 +189,8 @@ class MaterialEditor(QDialog):
     """``app`` is the extension's handle: its document data holds the specs."""
 
     HINT = ("Changes apply to the next render. They are saved with the document. "
-            "With a map, a setting's slider scales it. «Change picture…» is the one "
-            "exception: it changes the material in the model itself.")
+            "With a map, a setting's slider scales it. «Change picture…» and «Transparency» "
+            "are the exceptions: they change the material in the model itself.")
 
     def __init__(self, app, lang="en", parent=None):
         super().__init__(parent)
@@ -265,6 +266,26 @@ class MaterialEditor(QDialog):
         self.kind.currentIndexChanged.connect(self._kind_changed)
         form.addRow("Type", self.kind)
         self.sliders, self.values, self.maps = {}, {}, {}
+        self.transparency = QSlider(Qt.Horizontal)
+        self.transparency.setRange(0, 100)
+        self.transparency.setProperty("lo", 0.0)
+        self.transparency.setProperty("hi", 1.0 - opacity_mod.MIN_OPACITY)
+        self.transparency.setToolTip("How much light the material lets through, in the MODEL and in the render: "
+                                     "0 opaque, higher see-through (water, glass, a pool surface). It changes "
+                                     "every face and object that wears the material, one undo step.")
+        self.transparency_value = QLabel("")
+        self.transparency_value.setMinimumWidth(34)
+        self._opacity_timer = QTimer(self)
+        self._opacity_timer.setSingleShot(True)
+        self._opacity_timer.setInterval(350)
+        self._opacity_timer.timeout.connect(self._apply_transparency)
+        self.transparency.valueChanged.connect(self._transparency_moved)
+        trow = QHBoxLayout()
+        trow.addWidget(self.transparency, 1)
+        trow.addWidget(self.transparency_value)
+        form.addRow("Transparency", trow)
+        self.sliders["transparency"] = self.transparency
+        self.values["transparency"] = self.transparency_value
         for key, label, lo, hi, tip in _FIELDS:
             s = QSlider(Qt.Horizontal)
             s.setRange(0, 100)
@@ -421,7 +442,8 @@ class MaterialEditor(QDialog):
 
     def _label(self, key):
         v = self._get(key)
-        self.values[key].setText(f"{v:.0f}" if key == "glow" else f"{v:.2f}")
+        self.values[key].setText(f"{v * 100:.0f}%" if key == "transparency"
+                                 else f"{v:.0f}" if key == "glow" else f"{v:.2f}")
 
     def _show(self, item, _prev=None):
         if self._loading:
@@ -447,18 +469,44 @@ class MaterialEditor(QDialog):
             self._set_slider(key, spec.get(key, M.DEFAULT.get(key, 0.0)))
             self.maps[key].load(maps.get(key), picture)
         self._set_slider("ripple_size", spec.get("ripple_size", M.DEFAULT_RIPPLE_SIZE))
+        self._set_slider("transparency", 1.0 - opacity_mod.material_opacity(self.app.scene, name))
         size = next((m.get("size") for m in maps.values() if m and m.get("size")), 1.0)
         self.map_size.setValue(float(size))
         self._loading = False
         self._enable_glow()
         self._update_cube()
 
+    def _transparency_moved(self, *_a):
+        self._label("transparency")
+        if self._loading:
+            return
+        self._changed()                       # glass also uses it in the render settings
+        self._opacity_timer.start()
+
+    def _apply_transparency(self):
+        """The model: the opacity of the material on every face that wears it."""
+        name = self.current_name()
+        if name is None:
+            return
+        done, message = opacity_mod.set_opacity(self.app, name, 1.0 - self._get("transparency"))
+        if message:
+            self.hint.setText(message)
+        if done:
+            self._update_cube()
+
     def _kind_changed(self, *_a):
-        """Choosing Water gives it waves to start with (Relief 0 would be a flat mirror)."""
-        if not self._loading and self.kind.currentData() == "water" and self._get("bump") <= 0.0:
+        """Choosing Water gives it waves to start with (Relief 0 would be a flat mirror),
+        and Water or Glass a transparency to start with (opaque would hide the point)."""
+        kind = self.kind.currentData()
+        if not self._loading and kind == "water" and self._get("bump") <= 0.0:
             self._loading = True
             self._set_slider("bump", 0.5)
             self._loading = False
+        if not self._loading and kind in M.DEFAULT_TRANSPARENCY and self._get("transparency") <= 0.0:
+            self._loading = True
+            self._set_slider("transparency", M.DEFAULT_TRANSPARENCY[kind])
+            self._loading = False
+            self._opacity_timer.start()
         self._changed()
 
     def cube_params(self, name=None) -> dict:
@@ -474,6 +522,7 @@ class MaterialEditor(QDialog):
             "kind": self.kind.currentData(),
             "roughness": self._get("roughness"), "metallic": self._get("metallic"),
             "bump": self._get("bump"), "glow": self._get("glow"),
+            "opacity": 1.0 - self._get("transparency"),
         }
 
     def _update_cube(self):
@@ -502,7 +551,9 @@ class MaterialEditor(QDialog):
         for k, *_r in _FIELDS:
             self._set_slider(k, spec.get(k, M.DEFAULT.get(k, 0.0)))
         self._set_slider("ripple_size", spec.get("ripple_size", M.DEFAULT_RIPPLE_SIZE))
+        self._set_slider("transparency", spec.get("transparency", 0.0))
         self._loading = False
+        self._opacity_timer.start()            # the model follows the preset's transparency
         self._changed(from_preset=key)
 
     def _changed(self, *_a, from_preset=None):
@@ -518,6 +569,8 @@ class MaterialEditor(QDialog):
             spec[key] = self._get(key)
         if spec["type"] == "water":
             spec["ripple_size"] = self._get("ripple_size")
+        if spec["type"] == "glass":
+            spec["transparency"] = self._get("transparency")
         maps = {}
         for key, row in self.maps.items():
             m = row.spec()
@@ -546,6 +599,9 @@ class MaterialEditor(QDialog):
         self._commit_timer.start()             # one undo step per pause, not per pixel
 
     def _flush(self):
+        if self._opacity_timer.isActive():
+            self._opacity_timer.stop()
+            self._apply_transparency()
         if self._pending is not None:
             self._commit_timer.stop()
             self._commit()

@@ -54,6 +54,18 @@ gentle changes (wood grain) raise the map's contrast or use a height map. A glow
 is around it, and the exposure meter ignores it, so it doesn't darken the
 picture.
 
+### Transparency
+
+The **Transparency** slider (0 = opaque, up to 95 %) sets how much light the material lets
+through, **in the IngeTrazo model itself**: the opacity of the registry material, of every face
+that wears it (nested components included) and of every object painted whole, as one undo step.
+The 3D view shows it and so does the render, because the render reads the same value (a see-through
+water shows the floor below, tinted by the material's colour or picture). For **Glass** the slider
+is also how much the refracting glass transmits. Choosing the Water or Glass type, or their presets,
+gives a transparency to start with. (Before 0.9.0 the Water type only changed the finish, and a sea
+texture painted opaque stayed opaque.) With «Change picture…» these are the only controls that edit
+IngeTrazo's own material; every other setting only affects the render.
+
 ### Water
 
 For the **Water** type, **Relief** is the height of the ripples and **Ripple size** their size,
@@ -195,6 +207,7 @@ Render tab).
 
 ## Tests
 
+- `tests/test_opacity_offline.py` checks the transparency in the model (reach, undo, the editor); `tests/test_opacity_e2e.py` goes IngeTrazo → GLB → real Blender and checks the floor shows through (needs `BPY_PYTHON`).
 - `tests/test_water_editor_offline.py` checks the water controls of the editor.
 - `tests/test_relief_bpy.py` renders a brick wall and a pool with a REAL Blender (the `bpy` module, `pip install bpy`) with and without relief and checks the height map and the difference; skipped when `bpy` is missing.
 - `tests/test_cube_preview_offline.py` checks the cube preview (picture, tile, colour, polish, metal, relief, glass, glow) and its wiring in the editor.

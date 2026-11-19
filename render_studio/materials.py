@@ -18,6 +18,8 @@ from __future__ import annotations
 
 #: Default size of the ripples of water (0 fine … 1 coarse): about 7 waves a metre.
 DEFAULT_RIPPLE_SIZE = 0.8
+#: What choosing the type gives to start with (0 = opaque): see-through, not a solid slab.
+DEFAULT_TRANSPARENCY = {"glass": 0.85, "water": 0.7}
 
 TYPES = ("generic", "glass", "water", "glow")
 TYPE_LABELS = {"generic": "Generic", "glass": "Glass", "water": "Water", "glow": "Glowing"}
@@ -47,11 +49,11 @@ PRESETS = {
     "chrome": ({"en": "Chrome", "ca": "Crom", "es": "Cromo"},
                {"type": "generic", "roughness": 0.04, "metallic": 1.0, "bump": 0.0}),
     "glass": ({"en": "Clear glass", "ca": "Vidre transparent", "es": "Vidrio transparente"},
-              {"type": "glass", "roughness": 0.0, "metallic": 0.0, "bump": 0.0}),
+              {"type": "glass", "roughness": 0.0, "metallic": 0.0, "bump": 0.0, "transparency": 0.85}),
     "glass_frosted": ({"en": "Frosted glass", "ca": "Vidre glaçat", "es": "Vidrio esmerilado"},
-                      {"type": "glass", "roughness": 0.35, "metallic": 0.0, "bump": 0.0}),
+                      {"type": "glass", "roughness": 0.35, "metallic": 0.0, "bump": 0.0, "transparency": 0.6}),
     "water": ({"en": "Water", "ca": "Aigua", "es": "Agua"},
-              {"type": "water", "roughness": 0.02, "metallic": 0.0, "bump": 0.5, "ripple_size": 0.8}),
+              {"type": "water", "roughness": 0.02, "metallic": 0.0, "bump": 0.5, "ripple_size": 0.8, "transparency": 0.7}),
     "light": ({"en": "Light panel (glows)", "ca": "Panell de llum (brilla)", "es": "Panel de luz (brilla)"},
               {"type": "glow", "roughness": 0.5, "metallic": 0.0, "bump": 0.0, "glow": 12.0}),
 }
