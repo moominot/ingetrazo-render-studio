@@ -268,6 +268,66 @@ def set_hdri(scene, path, rotation_deg=0.0, strength=1.0, light=True):
     return image
 
 
+_SKY_ATTRS = ("sky_type", "sun_elevation", "sun_rotation", "sun_direction", "altitude",
+              "air_density", "aerosol_density", "ozone_density", "sun_size",
+              "sun_intensity", "turbidity", "ground_albedo")
+
+
+def _sky_copy(nodes, wsky):
+    """A second Sky Texture with the world's settings and no sun disc."""
+    sky = nodes.new("ShaderNodeTexSky")
+    for attr in _SKY_ATTRS:
+        if hasattr(wsky, attr):
+            try:
+                setattr(sky, attr, getattr(wsky, attr))
+            except (TypeError, ValueError, AttributeError):
+                pass
+    if hasattr(sky, "sun_disc"):
+        sky.sun_disc = False
+    return sky
+
+
+def world_ground(scene, albedo, level=2.0):
+    """Below the horizon the physical sky is black. Cycles never sees it (the
+    ground plane is in the way), but EEVEE does wherever its screen-space
+    rays miss: a mirror reflecting the ground behind the camera came out
+    black, and the light bounced up from the ground was missing. So the
+    world gets a ground: the horizon sky's colour times the ground's
+    albedo (and ``level``, for the sun on it)."""
+    if scene.world is None:
+        return
+    nodes, links = _world_nodes(scene)
+    wsky = next((n for n in nodes if n.type == "TEX_SKY"), None)
+    bg = next((n for n in nodes if n.type == "BACKGROUND" and n.name != "hdri_background"), None)
+    if wsky is None or bg is None:
+        return
+    src = next(iter(bg.inputs["Color"].links), None)
+    if src is None:
+        return
+    coord = nodes.new("ShaderNodeTexCoord")
+    sep = nodes.new("ShaderNodeSeparateXYZ")
+    links.new(coord.outputs["Generated"], sep.inputs["Vector"])
+    comb = nodes.new("ShaderNodeCombineXYZ")
+    links.new(sep.outputs["X"], comb.inputs["X"]); links.new(sep.outputs["Y"], comb.inputs["Y"])
+    comb.inputs["Z"].default_value = 0.02
+    sky = _sky_copy(nodes, wsky)
+    links.new(comb.outputs["Vector"], sky.inputs["Vector"])
+    tint = nodes.new("ShaderNodeMix"); tint.data_type = "RGBA"; tint.blend_type = "MULTIPLY"
+    tint.inputs["Factor"].default_value = 1.0
+    links.new(sky.outputs["Color"], tint.inputs["A"])
+    tint.inputs["B"].default_value = (*(min(1.0, c * level) for c in albedo[:3]), 1.0)
+    below = nodes.new("ShaderNodeMapRange")          # 1 below the horizon
+    below.inputs["From Min"].default_value = 0.0
+    below.inputs["From Max"].default_value = -0.02
+    links.new(sep.outputs["Z"], below.inputs["Value"])
+    mix = nodes.new("ShaderNodeMix"); mix.data_type = "RGBA"
+    links.new(below.outputs["Result"], mix.inputs["Factor"])
+    links.new(src.from_socket, mix.inputs["A"])
+    links.new(tint.outputs["Result"], mix.inputs["B"])
+    links.new(mix.outputs["Result"], bg.inputs["Color"])
+    say("world ground", [round(c, 2) for c in albedo[:3]], "x", level)
+
+
 def kelvin_rgb(kelvin):
     """Blackbody colour of ``kelvin`` (Tanner Helland's fit), 0..1, scaled
     so its brightest channel is 1."""
@@ -428,6 +488,121 @@ def haze_ground(scene, near=120.0, far=1200.0):
     say("haze", f"ground melts into the horizon from {near:.0f} to {far:.0f} m")
 
 
+# ---- the material editor's settings ------------------------------------------------------
+
+def _spec_for(mat, specs):
+    """The editor's spec for a Blender material: matched on the export name,
+    with Blender's «.001» and the export's «_2» collision suffixes allowed."""
+    import re
+    name = mat.name
+    if name in specs:
+        return specs[name]
+    base = re.sub(r"\.\d{3}$", "", name)
+    if base in specs:
+        return specs[base]
+    base2 = re.sub(r"_\d+$", "", base)
+    return specs.get(base2)
+
+
+def mark_material_types(specs):
+    """Before IngeTrazo's finishes run: glass and water become those
+    finishes (its full Blender recipes); generic and glow drop a guessed
+    glass/water finish."""
+    for mat in bpy.data.materials:
+        spec = _spec_for(mat, specs)
+        if not spec:
+            continue
+        kind = spec.get("type", "generic")
+        if kind in ("glass", "water"):
+            mat["ingetrazo_finish"] = kind
+        elif mat.get("ingetrazo_finish") in ("glass", "water"):
+            mat["ingetrazo_finish"] = "satin"
+
+
+def _colour_source(nodes, bsdf):
+    """What feeds the Base Color: (socket, image node) — the picture when
+    there is one, for bump and glow."""
+    link = next(iter(bsdf.inputs["Base Color"].links), None)
+    if link is None:
+        return None, None
+    seen, todo = set(), [link.from_node]
+    while todo:
+        node = todo.pop()
+        if node.name in seen:
+            continue
+        seen.add(node.name)
+        if node.type == "TEX_IMAGE" and node.image is not None:
+            return link.from_socket, node
+        for inp in node.inputs:
+            todo += [l.from_node for l in inp.links]
+    return link.from_socket, None
+
+
+def _add_bump(mat, bsdf, amount):
+    """Relief: from the picture's light and dark when there is one (mortar
+    joints, wood grain), else a fine noise (plaster, concrete)."""
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    _sock, image = _colour_source(nodes, bsdf)
+    bump = nodes.new("ShaderNodeBump")
+    bump.inputs["Strength"].default_value = min(1.0, amount)
+    if image is not None:
+        bw = nodes.new("ShaderNodeRGBToBW")
+        links.new(image.outputs["Color"], bw.inputs["Color"])
+        links.new(bw.outputs["Val"], bump.inputs["Height"])
+        bump.inputs["Distance"].default_value = 0.004
+    else:
+        coord = nodes.new("ShaderNodeTexCoord")
+        noise = nodes.new("ShaderNodeTexNoise")
+        noise.inputs["Scale"].default_value = 28.0      # grains of a few cm
+        for k, v in (("Detail", 10.0), ("Roughness", 0.65)):
+            if k in noise.inputs:
+                noise.inputs[k].default_value = v
+        links.new(coord.outputs["Object"], noise.inputs["Vector"])
+        links.new(noise.outputs["Fac"], bump.inputs["Height"])
+        bump.inputs["Distance"].default_value = 0.004
+    old = next(iter(bsdf.inputs["Normal"].links), None)
+    if old is not None:                    # a normal map: bump on top of it
+        links.new(old.from_socket, bump.inputs["Normal"])
+    links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
+
+
+def apply_material_specs(specs):
+    """After IngeTrazo's finishes: the editor's numbers on each material."""
+    done = 0
+    for mat in bpy.data.materials:
+        spec = _spec_for(mat, specs)
+        if not spec or not mat.node_tree:
+            continue
+        bsdf = next((n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+        if bsdf is None:
+            continue
+        kind = spec.get("type", "generic")
+        if "roughness" in spec:
+            core["_set"](bsdf, ("Roughness",), float(spec["roughness"]))
+        if "metallic" in spec and kind == "generic":
+            core["_set"](bsdf, ("Metallic",), float(spec["metallic"]))
+        if kind in ("generic", "glow"):
+            core["_set"](bsdf, ("Transmission Weight", "Transmission"), 0.0)
+        if spec.get("coat"):
+            core["_set"](bsdf, ("Coat Weight", "Clearcoat"), float(spec["coat"]))
+            core["_set"](bsdf, ("Coat Roughness", "Clearcoat Roughness"), 0.05)
+        if spec.get("sheen"):
+            core["_set"](bsdf, ("Sheen Weight", "Sheen"), float(spec["sheen"]))
+        if float(spec.get("bump", 0.0)) > 0.0:
+            _add_bump(mat, bsdf, float(spec["bump"]))
+        if kind == "glow" and float(spec.get("glow", 0.0)) > 0.0:
+            sock, _img = _colour_source(mat.node_tree.nodes, bsdf)
+            if sock is not None and "Emission Color" in bsdf.inputs:
+                mat.node_tree.links.new(sock, bsdf.inputs["Emission Color"])
+            elif "Emission Color" in bsdf.inputs:
+                bsdf.inputs["Emission Color"].default_value = bsdf.inputs["Base Color"].default_value
+            core["_set"](bsdf, ("Emission Strength",), float(spec["glow"]))
+            mat["studio_glow"] = True
+        done += 1
+    if done:
+        say("materials", done, "set in the material editor")
+
+
 # ---- the white model -----------------------------------------------------------------
 
 def white_model(skip_ground=True):
@@ -557,6 +732,16 @@ def measure_exposure(scene, target=0.2, bias=0.0, fraction=25, samples=8, white=
     keep = (r.resolution_percentage, r.filepath, r.image_settings.file_format,
             scene.view_settings.exposure, getattr(r, "use_compositing", None))
     tmp = os.path.join(os.path.dirname(r.filepath) or HERE, "_meter.exr")
+    # Glowing materials (light panels, screens) are metered as off: they
+    # are meant to shine, not to darken the whole picture.
+    glows = []
+    for mat in bpy.data.materials:
+        if mat.get("studio_glow") and mat.node_tree:
+            bsdf = next((n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+            sock = bsdf.inputs.get("Emission Strength") if bsdf else None
+            if sock is not None:
+                glows.append((sock, sock.default_value))
+                sock.default_value = 0.0
     try:
         r.resolution_percentage = fraction
         r.image_settings.file_format = "OPEN_EXR"
@@ -592,6 +777,8 @@ def measure_exposure(scene, target=0.2, bias=0.0, fraction=25, samples=8, white=
                      f"(EV {ev_high:+.2f}) -> exposure {ev:+.2f}")
         return ev
     finally:
+        for sock, value in glows:
+            sock.default_value = value
         r.resolution_percentage, r.filepath, r.image_settings.file_format = keep[0], keep[1], keep[2]
         scene.view_settings.exposure = keep[3]
         if keep[4] is not None:
@@ -612,7 +799,12 @@ def main():
     core["import_model"](job["glb"])
     if st.get("fix_normals", False):
         fix_normals()
+    specs = st.get("materials") or {}
+    if specs:
+        mark_material_types(specs)
     core["apply_finishes"]()
+    if specs:
+        apply_material_specs(specs)
     if st.get("albedo_cap", 0.8):
         cap_albedo(float(st.get("albedo_cap", 0.8)))
     if st.get("white_model"):
@@ -660,11 +852,19 @@ def main():
             add_clouds(scene, float(st["clouds"]), scale=st.get("cloud_scale", 1.0),
                        brightness=st.get("cloud_brightness", 1.0), seed=st.get("cloud_seed", 0.0),
                        tint=tint)
+    if st.get("sky_type") and scene.world is not None:            # for tuning
+        for n in scene.world.node_tree.nodes:
+            if n.type == "TEX_SKY":
+                n.sky_type = st["sky_type"]
+                say("sky type", n.sky_type)
     if st.get("hdri"):
         set_hdri(scene, st["hdri"], float(st.get("hdri_rotation", 0.0)),
                  float(st.get("hdri_strength", 1.0)), bool(st.get("hdri_light", True)))
-    core["add_lights"](scene, job.get("lights") or [])
     ground = job.get("ground")
+    if ground and not (st.get("hdri") and st.get("hdri_light", True)):
+        world_ground(scene, st.get("ground_color") or ground["color"],
+                     float(st.get("world_ground_level", 2.0)))
+    core["add_lights"](scene, job.get("lights") or [])
     if ground:
         color = st.get("ground_color") or ground["color"]
         core["add_ground"](scene, ground["z"], ground["size"], color)
@@ -689,6 +889,12 @@ def main():
                     setattr(ev, attr, value)
                 except (TypeError, ValueError):
                     pass
+    for attr, value in (st.get("eevee_overrides") or {}).items():   # for tuning
+        target = scene.eevee
+        for part in attr.split(".")[:-1]:
+            target = getattr(target, part)
+        setattr(target, attr.split(".")[-1], value)
+        say("eevee", attr, "=", value)
     r = scene.render
     r.resolution_x, r.resolution_y, r.resolution_percentage = w, h, 100
     r.image_settings.file_format = "PNG"

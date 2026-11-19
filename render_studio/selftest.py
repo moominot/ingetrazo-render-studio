@@ -59,6 +59,19 @@ def schedule(app, panel, config_path: str):
             vp.render_image(1280, 720).save(str(out / "viewport.png"))
             panel.width.setValue(int(cfg.get("width", 960)))
             panel.engine.setCurrentIndex(max(0, panel.engine.findData(cfg.get("engine", "eevee"))))
+            if cfg.get("materials"):
+                # The material editor, driven as a user would: pick, preset.
+                ed = panel.open_materials()
+                for name, key in cfg["materials"].items():
+                    if not ed.select(name):
+                        note("material not listed", name)
+                        continue
+                    i = ed.preset.findData(key)
+                    ed.preset.setCurrentIndex(i)
+                    ed._preset(i)
+                    ed._flush()
+                ed.grab().save(str(out / "material_editor.png"))
+                note("materials", json.dumps(panel.material_specs()))
             panel.finished.connect(done)
             QTimer.singleShot(300, next_one)
         except Exception:  # noqa: BLE001

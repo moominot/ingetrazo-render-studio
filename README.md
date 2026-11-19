@@ -28,6 +28,33 @@ Every look shares:
 - **Distance haze.** The ground fades into the horizon sky.
 - **Albedo capped at 80 %.** Paper-white surfaces don't glow under a path tracer.
 - **Finish.** A light saturation and vignette pass in Blender's compositor.
+- **EEVEE gets a ground below the horizon in its world.** Its reflections
+  and the light bounced off the ground then match Cycles.
+
+## Materials
+
+**Materials…**, on the panel or in the menu, opens a simple material
+editor, like Enscape's. The list shows the materials used in the model.
+**From the selection** jumps to the material of the selected face or group.
+
+For each material you can:
+- start from a preset: matte plaster, satin paint, gloss lacquer, polished
+  stone, concrete, brick, varnished or raw wood, fabric, brushed metal,
+  chrome, clear or frosted glass, water, or a light panel;
+- set its **type**: generic, glass, water or glowing;
+- adjust **Roughness**, **Metal**, **Relief** and **Glow**.
+
+Relief comes from the material's picture when it has one (mortar joints,
+wood grain), otherwise from a fine grain. A glowing material lights what
+is around it, and the exposure meter ignores it, so it doesn't darken the
+picture.
+
+The settings are saved in the document, one undo step per change. **Back
+to automatic** returns the material to IngeTrazo's own finish.
+
+![Material editor](docs/material_editor.png)
+
+![Materials](docs/materials.png)
 
 ## 360° background (HDRI)
 

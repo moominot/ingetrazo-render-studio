@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QFileDialog, QForm
                                QLabel, QProgressBar, QPushButton, QScrollArea, QSizePolicy,
                                QSlider, QSpinBox, QVBoxLayout, QWidget)
 
-from . import post, presets
+from . import materials as mats, post, presets
 
 _log = logging.getLogger(__name__)
 _SETTINGS = "render_studio/"
@@ -79,13 +79,15 @@ def apply_hdri(block: dict, hdri: dict | None) -> dict:
 
 def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, *,
                      engine: str, quality: int, width: int, height: int, ground: bool = True,
-                     hdri: dict | None = None):
+                     hdri: dict | None = None, materials: dict | None = None):
     """Export the model (IngeTrazo's own job writer) and add the look (and
     the 360° background, if any). Returns (job path, studio script path)."""
     from core import render_blender as rb
     block, ambience = presets.studio(preset_key)
     block = apply_hdri(block, hdri)
     block = presets.apply_sliders(block, sliders)
+    if materials:
+        block["materials"] = mats.job_block(materials)
     job = rb.write_job(scene, camera, work, engine=engine, quality=quality, width=width,
                        height=height, ground=ground, ambience=ambience,
                        lights=document_lights(scene))
@@ -287,6 +289,11 @@ class StudioPanel(QWidget):
         scroll.setWidget(host)
         scroll.setMinimumHeight(host.sizeHint().height() + 8)
         outer.addWidget(scroll, 1)
+        self.materials_btn = QPushButton("Materials…")
+        self.materials_btn.setToolTip("How each material renders: polish, metal, relief, glass, glow.")
+        self.materials_btn.clicked.connect(self.open_materials)
+        outer.addWidget(self.materials_btn)
+        self.editor = None
         self.render_btn = QPushButton("Render")
         self.render_btn.clicked.connect(self.render)
         outer.addWidget(self.render_btn)
@@ -361,6 +368,29 @@ class StudioPanel(QWidget):
         return {"path": path, "rotation": _value(self.hdri_rotation),
                 "strength": 2.0 ** _value(self.hdri_strength), "light": self.hdri_light.isChecked()}
 
+    def open_materials(self):
+        from .material_editor import MaterialEditor
+        if self.editor is None:
+            self.editor = MaterialEditor(self.app, _lang(), self)
+        else:
+            self.editor.refresh()
+        self.editor.show()
+        self.editor.raise_()
+        self.editor.activateWindow()
+        return self.editor
+
+    def document_changed(self):
+        if self.editor is not None and self.editor.isVisible():
+            self.editor.refresh()
+
+    def material_specs(self) -> dict:
+        if self.editor is not None:
+            self.editor._flush()               # a change still waiting its pause
+        try:
+            return (self.app.document_data({}) or {}).get("materials") or {}
+        except Exception:  # noqa: BLE001 - an old IngeTrazo: no document data
+            return {}
+
     def slider_values(self) -> dict:
         return {k: _value(s) for k, s in self.sliders.items()}
 
@@ -403,7 +433,8 @@ class StudioPanel(QWidget):
                 self.app.viewport.scene, self.app.viewport.camera, self.work,
                 self.preset.currentData(), self.slider_values(),
                 engine=self.engine.currentData(), quality=self.quality.currentIndex(),
-                width=width, height=height, hdri=self.hdri_settings())
+                width=width, height=height, hdri=self.hdri_settings(),
+                materials=self.material_specs())
         except Exception as exc:  # noqa: BLE001 - say it, never crash the app
             _log.exception("render job failed")
             self.status.setText(f"Could not prepare the render: {exc}")
