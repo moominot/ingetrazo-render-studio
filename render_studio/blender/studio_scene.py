@@ -611,6 +611,104 @@ def _scaled(mat, socket, factor):
     return mul.outputs[0]
 
 
+#: The tallest relief taken from a picture (metres from black to white), at the
+#: slider's maximum, and how soft its edges are (a fraction of the picture).
+RELIEF_MAX_DISTANCE = 0.03
+RELIEF_SOFTNESS = 1.0 / 256.0
+RELIEF_MAX_SIDE = 1024
+
+
+def _box_blur(a, r, axis):
+    """A box average of half-width ``r`` along ``axis`` that wraps round, as a
+    tiling texture does (cumulative sums: cost independent of ``r``)."""
+    import numpy as np
+    if r < 1:
+        return a
+    n = a.shape[axis]
+    pad = [(0, 0)] * a.ndim
+    pad[axis] = (r, r)
+    padded = np.pad(a, pad, mode="wrap")
+    cs = np.cumsum(padded, axis=axis, dtype=np.float64)
+    zero_shape = list(cs.shape)
+    zero_shape[axis] = 1
+    cs = np.concatenate([np.zeros(zero_shape, np.float64), cs], axis=axis)
+    hi = [slice(None)] * a.ndim
+    lo = [slice(None)] * a.ndim
+    hi[axis] = slice(2 * r + 1, 2 * r + 1 + n)
+    lo[axis] = slice(0, n)
+    return ((cs[tuple(hi)] - cs[tuple(lo)]) / (2 * r + 1)).astype(np.float32)
+
+
+def relief_height(img, invert=False, contrast=0.0, softness=None):
+    """A picture's light and dark as a SMOOTH height map, 0..1 (numpy array,
+    rows top to bottom), ready to feed a bump.
+
+    A picture's own pixels are a poor height: its speckle and film grain turn
+    into noise, and a joint that is a pixel or two wide is a spike narrower than
+    a render pixel, so the relief vanishes or only outlines. Here the picture
+    is brought to at most ``RELIEF_MAX_SIDE`` pixels, blurred (so a joint
+    becomes a groove with slopes that catch the light), stretched to use the
+    whole range, inverted if asked, and given more contrast (0 as it is …
+    1 pure black or white)."""
+    import numpy as np
+    w, h = img.size
+    raw = np.empty(w * h * 4, np.float32)
+    img.pixels.foreach_get(raw)
+    rgba = raw.reshape(h, w, 4)[::-1]                      # top row first
+    lum = (0.2126 * rgba[..., 0] + 0.7152 * rgba[..., 1] + 0.0722 * rgba[..., 2]).astype(np.float32)
+    f = int(np.ceil(max(w, h) / float(RELIEF_MAX_SIDE)))
+    if f > 1:                                               # block average: no aliasing
+        lum = lum[: (h // f) * f, : (w // f) * f]
+        lum = lum.reshape(lum.shape[0] // f, f, lum.shape[1] // f, f).mean(axis=(1, 3))
+    soft = RELIEF_SOFTNESS if softness is None else float(softness)
+    r = max(1, int(round(max(lum.shape) * soft)))
+    for _ in range(3):                                      # three boxes ≈ a gaussian
+        lum = _box_blur(_box_blur(lum, r, 0), r, 1)
+    lo, hi = np.percentile(lum, 2.0), np.percentile(lum, 98.0)
+    if hi - lo < 1e-6:
+        return np.full(lum.shape, 0.5, np.float32)
+    v = np.clip((lum - lo) / (hi - lo), 0.0, 1.0)
+    if invert:
+        v = 1.0 - v
+    c = max(0.0, min(1.0, float(contrast)))
+    if c > 0.0:
+        v = np.clip((v - 0.49 * c) / (1.0 - 0.98 * c), 0.0, 1.0)
+    return v.astype(np.float32)
+
+
+def _height_node(mat, node, m):
+    """An image-texture node that carries the smooth height of ``node``'s picture,
+    placed exactly as the picture is (same coordinates, same tiling)."""
+    import numpy as np
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    v = relief_height(node.image, bool(m.get("invert")), float(m.get("contrast", 0.0)))
+    h, w = v.shape
+    himg = bpy.data.images.new("studio relief " + mat.name, w, h, alpha=False, float_buffer=True)
+    try:                                   # BEFORE the pixels: setting it wipes a generated image
+        himg.colorspace_settings.name = "Non-Color"
+    except (TypeError, ValueError):
+        pass
+    px = np.empty((h, w, 4), np.float32)
+    px[..., 0] = px[..., 1] = px[..., 2] = v[::-1]
+    px[..., 3] = 1.0
+    himg.pixels.foreach_set(px.ravel())
+    himg.update()
+    try:
+        himg.pack()                                         # kept if the blend is saved
+    except RuntimeError:
+        pass
+    new = nodes.new("ShaderNodeTexImage")
+    new.image = himg
+    new.interpolation = "Linear"
+    for attr in ("extension", "projection", "projection_blend"):
+        if hasattr(node, attr):
+            setattr(new, attr, getattr(node, attr))
+    link = next(iter(node.inputs["Vector"].links), None)
+    if link is not None:
+        links.new(link.from_socket, new.inputs["Vector"])
+    return new
+
+
 def _add_bump(mat, bsdf, amount, m=None):
     """Relief. ``m["source"]``: «picture» (its light and dark: mortar
     joints, wood grain), «file» (a height map), «normal» (a normal map),
@@ -631,10 +729,18 @@ def _add_bump(mat, bsdf, amount, m=None):
         return
     _sock, pic = _colour_source(nodes, bsdf)
     height = None
-    if src in ("picture", "file"):
+    smooth = False
+    if src == "picture" or (src == "auto" and pic is not None):
+        node = pic
+        if node is not None:
+            try:
+                height = _height_node(mat, node, m if src == "picture" else {}).outputs["Color"]
+                smooth = True
+            except Exception as exc:  # noqa: BLE001 - fall back to the plain picture
+                say("relief fallback", exc)
+                height = _map_value(mat, bsdf, {**m, "source": "picture"})
+    elif src == "file":
         height = _map_value(mat, bsdf, m)
-    elif src == "auto" and pic is not None:
-        height = _map_value(mat, bsdf, {"source": "picture"})
     bump = nodes.new("ShaderNodeBump")
     amount = max(0.0, float(amount))
     if height is not None:
@@ -645,11 +751,11 @@ def _add_bump(mat, bsdf, amount, m=None):
             bump.inputs["Distance"].default_value = 0.01
         else:
             # The picture's own light and dark. The slider is the HEIGHT of
-            # the relief (up to 2.5 cm from black to white), at full strength:
+            # the relief (up to RELIEF_MAX_DISTANCE from black to white), at full strength:
             # a fixed 4 mm scaled by a strength below 1 was too faint to see in
             # a render, whatever the slider said.
             bump.inputs["Strength"].default_value = 1.0
-            bump.inputs["Distance"].default_value = 0.025 * min(1.0, amount)
+            bump.inputs["Distance"].default_value = RELIEF_MAX_DISTANCE * min(1.0, amount)
     else:
         bump.inputs["Strength"].default_value = min(1.0, amount)
         coord = nodes.new("ShaderNodeTexCoord")
