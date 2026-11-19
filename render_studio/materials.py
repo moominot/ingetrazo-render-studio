@@ -16,6 +16,9 @@ calls it), which :func:`export_name` computes as IngeTrazo does.
 """
 from __future__ import annotations
 
+#: Default size of the ripples of water (0 fine … 1 coarse): about 7 waves a metre.
+DEFAULT_RIPPLE_SIZE = 0.8
+
 TYPES = ("generic", "glass", "water", "glow")
 TYPE_LABELS = {"generic": "Generic", "glass": "Glass", "water": "Water", "glow": "Glowing"}
 
@@ -48,7 +51,7 @@ PRESETS = {
     "glass_frosted": ({"en": "Frosted glass", "ca": "Vidre glaçat", "es": "Vidrio esmerilado"},
                       {"type": "glass", "roughness": 0.35, "metallic": 0.0, "bump": 0.0}),
     "water": ({"en": "Water", "ca": "Aigua", "es": "Agua"},
-              {"type": "water", "roughness": 0.02, "metallic": 0.0, "bump": 0.0}),
+              {"type": "water", "roughness": 0.02, "metallic": 0.0, "bump": 0.5, "ripple_size": 0.8}),
     "light": ({"en": "Light panel (glows)", "ca": "Panell de llum (brilla)", "es": "Panel de luz (brilla)"},
               {"type": "glow", "roughness": 0.5, "metallic": 0.0, "bump": 0.0, "glow": 12.0}),
 }

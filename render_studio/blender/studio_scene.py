@@ -772,6 +772,53 @@ def _add_bump(mat, bsdf, amount, m=None):
     links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
 
 
+#: Water ripples: the «easiest water in Blender» recipe — a 3-D noise (detail 16,
+#: roughness 0.442) turned into a bump on a glossy surface — with its size
+#: and height as controls. ``WATER_FINE``/``WATER_COARSE`` are the noise scale
+#: (waves per metre) at the editor's «Ripple size» 0 and 1; ``WATER_MAX_DISTANCE``
+#: is the recipe's bump distance at the Relief slider's maximum.
+WATER_FINE = 108.6
+WATER_COARSE = 4.0
+WATER_MAX_DISTANCE = 0.1
+
+
+def water_scale(size):
+    """Noise scale (per metre) for a ripple size 0 (fine) … 1 (coarse), log-spaced."""
+    size = max(0.0, min(1.0, float(size)))
+    return WATER_FINE * (WATER_COARSE / WATER_FINE) ** size
+
+
+def _water_ripples(mat, bsdf, relief, size):
+    """Replace IngeTrazo's own ripples with the recipe above, driven by the
+    editor: ``relief`` 0..1 is the height of the waves, ``size`` 0..1 their size."""
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    old = next(iter(bsdf.inputs["Normal"].links), None)
+    if old is not None and old.from_node.type == "BUMP":        # the finish's own ripples
+        bump_old = old.from_node
+        feeders = [l.from_node for l in bump_old.inputs["Height"].links]
+        nodes.remove(bump_old)
+        for n in feeders:
+            if n.type == "TEX_NOISE" and not any(o.links for o in n.outputs):
+                nodes.remove(n)
+    relief = max(0.0, min(1.0, float(relief)))
+    if relief <= 0.0:
+        return                                                    # flat, mirror-like water
+    pos = nodes.new("ShaderNodeNewGeometry")                      # world position: ripples of a true size
+    noise = nodes.new("ShaderNodeTexNoise")
+    if hasattr(noise, "noise_dimensions"):
+        noise.noise_dimensions = "3D"
+    noise.inputs["Scale"].default_value = water_scale(size)
+    for k, v in (("Detail", 16.0), ("Roughness", 0.442), ("Distortion", 0.0)):
+        if k in noise.inputs:
+            noise.inputs[k].default_value = v
+    bump = nodes.new("ShaderNodeBump")
+    bump.inputs["Strength"].default_value = 1.0
+    bump.inputs["Distance"].default_value = WATER_MAX_DISTANCE * relief
+    links.new(pos.outputs["Position"], noise.inputs["Vector"])
+    links.new(noise.outputs["Fac"], bump.inputs["Height"])
+    links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
+
+
 def apply_material_specs(specs):
     """After IngeTrazo's finishes: the editor's numbers — and maps — on each
     material. With a map, the setting's slider scales it."""
@@ -801,7 +848,9 @@ def apply_material_specs(specs):
             core["_set"](bsdf, ("Coat Roughness", "Clearcoat Roughness"), 0.05)
         if spec.get("sheen"):
             core["_set"](bsdf, ("Sheen Weight", "Sheen"), float(spec["sheen"]))
-        if float(spec.get("bump", 0.0)) > 0.0:
+        if kind == "water" and "ripple_size" in spec:
+            _water_ripples(mat, bsdf, float(spec.get("bump", 0.0)), float(spec["ripple_size"]))
+        elif float(spec.get("bump", 0.0)) > 0.0:
             _add_bump(mat, bsdf, float(spec["bump"]), maps.get("bump"))
         if kind == "glow" and float(spec.get("glow", 0.0)) > 0.0:
             sock, _img = _colour_source(mat.node_tree.nodes, bsdf)

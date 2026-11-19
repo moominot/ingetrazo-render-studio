@@ -54,6 +54,16 @@ gentle changes (wood grain) raise the map's contrast or use a height map. A glow
 is around it, and the exposure meter ignores it, so it doesn't darken the
 picture.
 
+### Water
+
+For the **Water** type, **Relief** is the height of the ripples and **Ripple size** their size,
+from fine to broad waves. They follow the «easiest water in Blender» recipe: a 3-D noise (detail
+16, roughness 0.442, scale 108.6 at the finest) turned into a bump (distance 0.1 at the maximum
+relief) on the glossy surface, laid out in world metres so a ripple has the same size everywhere.
+Fine ripples read as grain from far away; the default (0.8, about 7 waves a metre) reads as water
+and makes the sun glint. Relief 0 gives a flat, mirror-like water. Materials saved before 0.8.0
+keep IngeTrazo's own ripples until their settings are changed here.
+
 ### Cube preview
 
 The material editor shows the material on a **one-metre cube**, drawn on the CPU, so it follows
@@ -185,7 +195,8 @@ Render tab).
 
 ## Tests
 
-- `tests/test_relief_bpy.py` renders a brick wall with a REAL Blender (the `bpy` module, `pip install bpy`) with and without relief and checks the height map and the difference; skipped when `bpy` is missing.
+- `tests/test_water_editor_offline.py` checks the water controls of the editor.
+- `tests/test_relief_bpy.py` renders a brick wall and a pool with a REAL Blender (the `bpy` module, `pip install bpy`) with and without relief and checks the height map and the difference; skipped when `bpy` is missing.
 - `tests/test_cube_preview_offline.py` checks the cube preview (picture, tile, colour, polish, metal, relief, glass, glow) and its wiring in the editor.
 - `tests/test_live_offline.py` runs the live view against a stand-in for Blender (`tests/fake_blender.py`, same protocol): first draft, camera moves, model/look changes, a final render, switching off.
 - `tests/test_doc_settings_offline.py` checks the settings kept in the document.

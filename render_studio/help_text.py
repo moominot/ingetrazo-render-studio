@@ -151,7 +151,7 @@ image's shape (the tile width stays); off, the tile size stays and a different s
 a picture already; paint it with a texture first if it has only a colour. The image is copied into IngeTrazo's texture
 cache and travels with the document when you save.</td></tr>
 <tr><td valign='top'><b>Start from</b></td><td>A ready-made starting point; then adjust it. See the list below.</td></tr>
-<tr><td valign='top'><b>Type</b></td><td><b>Generic</b> (opaque), <b>Glass</b> (transparent), <b>Water</b>, or
+<tr><td valign='top'><b>Type</b></td><td><b>Generic</b> (opaque), <b>Glass</b> (transparent), <b>Water</b> (transparent, with ripples), or
 <b>Glowing</b> (it shines by itself and lights what is around it; the exposure meter ignores it so it does not darken the
 picture).</td></tr>
 <tr><td valign='top'><b>Roughness</b></td><td>0 is a mirror-like polish, 1 fully matte.</td></tr>
@@ -161,6 +161,10 @@ material's picture when it has one (mortar joints, wood grain), otherwise a fine
 <b>height</b> of the relief (0 to 3 cm from black to white). The picture is softened first, so its grain does not turn into noise
 and a joint becomes a groove that catches the light. It shows where the picture changes clearly (joints, edges), and barely where
 it changes gently (wood grain): for that, raise the map's <b>Contrast</b>, or use a <b>height map file</b>.</td></tr>
+<tr><td valign='top'><b>Ripple size</b></td><td>Water only. The size of the ripples on the surface, from fine (left) to broad waves (right); the
+<b>Relief</b> slider is their height (0 gives a flat, mirror-like water). They are a 3-D noise turned into a bump on the glossy surface, the
+usual «easy water» recipe of Blender, laid out in metres so a ripple has the same size everywhere. Fine ripples look like grain from far away,
+broad ones read as water; the sun then glints on them.</td></tr>
 <tr><td valign='top'><b>Glow</b></td><td>0 to 50: how brightly it shines (type Glowing): screens, light panels.</td></tr>
 <tr><td valign='top'><b>Map image size</b></td><td>How big one image of a map file is on the model, in metres. Used when
 the material has no picture of its own; with a picture, the maps follow its size and placement.</td></tr>

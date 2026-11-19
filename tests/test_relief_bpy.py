@@ -83,4 +83,39 @@ diff = float(np.abs(flat - relief)[reg].mean())
 ok(diff > 0.006, f"the wall renders differently with the relief on (mean difference {diff:.4f}; 0 would mean no relief at all)")
 half = render(0.5, "half"); d_half = float(np.abs(flat - half)[reg].mean())
 ok(0.0 < d_half < diff, f"half the relief is in between ({d_half:.4f} < {diff:.4f})")
+
+# ---- water: a pool seen obliquely, with the sun glinting; flat (Relief 0) vs ripples
+def pool(relief, size, tag):
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    scene = bpy.context.scene
+    import mathutils
+    def quad(name, pts, mat):
+        me = bpy.data.meshes.new(name); me.from_pydata(pts, [], [(0, 1, 2, 3)]); me.update()
+        o = bpy.data.objects.new(name, me); scene.collection.objects.link(o); me.materials.append(mat)
+    floor = bpy.data.materials.new("floor"); floor.use_nodes = True
+    next(n for n in floor.node_tree.nodes if n.type == "BSDF_PRINCIPLED").inputs["Base Color"].default_value = (0.03, 0.12, 0.18, 1)
+    quad("floor", [(-5, -3, -1), (5, -3, -1), (5, 3, -1), (-5, 3, -1)], floor)
+    wmat = bpy.data.materials.new("agua"); wmat.use_nodes = True; wmat["ingetrazo_finish"] = "water"
+    quad("water", [(-5, -3, 0), (5, -3, 0), (5, 3, 0), (-5, 3, 0)], wmat)
+    ns["core"]["apply_finishes"]()
+    ns["apply_material_specs"]({"agua": {"type": "water", "roughness": 0.02, "metallic": 0.0, "bump": relief, "ripple_size": size}})
+    cam = bpy.data.objects.new("cam", bpy.data.cameras.new("cam")); scene.collection.objects.link(cam); scene.camera = cam
+    cam.location = (0, -7.5, 1.6)
+    cam.rotation_euler = (mathutils.Vector((0, 0, 0.3)) - cam.location).to_track_quat("-Z", "Y").to_euler(); cam.data.lens = 30
+    sun = bpy.data.objects.new("sun", bpy.data.lights.new("sun", "SUN")); scene.collection.objects.link(sun)
+    sun.data.energy = 5; sun.rotation_euler = mathutils.Vector((0.15, -0.80, -0.58)).to_track_quat("-Z", "Y").to_euler(); sun.data.angle = math.radians(1.0)
+    world = bpy.data.worlds.new("w"); world.use_nodes = True; scene.world = world
+    bg = next(n for n in world.node_tree.nodes if n.type == "BACKGROUND"); bg.inputs["Color"].default_value = (0.6, 0.75, 1, 1)
+    r = scene.render; r.engine = "CYCLES"; r.resolution_x, r.resolution_y = 640, 360; r.image_settings.file_format = "PNG"
+    scene.cycles.samples = 32; scene.cycles.device = "CPU"; scene.cycles.use_denoising = False
+    scene.view_settings.view_transform = "AgX"
+    r.filepath = os.path.join(work, tag + ".png"); bpy.ops.render.render(write_still=True)
+    im = bpy.data.images.load(r.filepath); w, h = im.size
+    return np.array(im.pixels[:], np.float32).reshape(h, w, 4)[::-1, :, :3]
+
+flat_w, ripple_w = pool(0.0, 0.8, "water_flat"), pool(0.5, 0.8, "water_ripples")
+reg = (slice(180, 270), slice(60, 580))
+d = float(np.abs(flat_w - ripple_w)[reg].mean())
+ok(d > 0.005, f"water with ripples renders differently from flat water (mean difference {d:.4f})")
+ok(abs(ns["water_scale"](0.0) - 108.6) < 1e-6 and abs(ns["water_scale"](1.0) - 4.0) < 1e-6, "the ripple size runs from the recipe's 108.6 per metre to broad waves")
 print("FAILED" if fails else "ALL OK"); sys.exit(1 if fails else 0)

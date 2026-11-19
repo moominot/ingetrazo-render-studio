@@ -24,7 +24,8 @@ _FIELDS = (  # key, label, lo, hi, tip
     ("roughness", "Roughness", 0.0, 1.0, "0 a mirror-like polish, 1 fully matte."),
     ("metallic", "Metal", 0.0, 1.0, "1 for metals: the reflection takes the material's colour."),
     ("bump", "Relief", 0.0, 1.0, "Surface relief. Automatic: from the picture's light and dark "
-                                 "when it has one (joints, grain), else a fine grain."),
+                                 "when it has one (joints, grain), else a fine grain. Water: the "
+                                 "height of the waves."),
     ("glow", "Glow", 0.0, 50.0, "How bright it shines by itself (Glowing type): screens, light panels."),
 )
 
@@ -261,7 +262,7 @@ class MaterialEditor(QDialog):
         self.kind = QComboBox()
         for key in M.TYPES:
             self.kind.addItem(M.TYPE_LABELS[key], key)
-        self.kind.currentIndexChanged.connect(self._changed)
+        self.kind.currentIndexChanged.connect(self._kind_changed)
         form.addRow("Type", self.kind)
         self.sliders, self.values, self.maps = {}, {}, {}
         for key, label, lo, hi, tip in _FIELDS:
@@ -281,6 +282,21 @@ class MaterialEditor(QDialog):
             self.values[key] = v
             self.maps[key] = MapRow(key, self._changed)
             form.addRow("", self.maps[key])
+        self.ripple = QSlider(Qt.Horizontal)
+        self.ripple.setRange(0, 100)
+        self.ripple.setProperty("lo", 0.0)
+        self.ripple.setProperty("hi", 1.0)
+        self.ripple.setToolTip("Water: the size of the ripples, from fine (left) to broad waves (right). "
+                               "Their height is the Relief slider.")
+        self.ripple_value = QLabel("")
+        self.ripple_value.setMinimumWidth(34)
+        self.ripple.valueChanged.connect(lambda _x: (self._label("ripple_size"), self._changed()))
+        rrow = QHBoxLayout()
+        rrow.addWidget(self.ripple, 1)
+        rrow.addWidget(self.ripple_value)
+        form.addRow("Ripple size", rrow)
+        self.sliders["ripple_size"] = self.ripple
+        self.values["ripple_size"] = self.ripple_value
         self.map_size = QDoubleSpinBox()
         self.map_size.setRange(0.02, 50.0)
         self.map_size.setDecimals(2)
@@ -430,11 +446,20 @@ class MaterialEditor(QDialog):
         for key, *_r in _FIELDS:
             self._set_slider(key, spec.get(key, M.DEFAULT.get(key, 0.0)))
             self.maps[key].load(maps.get(key), picture)
+        self._set_slider("ripple_size", spec.get("ripple_size", M.DEFAULT_RIPPLE_SIZE))
         size = next((m.get("size") for m in maps.values() if m and m.get("size")), 1.0)
         self.map_size.setValue(float(size))
         self._loading = False
         self._enable_glow()
         self._update_cube()
+
+    def _kind_changed(self, *_a):
+        """Choosing Water gives it waves to start with (Relief 0 would be a flat mirror)."""
+        if not self._loading and self.kind.currentData() == "water" and self._get("bump") <= 0.0:
+            self._loading = True
+            self._set_slider("bump", 0.5)
+            self._loading = False
+        self._changed()
 
     def cube_params(self, name=None) -> dict:
         """What the cube preview draws: the material's colour and picture from
@@ -461,6 +486,8 @@ class MaterialEditor(QDialog):
             self.cube.clear()
 
     def _enable_glow(self):
+        water = self.kind.currentData() == "water"
+        self.ripple.setEnabled(water)
         on = self.kind.currentData() == "glow"
         self.sliders["glow"].setEnabled(on)
         self.maps["glow"].setEnabled(on)
@@ -474,6 +501,7 @@ class MaterialEditor(QDialog):
         self.kind.setCurrentIndex(max(0, self.kind.findData(spec.get("type", "generic"))))
         for k, *_r in _FIELDS:
             self._set_slider(k, spec.get(k, M.DEFAULT.get(k, 0.0)))
+        self._set_slider("ripple_size", spec.get("ripple_size", M.DEFAULT_RIPPLE_SIZE))
         self._loading = False
         self._changed(from_preset=key)
 
@@ -488,6 +516,8 @@ class MaterialEditor(QDialog):
         spec = {"type": self.kind.currentData()}
         for key, *_r in _FIELDS:
             spec[key] = self._get(key)
+        if spec["type"] == "water":
+            spec["ripple_size"] = self._get("ripple_size")
         maps = {}
         for key, row in self.maps.items():
             m = row.spec()
