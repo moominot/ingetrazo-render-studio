@@ -83,11 +83,14 @@ it, up to 2. Not available while a 360° background lights the scene.</td></tr>
 <tr><td valign='top'><b>Saturation</b></td><td>Intensity of the colours: 0 is black and white, 1.6 is vivid.</td></tr>
 <tr><td valign='top'><b>Vignette</b></td><td>Darkens the corners of the picture to draw the eye to the centre.</td></tr>
 <tr><td valign='top'><b>Materials…</b></td><td>Opens the material editor (see below).</td></tr>
-<tr><td valign='top'><b>Live view</b></td><td>Keeps Blender open with your scene and look loaded: a <b>draft</b> image
-(small, few samples) follows the 3D view. Move the camera and stop: after a moment the image updates. Change the
-model, the look, a slider, the 360° background or a material setting and the scene is loaded into Blender again
-(it takes a few seconds). Press <b>Render</b> for the final image: the live Blender is closed first and the live view stays
-off afterwards, so the draft does not draw over your picture; tick the box again to bring it back.</td></tr>
+<tr><td valign='top'><b>Live view</b></td><td>Keeps Blender open with your scene and look loaded, and an image
+follows the 3D view. Move the camera and stop: a moment later a <b>quick</b>, rough image appears, and if you stay put
+a cleaner <b>draft</b> replaces it. It always uses EEVEE with its slowest effects off and lighter grass, whatever the
+<b>Engine</b> and <b>Quality</b> say (those are for Render), so an interior meant for Cycles looks only roughly right
+here. Change the model, the look, a slider, the 360° background or a material setting and the scene is rebuilt in the
+same Blender, usually in about a second (only the first start takes longer). Press <b>Render</b> for the final image:
+the live Blender is closed first and the live view stays off afterwards, so the draft does not draw over your picture;
+tick the box again to bring it back.</td></tr>
 <tr><td valign='top'><b>Render</b></td><td>Starts the render. It is disabled while one is running. The line below the
 bar says what is happening, or why it could not start (for example, Blender was not found).</td></tr>
 </table>

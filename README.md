@@ -212,12 +212,18 @@ the image as PNG or JPEG.
 
 ## Live view
 
-**Live view** (a box in the panel) keeps Blender open with the scene and the look loaded, and a
-draft image follows the 3D view: move the camera and stop, and it updates. Changing the model,
-the look, a slider, the 360° background or a material setting loads the scene again. It speaks
-the protocol of IngeTrazo's own «Sync with the view» (Blender in `serve` mode), so the draft has
-the look, sky and materials of the final render, at draft quality. **Render** closes the live
-Blender first and leaves the live view off, so the draft does not cover the final image.
+**Live view** (a box in the panel) keeps Blender open with the scene and the look loaded, and an
+image follows the 3D view: move the camera and stop, and a quick, rough image (480 px, 1 sample)
+comes after a quarter of a second; if the camera stays put, the draft (960 px, 8 samples) replaces
+it. The live Blender always uses EEVEE with its costliest effects off (ray tracing, fast GI, fine
+shadows) and grass at a third of its density: the panel's **Engine** and **Quality** are for
+**Render**. Changing the model, the look, a slider, the 360° background or a material setting
+rebuilds the scene in the SAME Blender (`{"reload": job}` on its input): no new start, and the model
+is exported again only when the model changed. On a test machine a change of look now shows in
+about 1 s instead of restarting Blender (3 to 10 s), and a camera move in about 0.7 s. It speaks the protocol of
+IngeTrazo's own «Sync with the view» (Blender in `serve` mode), extended with `reload`, so the draft
+has the look, sky and materials of the final render. **Render** closes the live Blender first and
+leaves the live view off, so the draft does not cover the final image.
 
 ## Settings in the document
 
@@ -271,6 +277,8 @@ Render tab).
 - `tests/test_water_editor_offline.py` checks the water controls of the editor.
 - `tests/test_relief_bpy.py` renders a brick wall and a pool with a REAL Blender (the `bpy` module, `pip install bpy`) with and without relief and checks the height map and the difference; skipped when `bpy` is missing.
 - `tests/test_cube_preview_offline.py` checks the cube preview (picture, tile, colour, polish, metal, relief, glass, glow) and its wiring in the editor.
+- `tests/test_live_blender_offline.py` runs the live view with a real Blender (house on a lawn) and times the
+  quick image, the draft, a camera move, a change of look (same Blender, model kept) and of the model.
 - `tests/test_live_offline.py` runs the live view against a stand-in for Blender (`tests/fake_blender.py`, same protocol): first draft, camera moves, model/look changes, a final render, switching off.
 - `tests/test_doc_settings_offline.py` checks the settings kept in the document.
 - `tests/test_materials_list_offline.py` checks the material list (faces, groups painted whole, nested, registry).

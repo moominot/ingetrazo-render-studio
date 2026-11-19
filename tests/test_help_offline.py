@@ -33,6 +33,7 @@ ok("Full texture sets" in page and pbr.MANIFEST_SUFFIX in page and "Poly Haven" 
 ok("Grass height" in page and "<b>Grass</b>" in page and "only in the render" in page,
    "the help explains the grass type and its height")
 ok("Texture set: …" in page, "the help explains how the editor shows a texture set")
+ok("<b>quick</b>" in page and "same Blender" in page, "the help explains the quick image and the rebuild in the same Blender")
 ok(all(a in page for a in ('name="panel"', 'name="image"', 'name="materials"', 'name="hdri"')), "anchors present")
 from core import render_blender as rb
 ok(f"{rb.SAMPLES['eevee'][0]} / {rb.SAMPLES['eevee'][1]} / {rb.SAMPLES['eevee'][2]}" in page

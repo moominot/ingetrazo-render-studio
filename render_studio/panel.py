@@ -81,11 +81,13 @@ def apply_hdri(block: dict, hdri: dict | None) -> dict:
 def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, *,
                      engine: str, quality: int, width: int, height: int, ground: bool = True,
                      hdri: dict | None = None, materials: dict | None = None,
-                     serve: bool = False):
+                     serve: bool = False, live: bool = False, reuse_model: bool = False):
     """Export the model (IngeTrazo's own job writer) and add the look (and
     the 360° background, if any). ``serve``: Blender builds the scene and then
-    waits for cameras on its input (the live view). Returns (job path, studio
-    script path)."""
+    waits for cameras on its input (the live view). ``live``: a draft scene
+    (lighter EEVEE, sparser grass). ``reuse_model``: keep the model file
+    already in ``work`` instead of exporting it again (only the settings
+    changed). Returns (job path, studio script path)."""
     from core import render_blender as rb
     block, ambience = presets.studio(preset_key)
     block = apply_hdri(block, hdri)
@@ -99,9 +101,12 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
         sets = {}
     if sets:
         block["pbr"] = sets
-    job = rb.write_job(scene, camera, work, engine=engine, quality=quality, width=width,
-                       height=height, ground=ground, ambience=ambience,
-                       lights=document_lights(scene), serve=serve)
+    if live:
+        block["live"] = True
+    with _model_kept(work if reuse_model else None):
+        job = rb.write_job(scene, camera, work, engine=engine, quality=quality, width=width,
+                           height=height, ground=ground, ambience=ambience,
+                           lights=document_lights(scene), serve=serve)
     data = json.loads(job.read_text(encoding="utf-8"))
     data["studio"] = block
     job.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -110,6 +115,30 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
     script = work / "studio_scene.py"
     shutil.copyfile(HERE / "blender" / "studio_scene.py", script)
     return job, script
+
+
+class _model_kept:
+    """While IngeTrazo's job writer runs: its model export is skipped when
+    ``work`` already holds the model file (the live view, when only a setting
+    changed; exporting a big model is the slow part of a reload)."""
+
+    def __init__(self, work):
+        self.glb = Path(work) / "model.glb" if work is not None else None
+        self.saved = None
+
+    def __enter__(self):
+        if self.glb is None or not self.glb.is_file():
+            return self
+        import formats.gltf as gltf
+        self.saved = gltf.save_glb
+        gltf.save_glb = lambda scene, path, *a, **k: None
+        return self
+
+    def __exit__(self, *exc):
+        if self.saved is not None:
+            import formats.gltf as gltf
+            gltf.save_glb = self.saved
+        return False
 
 
 def _slider(lo, hi, value, steps=200):
@@ -332,8 +361,8 @@ class StudioPanel(QWidget):
         self._live = None
         self._live_resume = False
         self.live_box = QCheckBox("Live view")
-        self.live_box.setToolTip("Keeps Blender open: a draft image follows the 3D view and updates when "
-                                 "you stop moving the camera or change the model or the look.")
+        self.live_box.setToolTip("Keeps Blender open: when you stop moving the camera a quick image comes, "
+                                 "then a cleaner draft. Always a light EEVEE draft; Engine and Quality are for Render.")
         self.live_box.toggled.connect(self._live_toggled)
         outer.addWidget(self.live_box)
         self.render_btn = QPushButton("Render")
@@ -353,6 +382,11 @@ class StudioPanel(QWidget):
         from core import render_blender as rb
         return rb.find_blender(str(QSettings().value(rb.SETTINGS_KEY, "") or "") or None)
 
+    def live_model_key(self):
+        """What the live scene's MODEL file depends on: the document and its content."""
+        scene = self.app.scene
+        return (id(scene), getattr(scene, "content_version", 0))
+
     def live_key(self):
         """What the live scene depends on besides the camera: the model, the
         look and every setting, the materials' render settings, the proportions."""
@@ -364,13 +398,16 @@ class StudioPanel(QWidget):
         scene = self.app.scene
         return (id(scene), getattr(scene, "content_version", 0), doc, mats_, round(self._aspect(), 3))
 
-    def live_job(self, work: Path, width: int, height: int):
-        """The job of the live Blender: the current look and settings, draft
-        quality, in serve mode."""
+    def live_job(self, work: Path, width: int, height: int, reuse_model: bool = False):
+        """The job of the live Blender: the current look and settings, a draft
+        in serve mode — always EEVEE, lightened (the Engine and Quality chosen
+        are for Render). ``reuse_model``: the model file in ``work`` is still
+        good (only a setting changed)."""
         return write_studio_job(
             self.app.scene, self.app.viewport.camera, work, self.preset.currentData(),
-            self.slider_values(), engine=self.engine.currentData(), quality=0, width=width,
-            height=height, hdri=self.hdri_settings(), materials=self.material_specs(), serve=True)
+            self.slider_values(), engine="eevee", quality=0, width=width,
+            height=height, hdri=self.hdri_settings(), materials=self.material_specs(), serve=True,
+            live=True, reuse_model=reuse_model)
 
     def _live_toggled(self, on: bool):
         if on:

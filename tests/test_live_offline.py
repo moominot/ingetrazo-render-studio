@@ -55,23 +55,36 @@ live.image.connect(panel._live_image); live.state.connect(panel.status.setText)
 panel.live_box.setChecked(True)
 ok(wait(lambda: panel.window is not None and panel.window.isVisible() and panel.window.original is not None), "ticking Live view opens the image window with a first draft")
 ok(live.loads == 1 and any("studio=True serve=True" in l for l in log_lines()), "Blender was loaded once, with the look (studio block) and in serve mode")
-ok(any(l.startswith("render") and "samples=8" in l for l in log_lines()) or n_first_check(), "draft samples (EEVEE sync: 8)")
+renders = lambda: [l for l in log_lines() if l.startswith("render")]
+ok(wait(lambda: any("samples=8" in l for l in renders())), "the draft follows (8 samples)")
+first = renders()[:2]
+ok(len(first) == 2 and "samples=1 width=480" in first[0] and "samples=8 width=960" in first[1],
+   f"quick first (1 sample, half width), then the draft: {first}")
 ok("Draft" in panel.window.note.text() and panel.window.note.isVisible(), "the window says it is a draft")
 job = json.load(open(live._work / "job.json"))
 ok(job["serve"] is True and job["studio"]["clouds"] >= 0 and job["width"] == 960, "job: serve mode, the look's studio block, draft width")
+ok(job["engine"] == "eevee" and job["studio"].get("live") is True, "the live job is a lightened EEVEE draft")
 
 n0 = len([l for l in log_lines() if l.startswith("render")])
 app.viewport.camera.yaw += 0.4
 ok(wait(lambda: len([l for l in log_lines() if l.startswith("render")]) > n0), "moving the camera asks for a new image")
 ok(live.loads == 1, "...without reloading the scene")
 
+glb = live._work / "model.glb"
+t_glb = glb.stat().st_mtime_ns
 app.scene.version += 1                                                         # the model changed
 ok(wait(lambda: live.loads == 2), "changing the model reloads the scene")
+ok(live.starts == 1 and any(l.startswith("reload") for l in log_lines()), "...in the same Blender (no new start)")
+ok(glb.stat().st_mtime_ns != t_glb, "...with the model exported again")
 n1 = len([l for l in log_lines() if l.startswith("render")])
 ok(wait(lambda: len([l for l in log_lines() if l.startswith("render")]) > n1), "and a new image comes")
 
+t_glb = glb.stat().st_mtime_ns
+panel.engine.setCurrentIndex(panel.engine.findData("cycles"))
 panel.preset.setCurrentIndex(panel.preset.findData("night"))                    # the look changed
-ok(wait(lambda: live.loads == 3), "changing the look reloads the scene")
+ok(wait(lambda: live.loads >= 3 and live._ready), "changing the look reloads the scene")
+ok(live.starts == 1 and glb.stat().st_mtime_ns == t_glb, "...in the same Blender, without exporting the model again")
+ok(json.load(open(live._work / "job.json"))["engine"] == "eevee", "...still EEVEE while Render is set to Cycles")
 ok(wait(lambda: any("render" in l for l in log_lines()[-1:])), "and renders it")
 
 # a final render pauses the live view; the final image stays on screen
@@ -80,7 +93,7 @@ ok(not live.active and live._proc is None, "a final render stops the live Blende
 panel._resume_live(keep_final=True)
 ok(not panel.live_box.isChecked() and not live.active, "after the final render the live view stays off (it would draw over the final image)")
 panel.live_box.setChecked(True)
-ok(wait(lambda: live.active and live.loads == 4 and live._ready), "ticking it again brings it back")
+ok(wait(lambda: live.active and live._ready and live.starts == 2), "ticking it again brings it back (a new Blender)")
 panel._pause_live(); panel._resume_live(keep_final=False)
 ok(wait(lambda: live.active), "a render that did not start resumes the live view")
 

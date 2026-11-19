@@ -1072,9 +1072,10 @@ def _grass_node_group(name, branches):
     return ng
 
 
-def build_grass(specs):
-    """Grow the grass of every material of type «grass» (see above). Returns the
-    number of tufts asked for."""
+def build_grass(specs, factor=1.0):
+    """Grow the grass of every material of type «grass» (see above), ``factor``
+    times as dense (the live view's draft is sparser). Returns the number of
+    tufts asked for."""
     kinds = {}
     for mat in bpy.data.materials:
         spec = _spec_for(mat, specs)
@@ -1096,7 +1097,7 @@ def build_grass(specs):
             area = _grass_area(obj, {i})
             if area <= 0.0:
                 continue
-            d = grass_density(kinds[mat.name])
+            d = grass_density(kinds[mat.name]) * max(0.01, float(factor))
             plan.append((obj, mat, d, area))
             total += d * area
     if not plan:
@@ -1576,8 +1577,17 @@ def measure_exposure(scene, target=0.2, bias=0.0, fraction=25, samples=8, white=
 
 # ---- the render ------------------------------------------------------------------------
 
-def main():
-    job = core["load_job"]()
+#: The live view: grass this much sparser (it is a draft), EEVEE without its costliest effects.
+LIVE_GRASS = 0.35
+LIVE_EEVEE = (("use_raytracing", False), ("use_fast_gi", False), ("shadow_resolution_scale", 0.5),
+              ("use_shadow_jitter_viewport", False), ("shadow_ray_count", 1), ("shadow_step_count", 4),
+              ("use_volumetric_shadows", False))
+
+
+def build(job):
+    """The whole scene of ``job`` from scratch: model, materials, sky, lights,
+    engine, look and exposure. Returns (scene, figures). Called again, in the
+    same Blender, when the live view sends a new job (no restart)."""
     st = job.get("studio") or {}
     bpy.ops.wm.read_factory_settings(use_empty=True)
     scene = bpy.context.scene
@@ -1594,7 +1604,7 @@ def main():
     if sets and not st.get("white_model"):
         apply_texture_sets(sets, specs)
     if specs and st.get("grass", True):
-        build_grass(specs)
+        build_grass(specs, LIVE_GRASS if st.get("live") else 1.0)
     if st.get("albedo_cap", 0.8):
         cap_albedo(float(st.get("albedo_cap", 0.8)))
     if st.get("white_model"):
@@ -1679,6 +1689,14 @@ def main():
                     setattr(ev, attr, value)
                 except (TypeError, ValueError):
                     pass
+    if st.get("live") and job.get("engine") != "cycles":
+        ev = scene.eevee
+        for attr, value in LIVE_EEVEE:                 # a quick draft, not the final picture
+            if hasattr(ev, attr):
+                try:
+                    setattr(ev, attr, value)
+                except (TypeError, ValueError):
+                    pass
     for attr, value in (st.get("eevee_overrides") or {}).items():   # for tuning
         target = scene.eevee
         for part in attr.split(".")[:-1]:
@@ -1713,11 +1731,58 @@ def main():
             last["text"] = text
             say("stats", text.replace("\n", " "))
 
-    if hasattr(bpy.app.handlers, "render_stats"):
+    if hasattr(bpy.app.handlers, "render_stats"):        # (a new file clears it: added each build)
         bpy.app.handlers.render_stats.append(_stats)
+    return scene, figures
+
+
+def serve(scene, figures):
+    """IngeTrazo's «sync with the view» protocol, and more: each JSON line is a
+    camera to render (``camera``, ``output``, ``width``, ``height``, ``samples``),
+    ``{"reload": "<job.json>"}`` builds that job's scene in THIS Blender (no new
+    start: a changed setting costs only the scene's build), ``{"quit": true}``
+    ends. «ready» after each build, «done <file>» after each image."""
+    say("ready")
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            req = json.loads(line)
+        except ValueError:
+            say("error", "bad request")
+            continue
+        if req.get("quit"):
+            break
+        if req.get("reload"):
+            try:
+                with open(req["reload"], encoding="utf-8") as fh:
+                    job = json.load(fh)
+                scene, figures = build(job)
+            except Exception as exc:  # noqa: BLE001 - say it; the app starts a new Blender
+                say("error", "reload failed", exc)
+                raise
+            say("ready")
+            continue
+        w, h = int(req["width"]), int(req["height"])
+        r = scene.render
+        core["set_camera"](scene, req["camera"], w, h)
+        core["face_figures"](figures, req["camera"])
+        core["set_samples"](scene, int(req.get("samples", 16)))
+        r.resolution_x, r.resolution_y = w, h
+        r.filepath = req["output"]
+        say("rendering", w, "x", h)
+        bpy.ops.render.render(write_still=True)
+        say("done", req["output"])
+
+
+def main():
+    job = core["load_job"]()
+    scene, figures = build(job)
     if job.get("serve"):
-        core["serve"](scene, figures)
+        serve(scene, figures)
         return
+    w, h = int(job["width"]), int(job["height"])
     say("rendering", w, "x", h)
     bpy.ops.render.render(write_still=True)
     if job.get("blend"):
