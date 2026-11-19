@@ -45,10 +45,12 @@ For each material you can:
 - adjust **Roughness**, **Metal**, **Relief** and **Glow**, each with an optional map.
 
 Relief comes from the material's picture when it has one (mortar joints,
-wood grain), otherwise from a fine grain. With the picture, the **Relief** slider is the height
-of the relief, up to 2.5 cm from black to white, at full strength (before 0.5.2 a fixed 4 mm was
-scaled by a strength below 1, too faint to see in a render). It shows where the picture changes
-sharply; for gentle changes raise the map's contrast or use a height map. A glowing material lights what
+wood grain), otherwise from a fine grain. With the picture, the **Relief** slider is the height of the relief, up to 3 cm from black to
+white, at full strength. The picture is first turned into a smooth height map (reduced to at most
+1024 px, blurred, stretched to use the whole range, inverted and given contrast if asked): used
+raw, its grain became noise and a joint a pixel or two wide gave only a thin outline (0.5.x to
+0.7.0 did that; 0.7.1 only made it stronger). It shows where the picture changes clearly; for
+gentle changes (wood grain) raise the map's contrast or use a height map. A glowing material lights what
 is around it, and the exposure meter ignores it, so it doesn't darken the
 picture.
 
@@ -183,6 +185,7 @@ Render tab).
 
 ## Tests
 
+- `tests/test_relief_bpy.py` renders a brick wall with a REAL Blender (the `bpy` module, `pip install bpy`) with and without relief and checks the height map and the difference; skipped when `bpy` is missing.
 - `tests/test_cube_preview_offline.py` checks the cube preview (picture, tile, colour, polish, metal, relief, glass, glow) and its wiring in the editor.
 - `tests/test_live_offline.py` runs the live view against a stand-in for Blender (`tests/fake_blender.py`, same protocol): first draft, camera moves, model/look changes, a final render, switching off.
 - `tests/test_doc_settings_offline.py` checks the settings kept in the document.
