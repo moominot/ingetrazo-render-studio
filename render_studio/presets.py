@@ -51,11 +51,16 @@ PRESETS = {
                      "exposure_target": 0.32, "saturation": 0.85, "vignette": 0.15,
                      "ground_color": [0.62, 0.62, 0.60]}),
     "interior": ({"en": "Interior", "ca": "Interior", "es": "Interior"}, "day",
-                 {"clouds": 0.25, "exposure_target": 0.34, "exposure_white": 2.4,
-                  "white_balance": 6500, "saturation": 1.04, "vignette": 0.14}),
+                 # Exposed for the room, the window allowed to burn out (as a
+                 # photographer would); the sky's blue light neutralised.
+                 {"clouds": 0.25, "exposure_target": 0.36, "exposure_white": 6.0,
+                  "white_balance": 7600, "saturation": 1.04, "vignette": 0.14,
+                  "engine_hint": "cycles"}),
     "night": ({"en": "Night", "ca": "Nit", "es": "Noche"}, "night",
-              {"white_balance": 5200, "exposure_target": 0.12, "exposure_white": 3.0,
-               "saturation": 1.08, "bloom": 0.2, "vignette": 0.25}),
+              # Metered low and capped: without lamps a night stays dark (the
+              # meter would otherwise lift the moonlight to a flat blue day).
+              {"white_balance": 8500, "exposure_target": 0.07, "exposure_white": 3.0,
+               "exposure_max": 2.5, "saturation": 0.95, "bloom": 0.2, "vignette": 0.25}),
 }
 
 ORDER = ("clear", "partly_cloudy", "golden_hour", "overcast", "white_model", "interior", "night")

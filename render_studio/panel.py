@@ -219,6 +219,7 @@ class StudioPanel(QWidget):
             form.addRow(label, s)
         self.preset.currentIndexChanged.connect(self._preset_changed)
         scroll.setWidget(host)
+        scroll.setMinimumHeight(host.sizeHint().height() + 8)
         outer.addWidget(scroll, 1)
         self.render_btn = QPushButton("Render")
         self.render_btn.clicked.connect(self.render)
@@ -239,6 +240,12 @@ class StudioPanel(QWidget):
             value = default if default is not None else block.get(key, 0.0)
             s = self.sliders[key]
             s.setValue(int(round((float(value) - lo) / (hi - lo) * s.maximum())))
+        hint = block.get("engine_hint")
+        if hint and self.engine.currentData() != hint:
+            # EEVEE's screen-space light can't fill a room lit through a
+            # window (it comes out blue and flat): a path tracer is needed.
+            self.engine.setCurrentIndex(max(0, self.engine.findData(hint)))
+            self.status.setText("Interiors need Cycles: light bounces through the window.")
 
     def slider_values(self) -> dict:
         return {k: _value(s) for k, s in self.sliders.items()}

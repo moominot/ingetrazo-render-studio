@@ -207,6 +207,66 @@ def cap_albedo(cap=0.8):
         say("albedo", f"{n} materials capped at {cap}")
 
 
+def haze_ground(scene, near=120.0, far=1200.0):
+    """The ground melts into the sky's own horizon colour with distance, so
+    the far edge of the ground plane is no hard line against the sky (the
+    atmosphere Enscape shows). The horizon colour is the world's sky looked
+    up level with the horizon: the same Sky Texture, fed the view direction
+    flattened onto the horizon."""
+    ground = bpy.data.objects.get("IngeTrazo ground")
+    if ground is None or not ground.data.materials or scene.world is None:
+        return
+    mat = ground.data.materials[0]
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    out = next((n for n in nodes if n.type == "OUTPUT_MATERIAL"), None)
+    bsdf = next((n for n in nodes if n.type == "BSDF_PRINCIPLED"), None)
+    if out is None or bsdf is None:
+        return
+    wnodes = scene.world.node_tree.nodes
+    wsky = next((n for n in wnodes if n.type == "TEX_SKY"), None)
+    bg = next((n for n in wnodes if n.type == "BACKGROUND"), None)
+    strength = bg.inputs["Strength"].default_value if bg else 1.0
+    emit = nodes.new("ShaderNodeEmission")
+    emit.inputs["Strength"].default_value = strength
+    if wsky is not None:
+        sky = nodes.new("ShaderNodeTexSky")
+        for attr in ("sky_type", "sun_elevation", "sun_rotation", "sun_direction", "altitude",
+                     "air_density", "aerosol_density", "ozone_density", "sun_size",
+                     "sun_intensity", "turbidity", "ground_albedo"):
+            if hasattr(wsky, attr):
+                try:
+                    setattr(sky, attr, getattr(wsky, attr))
+                except (TypeError, ValueError, AttributeError):
+                    pass
+        if hasattr(sky, "sun_disc"):
+            sky.sun_disc = False
+        geo = nodes.new("ShaderNodeNewGeometry")
+        neg = nodes.new("ShaderNodeVectorMath"); neg.operation = "SCALE"
+        neg.inputs["Scale"].default_value = -1.0
+        links.new(geo.outputs["Incoming"], neg.inputs[0])
+        sep = nodes.new("ShaderNodeSeparateXYZ")
+        links.new(neg.outputs["Vector"], sep.inputs["Vector"])
+        comb = nodes.new("ShaderNodeCombineXYZ")
+        links.new(sep.outputs["X"], comb.inputs["X"]); links.new(sep.outputs["Y"], comb.inputs["Y"])
+        comb.inputs["Z"].default_value = 0.015
+        links.new(comb.outputs["Vector"], sky.inputs["Vector"])
+        links.new(sky.outputs["Color"], emit.inputs["Color"])
+    elif bg is not None:
+        emit.inputs["Color"].default_value = bg.inputs["Color"].default_value
+    cam = nodes.new("ShaderNodeCameraData")
+    rng = nodes.new("ShaderNodeMapRange")
+    rng.interpolation_type = "SMOOTHSTEP"
+    rng.inputs["From Min"].default_value = near
+    rng.inputs["From Max"].default_value = far
+    links.new(cam.outputs["View Distance"], rng.inputs["Value"])
+    mix = nodes.new("ShaderNodeMixShader")
+    links.new(rng.outputs["Result"], mix.inputs["Fac"])
+    links.new(bsdf.outputs["BSDF"], mix.inputs[1])
+    links.new(emit.outputs["Emission"], mix.inputs[2])
+    links.new(mix.outputs["Shader"], out.inputs["Surface"])
+    say("haze", f"ground melts into the horizon from {near:.0f} to {far:.0f} m")
+
+
 # ---- the white model -----------------------------------------------------------------
 
 def white_model(skip_ground=True):
@@ -326,7 +386,7 @@ def build_compositor(scene, saturation=1.0, bloom=0.0, vignette=0.0, exposure=0.
 
 # ---- automatic exposure ----------------------------------------------------------------
 
-def measure_exposure(scene, target=0.2, bias=0.0, fraction=25, samples=8, white=1.6):
+def measure_exposure(scene, target=0.2, bias=0.0, fraction=25, samples=8, white=1.6, max_ev=8.0):
     """Render a small, quick image in scene-linear light (no exposure, no
     compositor), meter it — centre-weighted log average, the brightest
     2 % (sun, glints) left out — and return the exposure that brings it
@@ -364,7 +424,7 @@ def measure_exposure(scene, target=0.2, bias=0.0, fraction=25, samples=8, white=
         # — so sunlit white walls don't burn out; whichever is darker wins.
         p97 = float(np.quantile(lum, 0.97))
         ev_high = math.log2(white / max(p97, 1e-5))
-        ev = min(ev_avg, ev_high) + bias
+        ev = min(ev_avg, ev_high, max_ev) + bias
         ev = max(-8.0, min(8.0, ev))
         bpy.data.images.remove(img)
         say("meter", f"log-average {logavg:.4f} (EV {ev_avg:+.2f}), highlights {p97:.3f} "
@@ -437,6 +497,8 @@ def main():
     if ground:
         color = st.get("ground_color") or ground["color"]
         core["add_ground"](scene, ground["z"], ground["size"], color)
+        if st.get("haze", True):
+            haze_ground(scene, float(st.get("haze_near", 120.0)), float(st.get("haze_far", 1200.0)))
     core["set_engine"](scene, job.get("engine", "eevee"), int(job.get("samples", 64)))
     if job.get("engine") != "cycles":
         ev = scene.eevee
@@ -460,7 +522,8 @@ def main():
             scene, target=float(st.get("exposure_target", 0.2)),
             bias=float(st.get("exposure_bias", 0.0)),
             samples=16 if job.get("engine") == "cycles" else 8,
-            white=float(st.get("exposure_white", 1.6)))
+            white=float(st.get("exposure_white", 1.6)),
+            max_ev=float(st.get("exposure_max", 8.0)))
         core["set_samples"](scene, int(job.get("samples", 64)))
     else:
         scene.view_settings.exposure = float(job.get("exposure", -0.6)) + float(st.get("exposure_bias", 0.0))
