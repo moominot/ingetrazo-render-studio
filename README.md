@@ -42,15 +42,32 @@ For each material you can:
   stone, concrete, brick, varnished or raw wood, fabric, brushed metal,
   chrome, clear or frosted glass, water, or a light panel;
 - set its **type**: generic, glass, water or glowing;
-- adjust **Roughness**, **Metal**, **Relief** and **Glow**.
+- adjust **Roughness**, **Metal**, **Relief** and **Glow**, each with an optional map.
 
 Relief comes from the material's picture when it has one (mortar joints,
 wood grain), otherwise from a fine grain. A glowing material lights what
 is around it, and the exposure meter ignores it, so it doesn't darken the
 picture.
 
+### Maps
+
+Each setting can vary over the surface by following a map. The setting's
+slider then scales the map. A map can come from:
+- **Picture (B/W)**: the material's own texture in black and white. For
+  example, a wood texture's grain for its roughness and relief.
+- **Image file**: a roughness, metal or height map, or a mask for where it
+  glows. Relief also takes a **normal map**.
+
+Every map can be **inverted** and given more **contrast**, and a small
+preview shows what the render will read. Map files follow the picture's
+own size and placement. On a material without a picture, they tile at the
+**Map image size**.
+
+![Maps](docs/maps.png)
+
 The settings are saved in the document, one undo step per change. **Back
-to automatic** returns the material to IngeTrazo's own finish.
+to automatic** returns the material to IngeTrazo's own finish. Map files
+are linked by their path, not embedded in the document.
 
 ![Material editor](docs/material_editor.png)
 

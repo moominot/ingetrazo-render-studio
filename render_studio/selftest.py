@@ -62,13 +62,28 @@ def schedule(app, panel, config_path: str):
             if cfg.get("materials"):
                 # The material editor, driven as a user would: pick, preset.
                 ed = panel.open_materials()
-                for name, key in cfg["materials"].items():
+                for name, want in cfg["materials"].items():
+                    # a preset key, or {"preset", "map_size", "maps": {setting: {source,
+                    # path, invert, contrast}}}
+                    want = want if isinstance(want, dict) else {"preset": want}
                     if not ed.select(name):
                         note("material not listed", name)
                         continue
-                    i = ed.preset.findData(key)
-                    ed.preset.setCurrentIndex(i)
-                    ed._preset(i)
+                    if want.get("preset"):
+                        i = ed.preset.findData(want["preset"])
+                        ed.preset.setCurrentIndex(i)
+                        ed._preset(i)
+                    if want.get("map_size"):
+                        ed.map_size.setValue(float(want["map_size"]))
+                    for setting, m in (want.get("maps") or {}).items():
+                        row = ed.maps[setting]
+                        if m.get("path"):
+                            row.set_file(m["path"], m.get("source", "file"))
+                        else:
+                            row.source.setCurrentIndex(row.source.findData(m["source"]))
+                            row._changed()
+                        row.invert.setChecked(bool(m.get("invert")))
+                        row.contrast.setValue(int(round(float(m.get("contrast", 0)) * 100)))
                     ed._flush()
                 ed.grab().save(str(out / "material_editor.png"))
                 note("materials", json.dumps(panel.material_specs()))

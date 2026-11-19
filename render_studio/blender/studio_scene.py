@@ -538,18 +538,110 @@ def _colour_source(nodes, bsdf):
     return link.from_socket, None
 
 
-def _add_bump(mat, bsdf, amount):
-    """Relief: from the picture's light and dark when there is one (mortar
-    joints, wood grain), else a fine noise (plaster, concrete)."""
+def _image_node(mat, bsdf, m):
+    """The image a map reads: the material's own picture («picture»), or a
+    file («file», «normal») read with the picture's own coordinates (its
+    UVs and tiling) — or, on a material without a picture, projected on the
+    object's sides in tiles of ``size`` metres. None when there is none."""
     nodes, links = mat.node_tree.nodes, mat.node_tree.links
-    _sock, image = _colour_source(nodes, bsdf)
+    _sock, pic = _colour_source(nodes, bsdf)
+    src = m.get("source")
+    if src == "picture":
+        return pic
+    if src not in ("file", "normal") or not m.get("path"):
+        return None
+    try:
+        img = bpy.data.images.load(str(m["path"]), check_existing=True)
+    except (RuntimeError, OSError) as exc:
+        say("map unreadable", m["path"], exc)
+        return None
+    try:
+        img.colorspace_settings.name = "Non-Color"     # data, not a colour
+    except (TypeError, ValueError):
+        pass
+    node = nodes.new("ShaderNodeTexImage")
+    node.image = img
+    if pic is not None:
+        vec = next(iter(pic.inputs["Vector"].links), None)
+        if vec is not None:
+            links.new(vec.from_socket, node.inputs["Vector"])
+    else:
+        node.projection = "BOX"
+        node.projection_blend = 0.2
+        coord = nodes.new("ShaderNodeTexCoord")
+        mapping = nodes.new("ShaderNodeMapping")
+        k = 1.0 / max(0.01, float(m.get("size", 1.0)))
+        mapping.inputs["Scale"].default_value = (k, k, k)
+        links.new(coord.outputs["Object"], mapping.inputs["Vector"])
+        links.new(mapping.outputs["Vector"], node.inputs["Vector"])
+    return node
+
+
+def _map_value(mat, bsdf, m):
+    """A map as a 0..1 value: the image in black and white, inverted if
+    asked, with more contrast (0 as it is … 1 pure black or white)."""
+    node = _image_node(mat, bsdf, m)
+    if node is None:
+        return None
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    bw = nodes.new("ShaderNodeRGBToBW")
+    links.new(node.outputs["Color"], bw.inputs["Color"])
+    out = bw.outputs["Val"]
+    if m.get("invert"):
+        inv = nodes.new("ShaderNodeMath"); inv.operation = "SUBTRACT"
+        inv.inputs[0].default_value = 1.0
+        links.new(out, inv.inputs[1])
+        out = inv.outputs[0]
+    c = max(0.0, min(1.0, float(m.get("contrast", 0.0))))
+    if c > 0.0:
+        rng = nodes.new("ShaderNodeMapRange")
+        rng.clamp = True
+        rng.inputs["From Min"].default_value = 0.49 * c
+        rng.inputs["From Max"].default_value = 1.0 - 0.49 * c
+        links.new(out, rng.inputs["Value"])
+        out = rng.outputs["Result"]
+    return out
+
+
+def _scaled(mat, socket, factor):
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    mul = nodes.new("ShaderNodeMath"); mul.operation = "MULTIPLY"
+    links.new(socket, mul.inputs[0])
+    mul.inputs[1].default_value = float(factor)
+    return mul.outputs[0]
+
+
+def _add_bump(mat, bsdf, amount, m=None):
+    """Relief. ``m["source"]``: «picture» (its light and dark: mortar
+    joints, wood grain), «file» (a height map), «normal» (a normal map),
+    «grain» (a fine noise: plaster, concrete); none = the picture when
+    there is one, else the grain."""
+    m = m or {}
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    src = m.get("source") or "auto"
+    old = next(iter(bsdf.inputs["Normal"].links), None)
+    if src == "normal":
+        node = _image_node(mat, bsdf, m)
+        if node is None:
+            return
+        nmap = nodes.new("ShaderNodeNormalMap")
+        nmap.inputs["Strength"].default_value = 2.0 * amount
+        links.new(node.outputs["Color"], nmap.inputs["Color"])
+        links.new(nmap.outputs["Normal"], bsdf.inputs["Normal"])
+        return
+    _sock, pic = _colour_source(nodes, bsdf)
+    height = None
+    if src in ("picture", "file"):
+        height = _map_value(mat, bsdf, m)
+    elif src == "auto" and pic is not None:
+        height = _map_value(mat, bsdf, {"source": "picture"})
     bump = nodes.new("ShaderNodeBump")
     bump.inputs["Strength"].default_value = min(1.0, amount)
-    if image is not None:
-        bw = nodes.new("ShaderNodeRGBToBW")
-        links.new(image.outputs["Color"], bw.inputs["Color"])
-        links.new(bw.outputs["Val"], bump.inputs["Height"])
-        bump.inputs["Distance"].default_value = 0.004
+    if height is not None:
+        links.new(height, bump.inputs["Height"])
+        # A height map means it: 1 cm from black to white. A photo's light
+        # and dark only hints at relief: less.
+        bump.inputs["Distance"].default_value = 0.01 if src == "file" else 0.004
     else:
         coord = nodes.new("ShaderNodeTexCoord")
         noise = nodes.new("ShaderNodeTexNoise")
@@ -560,14 +652,14 @@ def _add_bump(mat, bsdf, amount):
         links.new(coord.outputs["Object"], noise.inputs["Vector"])
         links.new(noise.outputs["Fac"], bump.inputs["Height"])
         bump.inputs["Distance"].default_value = 0.004
-    old = next(iter(bsdf.inputs["Normal"].links), None)
     if old is not None:                    # a normal map: bump on top of it
         links.new(old.from_socket, bump.inputs["Normal"])
     links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
 
 
 def apply_material_specs(specs):
-    """After IngeTrazo's finishes: the editor's numbers on each material."""
+    """After IngeTrazo's finishes: the editor's numbers — and maps — on each
+    material. With a map, the setting's slider scales it."""
     done = 0
     for mat in bpy.data.materials:
         spec = _spec_for(mat, specs)
@@ -577,10 +669,16 @@ def apply_material_specs(specs):
         if bsdf is None:
             continue
         kind = spec.get("type", "generic")
-        if "roughness" in spec:
-            core["_set"](bsdf, ("Roughness",), float(spec["roughness"]))
-        if "metallic" in spec and kind == "generic":
-            core["_set"](bsdf, ("Metallic",), float(spec["metallic"]))
+        maps = spec.get("maps") or {}
+        for key, names in (("roughness", ("Roughness",)), ("metallic", ("Metallic",))):
+            if key not in spec or (key == "metallic" and kind != "generic"):
+                continue
+            core["_set"](bsdf, names, float(spec[key]))
+            m = maps.get(key) or {}
+            if m.get("source"):
+                val = _map_value(mat, bsdf, m)
+                if val is not None:
+                    mat.node_tree.links.new(_scaled(mat, val, spec[key]), bsdf.inputs[names[0]])
         if kind in ("generic", "glow"):
             core["_set"](bsdf, ("Transmission Weight", "Transmission"), 0.0)
         if spec.get("coat"):
@@ -589,7 +687,7 @@ def apply_material_specs(specs):
         if spec.get("sheen"):
             core["_set"](bsdf, ("Sheen Weight", "Sheen"), float(spec["sheen"]))
         if float(spec.get("bump", 0.0)) > 0.0:
-            _add_bump(mat, bsdf, float(spec["bump"]))
+            _add_bump(mat, bsdf, float(spec["bump"]), maps.get("bump"))
         if kind == "glow" and float(spec.get("glow", 0.0)) > 0.0:
             sock, _img = _colour_source(mat.node_tree.nodes, bsdf)
             if sock is not None and "Emission Color" in bsdf.inputs:
@@ -597,6 +695,13 @@ def apply_material_specs(specs):
             elif "Emission Color" in bsdf.inputs:
                 bsdf.inputs["Emission Color"].default_value = bsdf.inputs["Base Color"].default_value
             core["_set"](bsdf, ("Emission Strength",), float(spec["glow"]))
+            m = maps.get("glow") or {}
+            if m.get("source"):
+                val = _map_value(mat, bsdf, m)      # where it glows: a mask
+                if val is not None:
+                    level = _scaled(mat, val, spec["glow"])
+                    level.node.name = "studio_glow_level"      # the meter dims it
+                    mat.node_tree.links.new(level, bsdf.inputs["Emission Strength"])
             mat["studio_glow"] = True
         done += 1
     if done:
@@ -738,7 +843,9 @@ def measure_exposure(scene, target=0.2, bias=0.0, fraction=25, samples=8, white=
     for mat in bpy.data.materials:
         if mat.get("studio_glow") and mat.node_tree:
             bsdf = next((n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
-            sock = bsdf.inputs.get("Emission Strength") if bsdf else None
+            lvl = mat.node_tree.nodes.get("studio_glow_level")
+            sock = lvl.inputs[1] if lvl is not None else (
+                bsdf.inputs.get("Emission Strength") if bsdf else None)
             if sock is not None:
                 glows.append((sock, sock.default_value))
                 sock.default_value = 0.0
