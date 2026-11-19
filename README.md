@@ -115,6 +115,47 @@ The settings are saved in the document, one undo step per change. **Back
 to automatic** returns the material to IngeTrazo's own finish. Map files
 are linked by their path, not embedded in the document.
 
+### Full texture sets (normal, roughness, AO, displacement, metalness, opacity)
+
+IngeTrazo gives a face only its colour picture. When that picture has companion maps beside it,
+the render builds the full material from them by itself (Principled BSDF), read with the picture's
+own UVs (same tile size and rotation). They are found, in this order:
+
+1. A manifest next to the picture, `<picture stem>.pbr.json` (the asset panel writes it for its
+   Poly Haven and ambientCG downloads):
+
+   ```
+   {"version": 1, "color": "wood_floor_diff_1k.jpg",
+    "normal_gl": "...", "normal_dx": "...", "roughness": "...", "ao": "...",
+    "displacement": "...", "metalness": "...", "opacity": "...",
+    "arm": "...",                 # AO / roughness / metalness packed in R / G / B
+    "size_m": [w, h], "source": "polyhaven|ambientcg", "id": "<asset id>"}
+   ```
+
+   Every key but `version` and `color` is optional. Files are relative to the manifest's folder
+   and must stay inside it: an absolute path, a `..` or a missing file is dropped (the rest of the
+   manifest still counts). Another `version`, no `color` or bad JSON: the manifest is ignored.
+2. No manifest: the libraries' own file names, in the picture's folder (any of .png/.jpg/.exr/.tif):
+   **Poly Haven** `<id>_diff_<res>` → `<id>_nor_gl_<res>`, `_nor_dx_`, `_rough_`, `_ao_`,
+   `_disp_`, `_metal_`, `_arm_`; **ambientCG** `<id>_<res>-JPG_Color` (or `-PNG_`) → `_NormalGL`,
+   `_NormalDX`, `_Roughness`, `_AmbientOcclusion`, `_Displacement`, `_Metalness`, `_Opacity`.
+3. Nothing found: the picture alone, exactly as before.
+
+A tinted picture looks for the maps of its original. In the render:
+- **Normal**: the OpenGL map; else the DirectX one with its green flipped. It replaces the
+  *automatic* relief guessed from the picture; a relief source chosen in the editor stays, on top.
+  Without a normal map the **displacement** map is the relief (a bump, 1 cm black to white).
+  True displacement is not used: it would need the model subdivided.
+- **Roughness**: the map × (the editor's Roughness / 0.5); a roughness map chosen in the editor wins.
+- **Metalness**: the map, with the editor's Metal as its floor; a metal map chosen in the editor wins.
+- **Ambient occlusion** multiplies the colour (75 %); **opacity** drives the alpha.
+- `arm` fills in whichever of AO / roughness / metalness has no map of its own.
+- Glass and water take only the normal map; the white model ignores the sets.
+
+The job carries them as `studio.pbr = {picture file name: {"normal": abs path, "normal_flip_green":
+bool, "roughness": …}}` (`render_studio/pbr.py`, no Qt, no Blender); `studio_scene.py` matches
+them to the imported materials by the picture's name.
+
 ![Material editor](docs/material_editor.png)
 
 ![Materials](docs/materials.png)
@@ -223,6 +264,13 @@ Render tab).
 - `tests/test_texture_swap_offline.py` changes a material's picture on loose faces, nested
   components and painted objects, and checks placement, proportions, tint, undo and save/reopen.
 - `tests/test_help_offline.py` checks the help against the code.
+- `tests/test_pbr_offline.py` (plain Python) finds texture sets by manifest and by the two libraries' names,
+  refuses manifest entries that leave the picture's folder, and collects the model's pictures.
+- `tests/test_pbr_job_offline.py` writes a job with the panel's own code and IngeTrazo's own GLB (a set on a
+  loose face and one on a tinted, painted group); given `blender.exe` it renders it and checks Blender found both.
+- `tests/test_pbr_blender.py` runs in Blender (`blender -b --factory-startup --python tests/test_pbr_blender.py --
+  <repo> <render_scene.py> <out dir>`): two small sets (Poly Haven and ambientCG style) rendered with and without
+  them in EEVEE and Cycles, the nodes checked, and a DirectX normal map shown to render like the OpenGL one.
 - `tests/test_offline.py` writes a job with the panel's own code and
   renders it with Blender. It then adjusts and saves the image in the image
   window, without IngeTrazo running.

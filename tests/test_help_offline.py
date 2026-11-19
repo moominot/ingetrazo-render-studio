@@ -27,6 +27,9 @@ ok("Ripple size" in page, "the help explains the water ripples")
 ok("Cube preview" in page, "the help explains the cube preview")
 ok("Live view" in page and "saved in the document" in page, "the help explains the live view and the saved settings")
 ok("Change picture…" in page and "Keep proportions" in page, "the help explains Change picture")
+from render_studio import pbr
+ok("Full texture sets" in page and pbr.MANIFEST_SUFFIX in page and "Poly Haven" in page and "ambientCG" in page,
+   "the help explains the full texture sets, their manifest and the two libraries' names")
 ok(all(a in page for a in ('name="panel"', 'name="image"', 'name="materials"', 'name="hdri"')), "anchors present")
 from core import render_blender as rb
 ok(f"{rb.SAMPLES['eevee'][0]} / {rb.SAMPLES['eevee'][1]} / {rb.SAMPLES['eevee'][2]}" in page

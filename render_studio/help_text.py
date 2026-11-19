@@ -188,6 +188,32 @@ the material has no picture of its own; with a picture, the maps follow its size
 </ul>
 <p>Map files are linked by their <b>path</b>, not embedded in the document: keep them where they are.</p>
 
+<a name="texture_sets"></a>
+<h4>Full texture sets</h4>
+<p>Material libraries give more than a picture: a <b>normal</b> map, <b>roughness</b>, <b>ambient occlusion</b>,
+<b>displacement</b>, <b>metalness</b>, <b>opacity</b>. When the material's picture has them beside it, the render uses
+them by itself, placed exactly as the picture (same tile size and rotation); there is nothing to set. They are found:</p>
+<ol>
+<li>from a small description file next to the picture, <b>&lt;picture name&gt;.pbr.json</b> (written by the asset panel
+when it downloads a set; the files it lists must be in the picture's folder);</li>
+<li>else by the libraries' own file names: <b>Poly Haven</b> (<i>wood_diff_1k.jpg</i> with <i>wood_nor_gl_1k</i>,
+<i>wood_rough_1k</i>, <i>wood_ao_1k</i>, <i>wood_disp_1k</i>, <i>wood_metal_1k</i>, <i>wood_arm_1k</i>) and
+<b>ambientCG</b> (<i>Wood049_1K-JPG_Color.jpg</i> with <i>_NormalGL</i>, <i>_Roughness</i>, <i>_AmbientOcclusion</i>,
+<i>_Displacement</i>, <i>_Metalness</i>, <i>_Opacity</i>).</li>
+</ol>
+<p>A picture with none renders as before. With a set:</p>
+<ul>
+<li>The <b>normal map</b> replaces the <b>automatic</b> relief guessed from the picture; a relief source you chose
+(grain, picture, height or normal map file) still applies, on top. A normal map drawn the other common way (its green channel inverted) is turned the right way by itself.
+Without a normal map, the <b>displacement</b> map gives the relief (1 cm from black to white).</li>
+<li><b>Roughness</b>: the set's map, scaled by the slider (0.5 leaves it as it is; lower polishes it, higher roughens it).
+A roughness map you chose here wins.</li>
+<li><b>Metal</b>: the set's map; the slider raises its lowest value. A metal map you chose here wins.</li>
+<li><b>Ambient occlusion</b> darkens the colour in the grooves; <b>opacity</b> cuts holes where it is black.</li>
+<li><b>Glass</b> and <b>Water</b> take only the normal map. <b>White model</b> ignores the sets.</li>
+<li>The cube preview shows the picture only; the sets show in the render.</li>
+</ul>
+
 <h4>Starting points</h4>
 {_material_presets()}
 

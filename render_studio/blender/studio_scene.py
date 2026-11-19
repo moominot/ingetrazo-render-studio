@@ -531,8 +531,8 @@ def _colour_source(nodes, bsdf):
         if node.name in seen:
             continue
         seen.add(node.name)
-        if node.type == "TEX_IMAGE" and node.image is not None:
-            return link.from_socket, node
+        if node.type == "TEX_IMAGE" and node.image is not None and not node.label.startswith(PBR_LABEL):
+            return link.from_socket, node                  # (not a texture set's AO map)
         for inp in node.inputs:
             todo += [l.from_node for l in inp.links]
     return link.from_socket, None
@@ -819,9 +819,12 @@ def _water_ripples(mat, bsdf, relief, size):
     links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
 
 
-def apply_material_specs(specs):
+def apply_material_specs(specs, with_sets=()):
     """After IngeTrazo's finishes: the editor's numbers — and maps — on each
-    material. With a map, the setting's slider scales it."""
+    material. With a map, the setting's slider scales it. ``with_sets``: the
+    materials whose picture has a texture set (:func:`apply_texture_sets`):
+    their own normal and displacement maps replace the AUTOMATIC relief (a
+    relief source chosen in the editor still applies, on top)."""
     done = 0
     for mat in bpy.data.materials:
         spec = _spec_for(mat, specs)
@@ -855,7 +858,11 @@ def apply_material_specs(specs):
         if kind == "water" and "ripple_size" in spec:
             _water_ripples(mat, bsdf, float(spec.get("bump", 0.0)), float(spec["ripple_size"]))
         elif float(spec.get("bump", 0.0)) > 0.0:
-            _add_bump(mat, bsdf, float(spec["bump"]), maps.get("bump"))
+            m = maps.get("bump") or {}
+            if mat.name in with_sets and not m.get("source"):
+                say("relief", mat.name, "from its texture set, not guessed from the picture")
+            else:
+                _add_bump(mat, bsdf, float(spec["bump"]), m)
         if kind == "glow" and float(spec.get("glow", 0.0)) > 0.0:
             sock, _img = _colour_source(mat.node_tree.nodes, bsdf)
             if sock is not None and "Emission Color" in bsdf.inputs:
@@ -874,6 +881,269 @@ def apply_material_specs(specs):
         done += 1
     if done:
         say("materials", done, "set in the material editor")
+
+
+# ---- full texture sets ------------------------------------------------------------------
+#
+# The job's ``"pbr"`` block (render_studio/pbr.py): for each colour picture of the
+# model, by file name, its companion maps as absolute paths. They are read with
+# the picture's own coordinates (its UVs, so its tile size and rotation).
+
+#: The label of every node a texture set adds (the picture finder skips them).
+PBR_LABEL = "Texture set: "
+#: How much the ambient occlusion map darkens the colour (0 none … 1 fully): the
+#: render's own light bounce already shades the model's real corners.
+PBR_AO_STRENGTH = 0.75
+#: A displacement map as relief (when the set has no normal map): metres from black to white.
+PBR_DISPLACEMENT_DISTANCE = 0.01
+#: The editor's Roughness that leaves a roughness map as it is; above or below it scales the map.
+PBR_ROUGHNESS_NEUTRAL = 0.5
+
+
+def _texture_set_for(img, sets):
+    """The texture set of a picture (a Blender image) by its file name: the
+    importer may add «.001», drop the extension or cut a long name."""
+    import re
+    if img is None or not sets:
+        return None
+    names = [img.name, re.sub(r"\.\d{3}$", "", img.name)]
+    try:
+        names.append(os.path.basename(bpy.path.abspath(img.filepath or "")))
+    except Exception:  # noqa: BLE001 - a packed image may have no path at all
+        pass
+    stems = {os.path.splitext(k)[0].lower(): v for k, v in sets.items()}
+    lower = {k.lower(): v for k, v in sets.items()}
+    for n in names:
+        if not n:
+            continue
+        hit = sets.get(n) or lower.get(n.lower()) or stems.get(n.lower()) \
+            or stems.get(os.path.splitext(n)[0].lower())
+        if hit:
+            return hit
+    for n in names[:2]:                  # Blender's 63-byte names
+        if len(n.encode("utf-8")) >= 63:
+            for k, v in lower.items():
+                if k.startswith(n.lower()):
+                    return v
+    return None
+
+
+def match_texture_sets(sets):
+    """{material name: its texture set} for the model's materials whose
+    picture has one."""
+    out = {}
+    if not sets:
+        return out
+    for mat in bpy.data.materials:
+        if not mat.node_tree:
+            continue
+        bsdf = next((n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+        if bsdf is None:
+            continue
+        _sock, pic = _colour_source(mat.node_tree.nodes, bsdf)
+        hit = _texture_set_for(pic.image if pic is not None else None, sets)
+        if hit:
+            out[mat.name] = hit
+    return out
+
+
+def _set_image(mat, pic, path, what):
+    """An image node reading the map at ``path`` exactly where the picture
+    ``pic`` is read (same coordinates, tiling, interpolation), as data."""
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    try:
+        img = bpy.data.images.load(str(path), check_existing=True)
+    except (RuntimeError, OSError) as exc:
+        say("texture set map unreadable", path, exc)
+        return None
+    try:
+        img.colorspace_settings.name = "Non-Color"
+    except (TypeError, ValueError):
+        pass
+    node = nodes.new("ShaderNodeTexImage")
+    node.image = img
+    node.label = PBR_LABEL + what
+    for attr in ("interpolation", "extension", "projection", "projection_blend"):
+        if hasattr(pic, attr):
+            try:
+                setattr(node, attr, getattr(pic, attr))
+            except (TypeError, ValueError):
+                pass
+    node.location = (pic.location.x - 300, pic.location.y - 300)
+    vec = next(iter(pic.inputs["Vector"].links), None)
+    if vec is not None:
+        links.new(vec.from_socket, node.inputs["Vector"])
+    return node
+
+
+def _socket(node, identifier, fallback):
+    return next((s for s in node.inputs if s.identifier == identifier), None) or node.inputs[fallback]
+
+
+def _channels(mat, colour_socket):
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    sep = nodes.new("ShaderNodeSeparateColor")
+    links.new(colour_socket, sep.inputs["Color"])
+    return sep.outputs["Red"], sep.outputs["Green"], sep.outputs["Blue"]
+
+
+def _normal_chain_end(bsdf):
+    """Where a texture set's normal goes: the BSDF's Normal, or the Normal of
+    the last relief (bump) already on it, so that relief sits on top. None
+    when a normal map chosen in the editor is already there (it wins)."""
+    link = next(iter(bsdf.inputs["Normal"].links), None)
+    if link is None:
+        return bsdf.inputs["Normal"]
+    node = link.from_node
+    while node.type == "BUMP":
+        nxt = next(iter(node.inputs["Normal"].links), None)
+        if nxt is None:
+            return node.inputs["Normal"]
+        node = nxt.from_node
+    return None
+
+
+def _uv_map_of(pic):
+    vec = next(iter(pic.inputs["Vector"].links), None)
+    node = vec.from_node if vec is not None else None
+    while node is not None and node.type != "UVMAP":
+        nxt = next((l for s in node.inputs for l in s.links), None)
+        node = nxt.from_node if nxt is not None else None
+    return getattr(node, "uv_map", "") if node is not None else ""
+
+
+def apply_texture_sets(matched, specs):
+    """Each material's texture set on its Principled BSDF, after the editor's
+    settings: normal (OpenGL; a DirectX one with its green flipped),
+    roughness, metalness, ambient occlusion (darkening the colour), opacity,
+    and displacement as relief when there is no normal map. The editor's
+    explicit choices stay: a roughness or metal map picked there wins, its
+    Roughness slider scales the set's roughness (0.5 leaves it as it is), its
+    Metal slider is a floor under the set's metalness; glass and water take
+    only the normal map."""
+    done = []
+    for mat in bpy.data.materials:
+        ts = matched.get(mat.name)
+        if not ts or not mat.node_tree:
+            continue
+        nodes, links = mat.node_tree.nodes, mat.node_tree.links
+        bsdf = next((n for n in nodes if n.type == "BSDF_PRINCIPLED"), None)
+        if bsdf is None:
+            continue
+        colour, pic = _colour_source(nodes, bsdf)
+        if pic is None:
+            continue
+        spec = _spec_for(mat, specs) or {}
+        kind = spec.get("type") or ("glass" if mat.get("ingetrazo_finish") == "glass"
+                                    else "water" if mat.get("ingetrazo_finish") == "water" else "generic")
+        chosen = spec.get("maps") or {}
+        used = []
+        # normal map (or displacement as relief)
+        end = _normal_chain_end(bsdf)
+        if ts.get("normal") and end is not None:
+            node = _set_image(mat, pic, ts["normal"], "normal")
+            if node is not None:
+                col = node.outputs["Color"]
+                if ts.get("normal_flip_green"):
+                    r, g, b = _channels(mat, col)
+                    inv = nodes.new("ShaderNodeMath"); inv.operation = "SUBTRACT"
+                    inv.inputs[0].default_value = 1.0
+                    links.new(g, inv.inputs[1])
+                    comb = nodes.new("ShaderNodeCombineColor")
+                    links.new(r, comb.inputs["Red"]); links.new(inv.outputs[0], comb.inputs["Green"])
+                    links.new(b, comb.inputs["Blue"])
+                    col = comb.outputs["Color"]
+                nmap = nodes.new("ShaderNodeNormalMap")
+                nmap.space = "TANGENT"
+                uv = _uv_map_of(pic)
+                if uv:
+                    nmap.uv_map = uv
+                nmap.inputs["Strength"].default_value = 1.0
+                links.new(col, nmap.inputs["Color"])
+                links.new(nmap.outputs["Normal"], end)
+                used.append("normal (green flipped)" if ts.get("normal_flip_green") else "normal")
+        elif ts.get("displacement") and end is not None and kind not in ("glass", "water"):
+            node = _set_image(mat, pic, ts["displacement"], "displacement")
+            if node is not None:
+                bump = nodes.new("ShaderNodeBump")
+                bump.inputs["Strength"].default_value = 1.0
+                bump.inputs["Distance"].default_value = PBR_DISPLACEMENT_DISTANCE
+                links.new(node.outputs["Color"], bump.inputs["Height"])
+                links.new(bump.outputs["Normal"], end)
+                used.append("displacement as relief")
+        if kind in ("glass", "water"):
+            if used:
+                done.append(f"{mat.name}: {', '.join(used)}")
+            continue
+        # the packed AO / roughness / metal, for what has no map of its own
+        arm = None
+        if ts.get("arm") and not all(ts.get(k) for k in ("ao", "roughness", "metalness")):
+            node = _set_image(mat, pic, ts["arm"], "AO/roughness/metal")
+            if node is not None:
+                arm = _channels(mat, node.outputs["Color"])
+
+        def value(key, channel, what):
+            if ts.get(key):
+                node = _set_image(mat, pic, ts[key], what)
+                if node is not None:
+                    return node.outputs["Color"]
+            return arm[channel] if arm is not None else None
+
+        if not (chosen.get("roughness") or {}).get("source"):
+            rough = value("roughness", 1, "roughness")
+            if rough is not None:
+                k = float(spec.get("roughness", PBR_ROUGHNESS_NEUTRAL)) / PBR_ROUGHNESS_NEUTRAL
+                if abs(k - 1.0) > 1e-6:
+                    mul = nodes.new("ShaderNodeMath"); mul.operation = "MULTIPLY"; mul.use_clamp = True
+                    links.new(rough, mul.inputs[0]); mul.inputs[1].default_value = k
+                    rough = mul.outputs[0]
+                links.new(rough, bsdf.inputs["Roughness"])
+                used.append("roughness")
+        if not (chosen.get("metallic") or {}).get("source"):
+            metal = value("metalness", 2, "metalness")
+            if metal is not None:
+                floor = float(spec.get("metallic", 0.0)) if kind == "generic" else 0.0
+                if floor > 0.0:
+                    mx = nodes.new("ShaderNodeMath"); mx.operation = "MAXIMUM"
+                    links.new(metal, mx.inputs[0]); mx.inputs[1].default_value = floor
+                    metal = mx.outputs[0]
+                links.new(metal, bsdf.inputs["Metallic"])
+                used.append("metalness")
+        ao = value("ao", 0, "ambient occlusion")
+        if ao is not None and colour is not None:
+            mix = nodes.new("ShaderNodeMix")
+            mix.data_type = "RGBA"
+            mix.blend_type = "MULTIPLY"
+            mix.clamp_result = True
+            _socket(mix, "Factor_Float", 0).default_value = PBR_AO_STRENGTH
+            links.new(colour, _socket(mix, "A_Color", 6))
+            links.new(ao, _socket(mix, "B_Color", 7))
+            out = next(s for s in mix.outputs if s.identifier == "Result_Color")
+            links.new(out, bsdf.inputs["Base Color"])
+            used.append("ambient occlusion")
+        if ts.get("opacity"):
+            node = _set_image(mat, pic, ts["opacity"], "opacity")
+            if node is not None:
+                alpha = node.outputs["Color"]
+                old = next(iter(bsdf.inputs["Alpha"].links), None)
+                if old is not None:                      # the picture's own cut-out too
+                    mul = nodes.new("ShaderNodeMath"); mul.operation = "MULTIPLY"
+                    links.new(old.from_socket, mul.inputs[0]); links.new(alpha, mul.inputs[1])
+                    alpha = mul.outputs[0]
+                links.new(alpha, bsdf.inputs["Alpha"])
+                for attr, val in (("surface_render_method", "DITHERED"), ("blend_method", "HASHED")):
+                    if hasattr(mat, attr):
+                        try:
+                            setattr(mat, attr, val)
+                        except (TypeError, ValueError):
+                            pass
+                used.append("opacity")
+        if used:
+            mat["studio_texture_set"] = ", ".join(used)
+            done.append(f"{mat.name}: {', '.join(used)}")
+    for line in done:
+        say("texture set", line)
+    return done
 
 
 # ---- the white model -----------------------------------------------------------------
@@ -1078,8 +1348,11 @@ def main():
     if specs:
         mark_material_types(specs)
     core["apply_finishes"]()
+    sets = match_texture_sets(st.get("pbr") or {})
     if specs:
-        apply_material_specs(specs)
+        apply_material_specs(specs, sets)
+    if sets and not st.get("white_model"):
+        apply_texture_sets(sets, specs)
     if st.get("albedo_cap", 0.8):
         cap_albedo(float(st.get("albedo_cap", 0.8)))
     if st.get("white_model"):

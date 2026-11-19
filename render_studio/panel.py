@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QFileDialog, QForm
                                QLabel, QProgressBar, QPushButton, QScrollArea, QSizePolicy,
                                QSlider, QSpinBox, QToolButton, QVBoxLayout, QWidget)
 
-from . import materials as mats, post, presets, settings_store
+from . import materials as mats, pbr, post, presets, settings_store
 from .live import LiveSession
 
 _log = logging.getLogger(__name__)
@@ -92,6 +92,13 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
     block = presets.apply_sliders(block, sliders)
     if materials:
         block["materials"] = mats.job_block(materials)
+    try:
+        sets = pbr.job_block(scene)       # each picture's companion maps (normal, roughness…)
+    except Exception:  # noqa: BLE001 - never stops a render: the pictures alone, as before
+        _log.exception("texture sets not read")
+        sets = {}
+    if sets:
+        block["pbr"] = sets
     job = rb.write_job(scene, camera, work, engine=engine, quality=quality, width=width,
                        height=height, ground=ground, ambience=ambience,
                        lights=document_lights(scene), serve=serve)
