@@ -15,7 +15,7 @@ from PySide6.QtCore import QSettings, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog,
                                QFormLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
-                               QPushButton, QScrollArea, QSlider, QVBoxLayout, QWidget)
+                               QPushButton, QScrollArea, QSlider, QToolButton, QVBoxLayout, QWidget)
 
 from . import materials as M
 
@@ -210,6 +210,11 @@ class MaterialEditor(QDialog):
         pick.setToolTip("Show the material of the selected face or group.")
         pick.clicked.connect(self.pick_selection)
         left.addWidget(pick)
+        help_btn = QToolButton()
+        help_btn.setText("?")
+        help_btn.setToolTip("How materials render, and what each setting does")
+        help_btn.clicked.connect(self._help)
+        left.addWidget(help_btn)
         lay.addLayout(left, 2)
 
         right = QWidget()
@@ -328,6 +333,10 @@ class MaterialEditor(QDialog):
                 self.list.setCurrentRow(i)
                 return True
         return False
+
+    def _help(self):
+        from . import ui_help
+        ui_help.show(self, "materials")
 
     def pick_selection(self):
         name = M.selection_material(self.app.scene)

@@ -20,7 +20,7 @@ from PySide6.QtCore import QLocale, QProcess, QProcessEnvironment, QSettings, Qt
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QHBoxLayout,
                                QLabel, QProgressBar, QPushButton, QScrollArea, QSizePolicy,
-                               QSlider, QSpinBox, QVBoxLayout, QWidget)
+                               QSlider, QSpinBox, QToolButton, QVBoxLayout, QWidget)
 
 from . import materials as mats, post, presets
 
@@ -144,6 +144,11 @@ class ImageWindow(QDialog):
             form.addRow(label, s)
         lay.addLayout(form)
         row = QHBoxLayout()
+        help_btn = QToolButton()
+        help_btn.setText("?")
+        help_btn.setToolTip("What each adjustment does")
+        help_btn.clicked.connect(self._help)
+        row.addWidget(help_btn)
         reset = QPushButton("Reset")
         reset.clicked.connect(self._reset)
         save = QPushButton("Save image…")
@@ -152,6 +157,10 @@ class ImageWindow(QDialog):
         row.addStretch(1)
         row.addWidget(save)
         lay.addLayout(row)
+
+    def _help(self):
+        from . import ui_help
+        ui_help.show(self, "image")
 
     def set_image(self, path: Path):
         import numpy as np
@@ -289,10 +298,17 @@ class StudioPanel(QWidget):
         scroll.setWidget(host)
         scroll.setMinimumHeight(host.sizeHint().height() + 8)
         outer.addWidget(scroll, 1)
+        self.help_btn = QToolButton()
+        self.help_btn.setText("?")
+        self.help_btn.setToolTip("How Render Studio works, and what each control does")
+        self.help_btn.clicked.connect(lambda: self.show_help("panel"))
         self.materials_btn = QPushButton("Materials…")
         self.materials_btn.setToolTip("How each material renders: polish, metal, relief, glass, glow.")
         self.materials_btn.clicked.connect(self.open_materials)
-        outer.addWidget(self.materials_btn)
+        mrow = QHBoxLayout()
+        mrow.addWidget(self.materials_btn, 1)
+        mrow.addWidget(self.help_btn)
+        outer.addLayout(mrow)
         self.editor = None
         self.render_btn = QPushButton("Render")
         self.render_btn.clicked.connect(self.render)
@@ -367,6 +383,10 @@ class StudioPanel(QWidget):
             return None
         return {"path": path, "rotation": _value(self.hdri_rotation),
                 "strength": 2.0 ** _value(self.hdri_strength), "light": self.hdri_light.isChecked()}
+
+    def show_help(self, anchor: str = "panel"):
+        from . import ui_help
+        ui_help.show(self, anchor)
 
     def open_materials(self):
         from .material_editor import MaterialEditor

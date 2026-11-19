@@ -1,0 +1,61 @@
+"""The «?» help of Render Studio. Offscreen, no Blender needed.
+argv: <ingetrazo-src> <render-studio repo> [png dir]"""
+import os, sys
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+SRC, REPO = [os.path.abspath(a) for a in sys.argv[1:3]]
+PNG = sys.argv[3] if len(sys.argv) > 3 else None
+sys.path[:0] = [SRC, REPO]
+from PySide6.QtWidgets import QApplication
+qa = QApplication.instance() or QApplication([])
+from render_studio import help_text, presets, materials as M, panel as P, ui_help
+from render_studio import material_editor as ME
+
+fails = []
+def ok(c, w):
+    print(("PASS " if c else "FAIL ") + w)
+    if not c: fails.append(w)
+
+ok(set(help_text.LOOKS) == set(presets.ORDER), "every look has a description, and only real looks")
+ok(set(help_text.PRESET_NOTES) == set(M.PRESETS), "every material preset has a note, and only real ones")
+page = help_text.html()
+ok(all(presets.label(k) in page for k in presets.ORDER), "every look name is in the help")
+ok(all(M.preset_label(k) in page for k in M.PRESETS), "every material preset name is in the help")
+ok(all(label in page for label, *_ in presets.SLIDERS.values()), "every panel slider is explained")
+ok(all(f"<b>{label}</b>" in page for _k, label, *_ in ME._FIELDS), "every material setting is explained")
+ok(all(a in page for a in ('name="panel"', 'name="image"', 'name="materials"', 'name="hdri"')), "anchors present")
+from core import render_blender as rb
+ok(f"{rb.SAMPLES['eevee'][0]} / {rb.SAMPLES['eevee'][1]} / {rb.SAMPLES['eevee'][2]}" in page
+   and f"{rb.SAMPLES['cycles'][0]} / {rb.SAMPLES['cycles'][1]} / {rb.SAMPLES['cycles'][2]}" in page,
+   "quality samples in the help match the code")
+
+class VP:
+    scene = None
+    def update(self): pass
+class App:
+    api_version = 2; viewport = VP(); scene = None
+    def document_data(self, default=None): return default
+    def set_document_data(self, v): pass
+    def on_document_changed(self, fn): pass
+panel = P.StudioPanel(App())
+ok(panel.help_btn.text() == "?" and panel.help_btn.toolTip(), "panel has a ? button")
+panel.help_btn.click(); qa.processEvents()
+d = ui_help._dialog
+ok(d is not None and d.isVisible() and "Look" in d.view.toPlainText(), "the panel's ? opens the help")
+win = P.ImageWindow()
+btn = [b for b in win.findChildren(type(panel.help_btn)) if b.text() == "?"]
+ok(len(btn) == 1, "image window has a ? button")
+btn[0].click(); qa.processEvents()
+ok(ui_help._dialog is d, "the same help window is reused")
+try:
+    ed = ME.MaterialEditor(App(), "en")
+    mbtn = [b for b in ed.findChildren(type(panel.help_btn)) if b.text() == "?"]
+    ok(len(mbtn) == 1, "material editor has a ? button")
+    mbtn[0].click(); qa.processEvents()
+except Exception as e:  # noqa: BLE001
+    ok(False, f"material editor builds offscreen ({e!r})")
+d.find.setText("vignette"); qa.processEvents()
+ok(d.view.textCursor().selectedText().lower() == "vignette", "search finds a word")
+if PNG:
+    d.find.setText(""); d.goto("materials"); qa.processEvents(); d.grab().save(os.path.join(PNG, "rs_help_materials.png"))
+    d.goto("panel"); qa.processEvents(); d.view.verticalScrollBar().setValue(0); d.grab().save(os.path.join(PNG, "rs_help_panel.png"))
+print("FAILED" if fails else "ALL OK"); sys.exit(1 if fails else 0)

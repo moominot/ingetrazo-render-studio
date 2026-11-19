@@ -110,6 +110,13 @@ the image as PNG or JPEG.
 
 ![Panel](docs/panel.png)
 
+## Help
+
+A **?** button in the panel, in the image window and in the material editor opens a help
+window (with search) at the right section: how Render Studio works, every control, the looks,
+the 360° background, the image adjustments, the material editor with its maps and starting
+points, and a few tips.
+
 ## Install
 
 Copy the `render_studio` folder into IngeTrazo's plugins folder
