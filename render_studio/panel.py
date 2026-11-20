@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QFormLayout, Q
                                QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSpinBox, QTabWidget,
                                QToolButton, QVBoxLayout, QWidget)
 
-from . import lights as studio_lights, materials as mats, output, pbr, presets, proxies, settings_store, widgets
+from . import lights as studio_lights, materials as mats, output, pbr, presets, proxies, section, settings_store, widgets
 from .live import LiveSession
 from .preview import ImageWindow  # noqa: F401 - re-exported: panel.ImageWindow
 from .widgets import SliderRow
@@ -140,6 +140,13 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
         block["pbr"] = sets
     if live:
         block["live"] = True
+    try:
+        sec = section.job_block(scene)        # the active section cuts the render too
+    except Exception:  # noqa: BLE001 - never stops a render: the whole model
+        _log.exception("section not read")
+        sec = None
+    if sec:
+        block["section"] = sec
     try:
         # Every light: Render Studio's (free and on objects) and the Render tab's.
         block["lights"] = studio_lights.job_block(scene)
@@ -501,6 +508,7 @@ class StudioPanel(QWidget):
         try:
             from . import sun_site
             doc = (json.dumps(self.settings_dict(), sort_keys=True) + studio_lights.signature(self.app.scene)
+                   + section.signature(self.app.scene)
                    + json.dumps(sun_site.site(self.app.scene), sort_keys=True))
             mats_ = json.dumps(self.material_specs(), sort_keys=True, default=str)
         except Exception:  # noqa: BLE001

@@ -1677,7 +1677,41 @@ LIVE_EEVEE = (("use_raytracing", False), ("use_fast_gi", False), ("shadow_resolu
 
 # ---- proxies -------------------------------------------------------------------------------
 
-def place_proxies(scene, entries):
+def clip_section(section):
+    """Cut every mesh with IngeTrazo's active section plane (``point``, ``normal``,
+    Z up, metres): what lies on the normal's side goes, as in the viewer. Done in
+    world space on each object's own mesh (a mesh shared by several objects is
+    copied first); no cap is added. Returns how many meshes were cut."""
+    import bmesh
+    from mathutils import Matrix
+    co = Vector(section["point"])
+    no = Vector(section["normal"])
+    if no.length < 1e-9:
+        return 0
+    no.normalize()
+    n = 0
+    for obj in list(bpy.data.objects):
+        if obj.type != "MESH" or obj.data is None or not obj.data.vertices:
+            continue
+        if obj.data.users > 1:
+            obj.data = obj.data.copy()
+        mw = obj.matrix_world.copy()
+        bm = bmesh.new()
+        bm.from_mesh(obj.data)
+        bmesh.ops.transform(bm, matrix=mw, verts=bm.verts)
+        geom = list(bm.verts) + list(bm.edges) + list(bm.faces)
+        bmesh.ops.bisect_plane(bm, geom=geom, plane_co=co, plane_no=no,
+                               clear_outer=True, clear_inner=False, dist=1e-6)
+        bmesh.ops.transform(bm, matrix=mw.inverted_safe(), verts=bm.verts)
+        bm.to_mesh(obj.data)
+        bm.free()
+        obj.data.update()
+        n += 1
+    say("section", f"{n} meshes cut at {[round(c, 3) for c in co]}, normal {[round(c, 3) for c in no]}")
+    return n
+
+
+def place_proxies(scene, entries, section=None):
     """The full models of the drawing's proxies (render_studio/proxies.py): each
     original's .glb imported ONCE into a collection kept out of the scene, then
     placed with a collection instance per placement (``matrices``: 4×4 rows, Z up,
@@ -1703,6 +1737,17 @@ def place_proxies(scene, entries):
                 c.objects.unlink(obj)
             col.objects.link(obj)
         for k, rows in enumerate(e.get("matrices") or []):
+            if section:
+                # A cut model needs real copies (a clipped instance would clip them all).
+                for src in col.objects:
+                    cp = src.copy()
+                    if src.data is not None:
+                        cp.data = src.data.copy()
+                    cp.parent = None
+                    cp.matrix_world = Matrix(rows) @ src.matrix_world
+                    holder.objects.link(cp)
+                placed += 1
+                continue
             inst = bpy.data.objects.new(f"{name} {k + 1}", None)
             inst.instance_type = "COLLECTION"
             inst.instance_collection = col
@@ -1721,7 +1766,9 @@ def build(job):
     bpy.ops.wm.read_factory_settings(use_empty=True)
     scene = bpy.context.scene
     core["import_model"](job["glb"])
-    place_proxies(scene, st.get("proxies") or [])
+    place_proxies(scene, st.get("proxies") or [], st.get("section"))
+    if st.get("section"):
+        clip_section(st["section"])
     if st.get("fix_normals", False):
         fix_normals()
     specs = st.get("materials") or {}
