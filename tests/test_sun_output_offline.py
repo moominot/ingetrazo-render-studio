@@ -9,7 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 SRC, REPO = [os.path.abspath(a) for a in sys.argv[1:3]]
 sys.path[:0] = [SRC, REPO]
 from pathlib import Path
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QWidget
 qa = QApplication.instance() or QApplication([])
 from PySide6.QtGui import QColor, QImage, QVector3D
 import numpy as np
@@ -192,11 +192,24 @@ out.autosave.setChecked(False)
 ok(panel._autosave() is None, "…only when asked")
 
 # ---- a narrow tray --------------------------------------------------------------------------
-for name, t in (("Lights", panel.lights_tab), ("Sun", panel.sun_tab), ("Output", panel.output_tab)):
-    for i, e in enumerate(L.all_lights(scene)[:1] if name == "Lights" else [None]):
-        if e is not None:
-            t.select(e["key"])
-    ok(t.minimumSizeHint().width() <= 230, f"the {name} tab fits a narrow tray ({t.minimumSizeHint().width()} px at least)")
+# Laid out for real at 240 px, with every kind of light chosen (a minimum size hint can hide a
+# label that does not wrap: the sun's note made the Lights tab 600 px wide).
+for kind in L.TYPES:
+    light_ops.add_free(app, L.new_light(kind, pos=(0, 0, 3)))
+panel.need_box.setVisible(False)
+panel.resize(240, 900); panel.show()
+for i, name in ((1, "Lights"), (2, "Sun"), (3, "Output")):
+    panel.tabs.setCurrentIndex(i); qa.processEvents()
+    area = panel.tabs.currentWidget()
+    inner = area.widget()
+    keys = [e["key"] for e in L.all_lights(scene)] if name == "Lights" else [None]
+    widest = 0
+    for key in keys:
+        if key is not None:
+            inner.select(key)
+        qa.processEvents()
+        widest = max(widest, QWidget.width(inner) - area.viewport().width())
+    ok(widest <= 0, f"the {name} tab fits a 240 px tray with every light chosen ({widest} px too wide)")
 
 print("FAILED" if fails else "ALL PASSED", len(fails))
 sys.exit(1 if fails else 0)

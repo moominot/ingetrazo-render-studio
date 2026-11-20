@@ -190,6 +190,7 @@ class LightsTab(QWidget):
         prow.setContentsMargins(0, 0, 0, 0)
         ef.addRow("Power", self.power_row)
         self.power_note = QLabel("")
+        self.power_note.setWordWrap(True)          # the sun's note is a sentence: never wider than the tray
         self.power_note.setStyleSheet("color: gray; font-size: 11px")
         ef.addRow("", self.power_note)
 
