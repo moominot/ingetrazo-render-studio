@@ -165,5 +165,29 @@ for engine in ("eevee", "cycles"):
     n = sum(1 for inst in dg.object_instances if inst.is_instance and inst.parent and inst.parent.name == "Lawn")
     ok(n > 36 * 200 * 0.8, f"[{engine}] tufts on the lawn: {n} (about 36 m² × {200}+ per m²)")
 
+# The density chosen in the editor: tufts per m², the same in the live view's draft.
+counts = {}
+for tag, extra, live in (("d100", {"grass_density": 100}, False), ("d400", {"grass_density": 400}, False),
+                         ("d400_live", {"grass_density": 400}, True)):
+    job, log = run(tag, "eevee", {**GRASS, **extra})
+    if live:                                   # what the live view sends: a draft, same density
+        job["studio"]["live"] = True
+        jp = os.path.join(OUT, tag, "job.json")
+        with open(jp, "w", encoding="utf-8") as fh:
+            json.dump(job, fh, indent=2)
+        r = subprocess.run([bpy.app.binary_path, "-b", "--factory-startup", "--python",
+                            os.path.join(OUT, tag, "studio_scene.py"), "--", jp],
+                           capture_output=True, text=True, errors="replace")
+        log = r.stdout + r.stderr
+    line = next((l for l in log.splitlines() if "INGETRAZO grass" in l), "")
+    try:
+        counts[tag] = int(line.split("- ")[-1].split()[0])
+    except (ValueError, IndexError):
+        counts[tag] = 0
+    ok(f"{extra['grass_density']}/m2" in line, f"[{tag}] the script uses the chosen density: {line.strip()}")
+ok(3.5 < counts["d400"] / max(1, counts["d100"]) < 4.5,
+   f"400/m² grows four times the tufts of 100/m² ({counts['d100']} → {counts['d400']})")
+ok(counts["d400_live"] == counts["d400"], f"the live view's draft grows the same grass ({counts['d400_live']})")
+
 print(f"\nrenders in {OUT}\n{len(fails)} failure(s)", flush=True)
 os._exit(1 if fails else 0)

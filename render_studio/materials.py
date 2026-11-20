@@ -9,7 +9,7 @@ document data, ``{"materials": {name: spec}}``), so they are saved with the
     {"type": "generic" | "glass" | "water" | "glow" | "grass",
      "roughness": 0..1, "metallic": 0..1, "bump": 0..1,
      "glow": nits-ish 0..50, "coat": 0..1, "sheen": 0..1,
-     "grass_height": metres (grass only)}
+     "grass_height": metres, "grass_density": tufts per m² (grass only)}
 
 Missing keys keep what IngeTrazo's own finish gives. In the render job they
 are keyed by the material's EXPORT name (what the GLB, and so Blender,
@@ -25,6 +25,17 @@ DEFAULT_TRANSPARENCY = {"glass": 0.85, "water": 0.7}
 #: Grass: blades grown on the faces in the render only (not in the model). Height in metres.
 DEFAULT_GRASS_HEIGHT = 0.08
 GRASS_HEIGHT_RANGE = (0.01, 0.60)
+#: Grass density: tufts per m² (each a few blades). The same in the live view and the render.
+GRASS_DENSITY_RANGE = (20.0, 800.0)
+GRASS_DENSITY_SHORT = 260.0         # the automatic density of short grass…
+GRASS_DENSITY_TALL = 60.0           # …down to this for tall grass (fewer, bigger tufts)
+
+
+def auto_grass_density(height: float) -> float:
+    """Tufts per m² a material gets when it has no density of its own
+    (materials saved before 0.11.0): what the render used for that height."""
+    h = max(0.005, float(height))
+    return max(GRASS_DENSITY_TALL, min(GRASS_DENSITY_SHORT, GRASS_DENSITY_SHORT * 0.10 / h))
 
 TYPES = ("generic", "glass", "water", "glow", "grass")
 TYPE_LABELS = {"generic": "Generic", "glass": "Glass", "water": "Water", "glow": "Glowing", "grass": "Grass"}
@@ -60,15 +71,128 @@ PRESETS = {
     "water": ({"en": "Water", "ca": "Aigua", "es": "Agua"},
               {"type": "water", "roughness": 0.02, "metallic": 0.0, "bump": 0.5, "ripple_size": 0.8, "transparency": 0.7}),
     "lawn": ({"en": "Lawn", "ca": "Gespa", "es": "Césped"},
-             {"type": "grass", "roughness": 0.85, "metallic": 0.0, "bump": 0.0, "grass_height": 0.06}),
+             {"type": "grass", "roughness": 0.85, "metallic": 0.0, "bump": 0.0, "grass_height": 0.06,
+              "grass_density": 260.0}),
     "meadow": ({"en": "Tall grass", "ca": "Herba alta", "es": "Hierba alta"},
-               {"type": "grass", "roughness": 0.9, "metallic": 0.0, "bump": 0.0, "grass_height": 0.30}),
+               {"type": "grass", "roughness": 0.9, "metallic": 0.0, "bump": 0.0, "grass_height": 0.30,
+               "grass_density": 90.0}),
     "light": ({"en": "Light panel (glows)", "ca": "Panell de llum (brilla)", "es": "Panel de luz (brilla)"},
               {"type": "glow", "roughness": 0.5, "metallic": 0.0, "bump": 0.0, "glow": 12.0}),
 }
 
 #: What an untouched material shows in the editor (IngeTrazo's finish rules).
 DEFAULT = {"type": "generic", "roughness": 0.5, "metallic": 0.0, "bump": 0.0, "glow": 0.0}
+
+
+def shown_controls(kind: str, *, picture: bool = False, set_relief: bool = False,
+                   relief_source: str = "", file_maps: bool = False) -> set:
+    """The editor's controls that change the render of a material of type ``kind``
+    (the rest are hidden). ``picture``: it has a picture of its own; ``set_relief``:
+    its texture set gives the relief (a normal or displacement map); ``relief_source``:
+    the relief map chosen in the editor ("" = automatic); ``file_maps``: some
+    setting follows an image file. What the render does with each (studio_scene):
+
+    * Metal: generic only (other types have no metal).
+    * Relief: the waves' height for water (its own ripples, no map); with a
+      texture set that gives the relief and no map chosen, the slider does
+      nothing (the set's map is used as it is), so only its map row shows.
+    * Glow: glowing only. Ripple size: water. Grass height and density: grass.
+    * Transparency: not grass (the blades cover the face).
+    * Map image size: a map file on a material without a picture (with one,
+      maps follow the picture's size). Change picture: a material with one.
+    """
+    shown = {"roughness", "map:roughness"}
+    if kind == "generic":
+        shown |= {"metallic", "map:metallic"}
+    if kind == "water":
+        shown |= {"bump", "ripple_size"}
+    else:
+        shown.add("map:bump")
+        if not (set_relief and not relief_source):
+            shown.add("bump")
+    if kind == "glow":
+        shown |= {"glow", "map:glow"}
+    if kind == "grass":
+        shown |= {"grass_height", "grass_density"}
+    else:
+        shown.add("transparency")
+    if file_maps and not picture:
+        shown.add("map_size")
+    if picture:
+        shown.add("picture")
+    return shown
+
+
+#: Names that say what a material is, in Catalan, Spanish, English, Portuguese, French, Italian and
+#: German: matched as whole words or word starts in its name and its picture's file name, as
+#: IngeTrazo's own finish guess does (core/finish.py). Short words must end there («mar» is the sea,
+#: «Marbre» is stone). The first kind in this order that matches wins (tall grass before lawn).
+_DETECT = (
+    ("water", r"aig[uü]|agua|[aá]gua|water|wasser|acqua|eau(?![a-z])|piscin|pileta|pool|"
+              r"(?:mar|sea|llac|lago|lake|estany|bassa|riu|r[ií]o|river|pond)(?![a-záéíóúàèòïüñç])|"
+              r"oc[eé]an|estanque"),
+    ("glass", r"vidr|vidre|glass|glas(?![a-z])|cristal|crystal|verre|vetro|vitral|vitrall|mampara|window[_ ]?pane"),
+    ("meadow", r"(?:herba|hierba|erba|grass|gras)[_ ]*(?:alt|tall|long|high|hoch)|"
+               r"(?:tall|long|high)[_ ]*grass|prat(?![a-z])|prado|prato(?![a-z])|meadow|wiese|pasto"),
+    ("lawn", r"gespa|c[eé]sped|grass|lawn|herb(?:a|es)(?![a-z])|hierbas?(?![a-z])|erba(?![a-z])|rasen|"
+             r"gras(?![a-z])|gazon|pelouse|relva|grama|turf"),
+    ("light", r"llum(?![a-z])|luz(?![a-z])|led(?![a-z])|ne[oó]n|l[aàá]mpad|l[aá]mpara|lamp(?![a-z])|"
+              r"emissi|emisi|glow|luminari|lightbox|light[_ ]?panel"),
+)
+_DETECT_RX = None
+
+
+def detect_preset(name: str | None, picture: str | None = None):
+    """The preset a material's name (or its picture's file name) says it is — water, glass,
+    lawn, tall grass, or a light — or None. «Gespa», «Césped_01», «[Water Pool]», «Vidre
+    finestra», «Herba alta», «LED panel»."""
+    import re
+    global _DETECT_RX
+    if _DETECT_RX is None:
+        _DETECT_RX = [(k, re.compile(r"(?:^|[^a-záéíóúàèòïüñç])(?:" + p + ")", re.IGNORECASE))
+                      for k, p in _DETECT]
+    for text in (name, picture):
+        if not text:
+            continue
+        low = str(text).replace("-", "_")
+        low = re.sub(r"([a-z])([A-Z])", r"\1_\2", low)          # «WaterBlue» → «Water_Blue»
+        for key, rx in _DETECT_RX:
+            if rx.search(low):
+                return key
+    return None
+
+
+def detected_spec(name: str | None, picture: str | None = None) -> dict | None:
+    """The render settings a material gets from its name when it has none of its own: its
+    detected preset's (without the transparency, which is the model's)."""
+    key = detect_preset(name, picture)
+    if key is None:
+        return None
+    spec = {k: v for k, v in PRESETS[key][1].items() if k != "transparency"}
+    spec["preset"] = key
+    spec["detected"] = True
+    return spec
+
+
+def with_detected(scene, specs: dict | None) -> dict:
+    """``specs`` plus, for each material of the model that has no settings of its own, the
+    ones its name says (detected_spec): a «Gespa» grows grass, an «Aigua» gets ripples."""
+    out = dict(specs or {})
+    try:
+        names = list(used_materials(scene))
+    except Exception:  # noqa: BLE001 - an odd scene: only the specs given
+        return out
+    registry = getattr(scene, "materials", None) or {}
+    for name in names:
+        if name in out:
+            continue
+        mat = registry.get(name) if hasattr(registry, "get") else None
+        tex = (getattr(mat, "texture", None) or {}) if mat is not None else {}
+        pic = tex.get("base") or tex.get("path") or ""
+        spec = detected_spec(name, pic.replace("\\", "/").rsplit("/", 1)[-1] if pic else None)
+        if spec:
+            out[name] = spec
+    return out
 
 
 def preset_label(key: str, lang: str = "en") -> str:

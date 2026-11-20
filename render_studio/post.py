@@ -11,6 +11,17 @@ import numpy as np
 
 NEUTRAL = {"exposure": 0.0, "contrast": 1.0, "saturation": 1.0, "warmth": 0.0, "vignette": 0.0}
 
+#: The retouch sliders of the preview window: key, label, minimum, maximum, how the value reads,
+#: and what it does (they change the finished PICTURE, instantly; the panel's sliders with the
+#: same names change the scene that is rendered).
+ADJUSTMENTS = (
+    ("exposure", "Exposure (EV)", -2.0, 2.0, "{:+.1f} EV", "Brighter or darker picture, in stops; highlights soften"),
+    ("contrast", "Contrast", 0.6, 1.6, "×{:.2f}", "Flatter ← → punchier, around mid-grey"),
+    ("saturation", "Saturation", 0.0, 1.8, "×{:.2f}", "How vivid the colours are (0 = black and white)"),
+    ("warmth", "Warmth", -1.0, 1.0, "{:+.2f}", "Colour of the picture: cooler ← → warmer"),
+    ("vignette", "Vignette", 0.0, 0.8, "{:.2f}", "Darkens the corners of the picture"),
+)
+
 
 def _to_linear(c):
     return np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)

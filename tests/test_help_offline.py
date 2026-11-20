@@ -25,7 +25,10 @@ ok(all(f"<b>{label}</b>" in page for _k, label, *_ in ME._FIELDS), "every materi
 ok("Transparency" in page, "the help explains the transparency")
 ok("Ripple size" in page, "the help explains the water ripples")
 ok("Cube preview" in page, "the help explains the cube preview")
-ok("Live view" in page and "saved in the document" in page, "the help explains the live view and the saved settings")
+ok("live view" in page and "saved in the document" in page, "the help explains the live view and the saved settings")
+ok("Open preview…" in page and "Render and save…" in page and "<b>Back to preview</b>" in page and "Two kinds of sliders" in page,
+   "the help explains the preview window, Render, Render and save… and the two kinds of sliders")
+ok("Zoom and move" in page and "100 %" in page and "mouse wheel" in page, "the help explains zoom and pan")
 ok("Change picture…" in page and "Keep proportions" in page, "the help explains Change picture")
 from render_studio import pbr
 ok("Full texture sets" in page and pbr.MANIFEST_SUFFIX in page and "Poly Haven" in page and "ambientCG" in page,

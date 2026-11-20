@@ -1,11 +1,17 @@
 # Render Studio for IngeTrazo
 
-Photographic renders from IngeTrazo with one click: pick a look, press
-**Render**, then fine-tune the image live without rendering again.
+Photographic renders from IngeTrazo: pick a look, watch it in a live preview you can zoom and
+move, press **Render**, then fine-tune the picture without rendering again.
 
 It drives the same Blender that IngeTrazo's own Render tab uses (Blender
 4.2+; tested with 5.3), with IngeTrazo's scene script plus
 `blender/studio_scene.py` for the look.
+
+When IngeTrazo finds no Blender, the panel says so at the top: a path box with **Browse…** (a
+macOS `Blender.app` is fine), a link to blender.org's download page and, on Linux packages
+(Flatpak, Snap), the exact install command. The chosen program is asked for its version (4.2 or
+newer) and saved under IngeTrazo's own key (`render/blender_path`), so the Render tab uses it too.
+**Open preview…** stays off until there is one.
 
 ![Looks](docs/looks.png)
 
@@ -124,7 +130,36 @@ scattered by geometry nodes over the faces of that material (instanced: a lawn c
 upright, turned and sized at random; their colour is the material's picture read at each tuft's UVs,
 else its colour, darker at the root. Short grass gets 260 tufts per m², taller grass fewer and bigger;
 past 250 000 tufts in one render the whole lawn is thinned (the log says by how much). The job carries
-it in the material's settings: `{"type": "grass", "grass_height": 0.08}`.
+it in the material's settings: `{"type": "grass", "grass_height": 0.08, "grass_density": 260}`.
+
+**Grass density** (0.11.0) is the tufts per m², 20–800 (Lawn preset 260, Tall grass 90). The live
+view grows the same grass as the render (before 0.11.0 it had a third of it). A material saved
+without a density gets the old automatic one for its height. Past 600 000 tufts in one render the
+whole lawn is thinned, and Blender's log says by how much.
+
+### Recognised by the name
+
+A material with no settings of its own whose name, or its picture's file name, says what it is gets
+that preset, in the editor and in the render job (`materials.detect_preset` / `with_detected`):
+**Water** (aigua, agua, água, water, wasser, eau, piscina, pool, mar, llac, lago, estany…),
+**Clear glass** (vidre, vidrio, glass, glas, cristal, verre…), **Tall grass** (herba alta, hierba
+alta, tall grass, prat, prado, meadow…), **Lawn** (gespa, césped, grass, herba, lawn, rasen,
+pelouse…) and **Light panel** (llum, luz, LED, neon, làmpada, lámpara, emissive…). Whole words or
+word starts, camel case split («WaterBlue»), short words must end there (Mar ≠ Marbre, Glas ≠
+Glasur, Led ≠ Ledge). The list marks such materials ◦; the editor shows the preset with a note and
+writes nothing until a setting changes (then ●). The model's transparency is left alone.
+
+### Only what matters is shown
+
+The editor hides the controls that do nothing for the material as it is set
+(`materials.shown_controls`, which follows what `studio_scene.py` does): Metal only for Generic;
+Glow for Glowing; Ripple size for Water (whose Relief is the waves' height, with no relief map);
+grass height and density for Grass (no Transparency there); the Relief slider while a texture set
+gives the relief and no relief map is chosen; **Map image size** only for a map file on a material
+without a picture; **Change picture…** only with a picture; Invert and contrast only for a
+black-and-white map; «Picture (B/W)» can't be chosen without a picture. For Glass and Water the
+texture set offers only its normal map, the only one the render uses on them. The map of a hidden
+setting is not saved.
 
 ### Full texture sets (normal, roughness, AO, displacement, metalness, opacity)
 
@@ -196,24 +231,40 @@ choose a 4K or larger file, for example a free one from polyhaven.com.
 
 ## Panel
 
-`Render Studio…` in the extensions menu opens the panel. It has:
-- the look;
-- the engine: EEVEE (fast, about 3 s) or Cycles (best, about 5 s on an RTX GPU);
-- the quality and the width;
-- sliders that change the render itself: exposure (EV), clouds, sun, warmth,
-  saturation and vignette;
-- a 360° background (HDRI), with rotation, brightness and "Lights the scene".
+`Render Studio…` in the extensions menu opens the panel, in three groups:
+- **Look and light** (the scene: the preview and Render both draw it): the look, and sliders for exposure
+  (EV), clouds, sun, warmth, saturation and vignette, each with its value and a line saying what it does;
+- **360° background** (HDRI), with rotation, brightness and "Lights the scene";
+- **Final render** (only Render uses it): the engine, EEVEE (fast, about 3 s) or Cycles (best, about 5 s
+  on an RTX GPU), the quality and the width.
 
-The finished image opens in its own window. There you can adjust
-exposure, contrast, saturation, warmth and vignette instantly, then save
-the image as PNG or JPEG.
+There is no Render button in the panel: **Open preview…** opens the preview window.
 
 ![Panel](docs/panel.png)
 
+## Preview window
+
+One window to look at the scene and to make the picture, in three states:
+
+- **Preview**: the live view (below), which you can zoom and move. **Render** makes the final picture with
+  the panel's engine, quality and width (shown beside the buttons); **Render and save…** asks for a PNG or
+  JPEG file first, renders, saves the picture exactly as rendered (no retouching) and returns to the preview.
+- **Rendering**: the progress bar and **Cancel**. The live Blender is closed meanwhile. Closing the window
+  does not stop the render: the picture opens when it is ready.
+- **Final picture**: the render with the retouch sliders (exposure in EV, contrast, saturation, warmth,
+  vignette: they change the picture instantly, nothing is rendered again), **Reset**, **Save image…**
+  (what you see, PNG or JPEG) and **Back to preview**.
+
+The panel's sliders and the retouch sliders share some names but not their effect: the panel's change
+the **scene** (a new preview or render), the retouch ones only the **finished picture**; each shows its
+value and what it does. Zoom: the mouse wheel zooms where the cursor is, dragging moves, a double click
+goes between Fit and 100 %, keys `+` `-` `0` `1`; the zoom and place stay while live frames of other sizes
+arrive (`widgets.ZoomView`). The code is in `preview.py` (window), `widgets.py` (zoom view, slider rows) and
+`panel.py`.
 ## Live view
 
-**Live view** (a box in the panel) keeps one Blender open with the scene and the look loaded, and
-an image follows your work. Two switches under it, remembered between sessions:
+The **live view** (the preview window's first state) keeps one Blender open with the scene and the look loaded, and
+an image follows your work. Two switches in the window, remembered between sessions:
 
 - **Follow the camera**: while the 3D view moves, small frames (320 px, 1 sample) come one after
   another as fast as Blender renders them, each showing the camera as it is when Blender is free;
@@ -224,15 +275,17 @@ an image follows your work. Two switches under it, remembered between sessions:
   when it changed. A change that comes while the previous one is still being built waits for it.
   Off: the live scene keeps the model and materials it has; the look and sliders still apply.
 
-The live Blender always uses EEVEE with its costliest effects off (ray tracing, fast GI, fine
-shadows) and grass at a third of its density: the panel's **Engine** and **Quality** are for
-**Render**. Measured on a test machine (Blender 5.3): first start about 3 s, a camera stop to the
+The live Blender (it starts when the window opens and stops when it closes) uses EEVEE with its costliest effects off (ray tracing, fast GI, fine
+shadows): the panel's **Engine** and **Quality** are for **Render**. The **Interior** look is the
+exception (0.11.0): EEVEE can't fill a room lit through a window, so its live view is **Cycles**
+(persistent data, GPU denoiser; 2 samples while moving, 4 for the quick image, 32 for the draft),
+and the preview looks like the render. The grass is as dense as in the render. Measured on a test machine (Blender 5.3): first start about 3 s, a camera stop to the
 quick image about 0.3 s, a change of look, material or model about 0.7–1 s, and 3–4 frames a second
 while the camera moves. That last figure is EEVEE's fixed cost per image (about a quarter of a second
 whatever its size; saving it and the compositor barely count): a smoother motion would need an
 interactive viewport, which a Blender running in the background does not have. It speaks the protocol
 of IngeTrazo's own «Sync with the view» (Blender in `serve` mode), extended with `reload`. **Render**
-closes the live Blender first and leaves the live view off, so the draft does not cover the final image.
+closes the live Blender first and leaves the live view off, so the draft does not cover the final image; **Back to preview** brings it back.
 
 ## Settings in the document
 
@@ -295,8 +348,17 @@ Render tab).
 - `tests/test_texture_swap_offline.py` changes a material's picture on loose faces, nested
   components and painted objects, and checks placement, proportions, tint, undo and save/reopen.
 - `tests/test_help_offline.py` checks the help against the code.
-- `tests/test_grass_sets_editor_offline.py` checks the Grass type in the editor (height slider, presets, cube
-  preview) and how the editor shows a picture's texture set.
+- `tests/test_grass_sets_editor_offline.py` checks the Grass type in the editor (height and density sliders,
+  presets, cube preview) and how the editor shows a picture's texture set.
+- `tests/test_preview_offline.py` checks the preview window without Blender: zoom and pan (wheel, drag, double click, keys,
+  kept across frames of other sizes), its three states and what each shows, the retouch sliders, and the panel's value
+  labels and hints.
+- `tests/test_workflow_blender_offline.py` runs the workflow with a REAL Blender: preview, Render, retouch and save, Back to
+  preview, Render and save… (PNG, JPEG, cancelled dialog), Cancel, and closing the window during a render.
+- `tests/test_detect_offline.py` checks the names recognised (and the look-alikes that are not), the editor's
+  ◦ mark and note, and the render job.
+- `tests/test_shown_controls_offline.py` checks which controls the editor shows for each type, picture and
+  texture set, and the panel's check of a Blender chosen by hand.
 - `tests/test_grass_blender.py` renders a lawn with a real Blender (EEVEE and Cycles): the blades grow on the lawn
   only, take its picture's colour where they stand, follow the height slider and leave the model's mesh alone.
 - `tests/test_pbr_offline.py` (plain Python) finds texture sets by manifest and by the two libraries' names,
