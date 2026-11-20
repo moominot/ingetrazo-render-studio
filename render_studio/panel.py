@@ -111,7 +111,7 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
                      engine: str, quality: int, width: int, height: int, ground: bool = True,
                      hdri: dict | None = None, materials: dict | None = None,
                      serve: bool = False, live: bool = False, reuse_model: bool = False,
-                     output: dict | None = None, doc_path=None):
+                     output: dict | None = None, doc_path=None, section_opts: dict | None = None):
     """Export the model (IngeTrazo's own job writer) and add the look (and
     the 360° background, if any). ``serve``: Blender builds the scene and then
     waits for cameras on its input (the live view). ``live``: a draft scene
@@ -141,7 +141,7 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
     if live:
         block["live"] = True
     try:
-        sec = section.job_block(scene)        # the active section cuts the render too
+        sec = section.job_block(scene, section_opts)        # the active section cuts the render too
     except Exception:  # noqa: BLE001 - never stops a render: the whole model
         _log.exception("section not read")
         sec = None
@@ -340,7 +340,9 @@ class StudioPanel(QWidget):
         self.tabs.addTab(lscroll, "Lights")
         from .sun_panel import SunTab
         self.sun_tab = SunTab(app, self)
-        for tab_widget, title in ((self.sun_tab, "Sun"), (self.output_tab, "Output")):
+        from .section_panel import SectionTab
+        self.section_tab = SectionTab(app)
+        for tab_widget, title in ((self.sun_tab, "Sun"), (self.section_tab, "Section"), (self.output_tab, "Output")):
             sc = QScrollArea()
             sc.setWidgetResizable(True)
             sc.setFrameShape(QFrame.NoFrame)
@@ -508,8 +510,8 @@ class StudioPanel(QWidget):
         try:
             from . import sun_site
             doc = (json.dumps(self.settings_dict(), sort_keys=True) + studio_lights.signature(self.app.scene)
-                   + section.signature(self.app.scene)
-                   + json.dumps(sun_site.site(self.app.scene), sort_keys=True))
+                   + section.signature(self.app.scene, self.section_tab.settings())
+                                      + json.dumps(sun_site.site(self.app.scene), sort_keys=True))
             mats_ = json.dumps(self.material_specs(), sort_keys=True, default=str)
         except Exception:  # noqa: BLE001
             doc = mats_ = ""
@@ -535,7 +537,8 @@ class StudioPanel(QWidget):
             self.slider_values(), engine=self.live_engine(), quality=0, width=width,
             height=height, hdri=self.hdri_settings(),
             materials=self.material_specs() if materials is None else materials, serve=True,
-            live=True, reuse_model=reuse_model, doc_path=self.doc_path())
+            live=True, reuse_model=reuse_model, doc_path=self.doc_path(),
+            section_opts=self.section_tab.settings())
 
     def doc_path(self):
         """The drawing's file (None until it is saved): proxies keep their originals
@@ -636,6 +639,7 @@ class StudioPanel(QWidget):
             combo.currentIndexChanged.connect(self._schedule_save)
         self.width.valueChanged.connect(self._schedule_save)
         self.output_tab.changed.connect(self._schedule_save)
+        self.section_tab.changed.connect(self._schedule_save)
         self.output_tab.changed.connect(self._update_summary)
         self.preset.currentIndexChanged.connect(lambda _i: self.sun_tab._show_sun())
         self.hdri.currentIndexChanged.connect(lambda _i: self.sun_tab._show_sun())
@@ -664,6 +668,7 @@ class StudioPanel(QWidget):
             "quality": self.quality.currentIndex(),
             "width": self.width.value(),
             "output": self.output_tab.settings(),
+            "section": self.section_tab.settings(),
             "sliders": {k: round(_value(s), 4) for k, s in self.sliders.items()},
             "hdri": ({"path": hdri, "rotation": round(_value(self.hdri_rotation), 3),
                       "brightness": round(_value(self.hdri_strength), 3),
@@ -688,6 +693,7 @@ class StudioPanel(QWidget):
             self.quality.setCurrentIndex(data["quality"])
             self.width.setValue(data["width"])
             self.output_tab.apply(data.get("output"))
+            self.section_tab.apply(data.get("section"))
             block, _amb = presets.studio(self.preset.currentData())
             for key, (_label, lo, hi, default, _unit) in presets.SLIDERS.items():
                 value = data["sliders"].get(key, default if default is not None else block.get(key, 0.0))
@@ -815,7 +821,8 @@ class StudioPanel(QWidget):
     def document_changed(self):
         if self.editor is not None and self.editor.isVisible():
             self.editor.refresh()
-        for tab in (getattr(self, "lights_tab", None), getattr(self, "sun_tab", None)):
+        for tab in (getattr(self, "lights_tab", None), getattr(self, "sun_tab", None),
+                    getattr(self, "section_tab", None)):
             if tab is not None:
                 tab.document_changed()
         if getattr(self, "_save_timer", None) is None or self._save_timer.isActive():
@@ -884,7 +891,8 @@ class StudioPanel(QWidget):
                 self.preset.currentData(), self.slider_values(),
                 engine=self.engine.currentData(), quality=self.quality.currentIndex(),
                 width=width, height=height, hdri=self.hdri_settings(),
-                materials=self.material_specs(), output=out, doc_path=self.doc_path())
+                materials=self.material_specs(), output=out, doc_path=self.doc_path(),
+                section_opts=self.section_tab.settings())
         except Exception as exc:  # noqa: BLE001 - say it, never crash the app
             _log.exception("render job failed")
             self._set_status(f"Could not prepare the render: {exc}")

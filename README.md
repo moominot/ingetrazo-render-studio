@@ -285,6 +285,18 @@ The **Output** tab sets the final picture's size and its file (kept in the docum
 
 ![Output tab](docs/output_tab.png)
 
+## Section
+
+The **Section** tab renders the drawing's active section plane (the Section tool): IngeTrazo
+only clips it on screen, so Render Studio cuts the meshes in Blender, proxies included.
+- **Close the cut with a face**: a flat cap in the cut's own colour (as in IngeTrazo) or one you
+  choose. Walls keep their holes, so a room shows as a room.
+- **Light**: *open*, the removed part is gone and the light enters the cut; *blocked*, it stays out
+  of the picture but still casts shadow and bounces light, so an interior is lit as in the real
+  building (Cycles; EEVEE may show it). White model leaves the cap's colour alone.
+- Meshes that are not closed get no cap (a single surface has no section to fill).
+- Kept in the document under `settings["section"]`.
+
 ## Proxies
 
 A **proxy** is a light stand-in in the drawing (an envelope, a box…) for a heavy model — a tree, a sofa, a car —

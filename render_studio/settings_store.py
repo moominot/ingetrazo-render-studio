@@ -25,14 +25,15 @@ format is a public contract; ``version`` goes up if it ever changes::
         "hdri": null,                    # or {"path": "...", "rotation": 0..360 degrees,
                                          #     "brightness": stops, "light": true|false}
         "output": {"size": "view", "height": 1080, "dpi": 300, "format": "png",
-                   "jpeg_quality": 92, "transparent": false}      # see output.py
+                   "jpeg_quality": 92, "transparent": false},      # see output.py
+        "section": {"cap": true, "color": null, "light": "open"}   # see section.py
       } }
 
 Pure Python: no Qt, so it can be tested and read by anything.
 """
 from __future__ import annotations
 
-from . import output, presets
+from . import output, presets, section
 
 VERSION = 1
 ENGINES = ("eevee", "cycles")
@@ -71,6 +72,7 @@ def clean(raw) -> dict | None:
         "sliders": sliders,
         "hdri": None,
         "output": output.clean(raw.get("output")),
+        "section": section.clean(raw.get("section")),
     }
     h = raw.get("hdri")
     if isinstance(h, dict) and isinstance(h.get("path"), str) and h["path"]:

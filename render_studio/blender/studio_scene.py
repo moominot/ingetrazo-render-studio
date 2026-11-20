@@ -1405,7 +1405,7 @@ def white_model(skip_ground=True):
         bsdf = next((x for x in mat.node_tree.nodes if x.type == "BSDF_PRINCIPLED"), None)
         if bsdf is None:
             continue
-        if mat.get("ingetrazo_finish") in ("glass", "water"):
+        if mat.get("ingetrazo_finish") in ("glass", "water") or mat.get("rs_section_cap"):
             continue
         core["_set"](bsdf, ("Base Color",), (0.82, 0.82, 0.80, 1.0))
         core["_set"](bsdf, ("Roughness",), 0.75)
@@ -1677,37 +1677,101 @@ LIVE_EEVEE = (("use_raytracing", False), ("use_fast_gi", False), ("shadow_resolu
 
 # ---- proxies -------------------------------------------------------------------------------
 
+def _srgb_to_linear(c):
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+
+def _cap_material(color):
+    """The material of the section's cap: a matte face of ``color`` (sRGB). White model
+    leaves it alone (``rs_section_cap``)."""
+    mat = bpy.data.materials.new("Render Studio section cap")
+    mat.use_nodes = True
+    mat["rs_section_cap"] = True
+    bsdf = next((x for x in mat.node_tree.nodes if x.type == "BSDF_PRINCIPLED"), None)
+    if bsdf is not None:
+        rgb = [_srgb_to_linear(float(c)) for c in (color or (0.35, 0.37, 0.41))[:3]]
+        bsdf.inputs["Base Color"].default_value = (*rgb, 1.0)
+        bsdf.inputs["Roughness"].default_value = 0.9
+    mat.diffuse_color = (*[_srgb_to_linear(float(c)) for c in (color or (0.35, 0.37, 0.41))[:3]], 1.0)
+    return mat
+
+
 def clip_section(section):
     """Cut every mesh with IngeTrazo's active section plane (``point``, ``normal``,
     Z up, metres): what lies on the normal's side goes, as in the viewer. Done in
     world space on each object's own mesh (a mesh shared by several objects is
-    copied first); no cap is added. Returns how many meshes were cut."""
+    copied first).
+
+    ``cap`` (default on): the cut is closed with a flat face of ``color``, filled from
+    the edges the cut leaves in the plane (holes stay open, as a wall's section does).
+    ``light`` "blocked": a copy of each cut mesh stays whole but invisible to the
+    camera, so it still casts shadow and bounces light as in the real building;
+    "open" (default): what is cut is gone and the light enters.
+    Returns how many meshes were cut."""
     import bmesh
-    from mathutils import Matrix
     co = Vector(section["point"])
     no = Vector(section["normal"])
     if no.length < 1e-9:
         return 0
     no.normalize()
-    n = 0
+    want_cap = bool(section.get("cap", True))
+    blocked = section.get("light") == "blocked"
+    capmat = _cap_material(section.get("color")) if want_cap else None
+    n = capped = ghosts = 0
     for obj in list(bpy.data.objects):
         if obj.type != "MESH" or obj.data is None or not obj.data.vertices:
             continue
+        if obj.users_collection and all(c.name.startswith("proxy ") for c in obj.users_collection):
+            continue                      # a proxy's original: only its copies are in the picture
         if obj.data.users > 1:
             obj.data = obj.data.copy()
         mw = obj.matrix_world.copy()
+        if not any((mw @ v.co - co).dot(no) > 1e-6 for v in obj.data.vertices):
+            continue                      # nothing on the removed side
+        if blocked:
+            ghost = obj.copy()
+            ghost.data = obj.data.copy()
+            ghost.name = obj.name + " (section, blocks light)"
+            for c in obj.users_collection:
+                c.objects.link(ghost)
+            ghost.visible_camera = False
+            ghosts += 1
         bm = bmesh.new()
         bm.from_mesh(obj.data)
         bmesh.ops.transform(bm, matrix=mw, verts=bm.verts)
         geom = list(bm.verts) + list(bm.edges) + list(bm.faces)
         bmesh.ops.bisect_plane(bm, geom=geom, plane_co=co, plane_no=no,
                                clear_outer=True, clear_inner=False, dist=1e-6)
+        new_faces = []
+        if want_cap:
+            edges = [e for e in bm.edges if e.is_boundary
+                     and all(abs((v.co - co).dot(no)) < 1e-4 for v in e.verts)]
+            if edges:
+                try:
+                    res = bmesh.ops.triangle_fill(bm, use_beauty=True, use_dissolve=False,
+                                                  edges=edges, normal=no)
+                    new_faces = [g for g in res.get("geom", []) if isinstance(g, bmesh.types.BMFace)]
+                except Exception as exc:  # noqa: BLE001 - the cut stays open
+                    say("section cap failed", obj.name, exc)
+        for f in new_faces:
+            if f.normal.dot(no) < 0:
+                f.normal_flip()
+        slot = None
+        if new_faces:
+            if not len(obj.data.materials):
+                obj.data.materials.append(None)       # the faces it has keep «no material»
+            obj.data.materials.append(capmat)
+            slot = len(obj.data.materials) - 1
+            for f in new_faces:
+                f.material_index = slot
+            capped += 1
         bmesh.ops.transform(bm, matrix=mw.inverted_safe(), verts=bm.verts)
         bm.to_mesh(obj.data)
         bm.free()
         obj.data.update()
         n += 1
-    say("section", f"{n} meshes cut at {[round(c, 3) for c in co]}, normal {[round(c, 3) for c in no]}")
+    say("section", f"{n} meshes cut, {capped} capped, {ghosts} keep blocking light; at "
+        f"{[round(c, 3) for c in co]}, normal {[round(c, 3) for c in no]}")
     return n
 
 
