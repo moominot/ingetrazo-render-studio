@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QFormLayout, Q
                                QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSpinBox, QTabWidget,
                                QToolButton, QVBoxLayout, QWidget)
 
-from . import lights as studio_lights, materials as mats, pbr, presets, settings_store, widgets
+from . import lights as studio_lights, materials as mats, output, pbr, presets, settings_store, widgets
 from .live import LiveSession
 from .preview import ImageWindow  # noqa: F401 - re-exported: panel.ImageWindow
 from .widgets import SliderRow
@@ -110,7 +110,8 @@ def apply_hdri(block: dict, hdri: dict | None) -> dict:
 def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, *,
                      engine: str, quality: int, width: int, height: int, ground: bool = True,
                      hdri: dict | None = None, materials: dict | None = None,
-                     serve: bool = False, live: bool = False, reuse_model: bool = False):
+                     serve: bool = False, live: bool = False, reuse_model: bool = False,
+                     output: dict | None = None):
     """Export the model (IngeTrazo's own job writer) and add the look (and
     the 360° background, if any). ``serve``: Blender builds the scene and then
     waits for cameras on its input (the live view). ``live``: a draft scene
@@ -148,6 +149,15 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
                            height=height, ground=ground, ambience=ambience,
                            lights=tab_lights, serve=serve)
     data = json.loads(job.read_text(encoding="utf-8"))
+    if output is not None and not live:
+        # The final file: the PNG Blender always writes (the preview window reads it) is it
+        # for PNG and JPEG; the deeper formats get a file of their own beside it.
+        from . import output as out_mod
+        o = out_mod.blender_settings(output)
+        if o["format"] not in ("png", "jpeg"):
+            o["path"] = str(Path(data["output"]).with_suffix(o["extension"]).with_name(
+                Path(data["output"]).stem + "-final" + o["extension"]))
+        block["output"] = o
     data["studio"] = block
     job.write_text(json.dumps(data, indent=2), encoding="utf-8")
     # Both scripts next to the job: IngeTrazo's (the scene) and ours (the look).
@@ -281,13 +291,10 @@ class StudioPanel(QWidget):
         self.quality.setCurrentIndex(int(st.value(_SETTINGS + "quality", 1)))
         self.quality.setToolTip("How many samples: more is less noisy and slower.")
         form3.addRow("Quality", self.quality)
-        self.width = QSpinBox()
-        self.width.setRange(320, 7680)
-        self.width.setSingleStep(160)
-        self.width.setSuffix(" px")
-        self.width.setValue(int(st.value(_SETTINGS + "width", 1920)))
-        self.width.setToolTip("The picture's width; the height follows the 3D view.")
-        form3.addRow("Width", self.width)
+        # The picture's size and file: the Output tab (its width is the panel's ``width``).
+        from .output_panel import OutputTab
+        self.output_tab = OutputTab(self, width=int(st.value(_SETTINGS + "width", 1920)))
+        self.width = self.output_tab.width
         col.addWidget(box_final)
         col.addStretch(1)
         scroll.setWidget(host)
@@ -305,7 +312,16 @@ class StudioPanel(QWidget):
         lscroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)   # it fits the tray's width
         lscroll.setWidget(self.lights_tab)
         self.tabs.addTab(lscroll, "Lights")
-        self.tabs.setCurrentIndex(min(1, max(0, int(st.value(_SETTINGS + "tab", 0) or 0))))
+        from .sun_panel import SunTab
+        self.sun_tab = SunTab(app, self)
+        for tab_widget, title in ((self.sun_tab, "Sun"), (self.output_tab, "Output")):
+            sc = QScrollArea()
+            sc.setWidgetResizable(True)
+            sc.setFrameShape(QFrame.NoFrame)
+            sc.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            sc.setWidget(tab_widget)
+            self.tabs.addTab(sc, title)
+        self.tabs.setCurrentIndex(min(self.tabs.count() - 1, max(0, int(st.value(_SETTINGS + "tab", 0) or 0))))
         self.tabs.currentChanged.connect(lambda i: QSettings().setValue(_SETTINGS + "tab", int(i)))
         outer.addWidget(self.tabs, 1)
 
@@ -456,14 +472,17 @@ class StudioPanel(QWidget):
     def live_model_key(self):
         """What the live scene's MODEL file depends on: the document and its content."""
         scene = self.app.scene
-        return (id(scene), getattr(scene, "content_version", 0))
+        # Lights and the sun bump the version too, but the model file does not change.
+        return (id(scene), getattr(scene, "content_version", 0) - getattr(scene, "_rs_not_model", 0))
 
     def live_key(self):
         """What the live scene depends on besides the camera, in three parts:
         (the model, the materials' render settings, the look with every
         setting and the proportions)."""
         try:
-            doc = json.dumps(self.settings_dict(), sort_keys=True) + studio_lights.signature(self.app.scene)
+            from . import sun_site
+            doc = (json.dumps(self.settings_dict(), sort_keys=True) + studio_lights.signature(self.app.scene)
+                   + json.dumps(sun_site.site(self.app.scene), sort_keys=True))
             mats_ = json.dumps(self.material_specs(), sort_keys=True, default=str)
         except Exception:  # noqa: BLE001
             doc = mats_ = ""
@@ -564,8 +583,10 @@ class StudioPanel(QWidget):
 
     def _update_summary(self, *_a):
         if self.window is not None:
+            w, h = self.output_tab.frame()
             self.window.set_summary(f"Render: {self.engine.currentText().split(' —')[0]} · "
-                                    f"{self.quality.currentText()} · {self.width.value()} px")
+                                    f"{self.quality.currentText()} · {w} × {h} px · "
+                                    f"{output.FORMATS[self.output_tab.format.currentData()][0]}")
 
     # -- the settings, in the document --------------------------------------------
     def _init_document_settings(self):
@@ -580,6 +601,11 @@ class StudioPanel(QWidget):
         for combo in (self.preset, self.engine, self.quality, self.hdri):
             combo.currentIndexChanged.connect(self._schedule_save)
         self.width.valueChanged.connect(self._schedule_save)
+        self.output_tab.changed.connect(self._schedule_save)
+        self.output_tab.changed.connect(self._update_summary)
+        self.preset.currentIndexChanged.connect(lambda _i: self.sun_tab._show_sun())
+        self.hdri.currentIndexChanged.connect(lambda _i: self.sun_tab._show_sun())
+        self.hdri_light.toggled.connect(lambda _on: self.sun_tab._show_sun())
         for sl in (*self.sliders.values(), self.hdri_rotation, self.hdri_strength):
             sl.valueChanged.connect(self._schedule_save)
         self.hdri_light.toggled.connect(self._schedule_save)
@@ -603,6 +629,7 @@ class StudioPanel(QWidget):
             "engine": self.engine.currentData(),
             "quality": self.quality.currentIndex(),
             "width": self.width.value(),
+            "output": self.output_tab.settings(),
             "sliders": {k: round(_value(s), 4) for k, s in self.sliders.items()},
             "hdri": ({"path": hdri, "rotation": round(_value(self.hdri_rotation), 3),
                       "brightness": round(_value(self.hdri_strength), 3),
@@ -626,6 +653,7 @@ class StudioPanel(QWidget):
             self.engine.setCurrentIndex(max(0, self.engine.findData(data["engine"])))
             self.quality.setCurrentIndex(data["quality"])
             self.width.setValue(data["width"])
+            self.output_tab.apply(data.get("output"))
             block, _amb = presets.studio(self.preset.currentData())
             for key, (_label, lo, hi, default, _unit) in presets.SLIDERS.items():
                 value = data["sliders"].get(key, default if default is not None else block.get(key, 0.0))
@@ -753,9 +781,9 @@ class StudioPanel(QWidget):
     def document_changed(self):
         if self.editor is not None and self.editor.isVisible():
             self.editor.refresh()
-        lights_tab = getattr(self, "lights_tab", None)
-        if lights_tab is not None:
-            lights_tab.document_changed()
+        for tab in (getattr(self, "lights_tab", None), getattr(self, "sun_tab", None)):
+            if tab is not None:
+                tab.document_changed()
         if getattr(self, "_save_timer", None) is None or self._save_timer.isActive():
             return                       # a change of ours is waiting to be saved
         sid = id(self.app.scene)
@@ -792,9 +820,9 @@ class StudioPanel(QWidget):
 
     # -- rendering ----------------------------------------------------------------
     def _aspect(self) -> float:
-        vp = self.app.viewport
+        """The final picture's shape: the 3D view's, or the Output tab's size (the preview frames it too)."""
         try:
-            return max(0.2, vp.width() / max(1, vp.height()))
+            return self.output_tab.aspect()
         except Exception:  # noqa: BLE001
             return 16 / 9
 
@@ -814,15 +842,15 @@ class StudioPanel(QWidget):
         self._stop_live()                  # a final render and the live Blender should not run together
         stamp = time.strftime("%Y%m%d-%H%M%S")
         self.work = rb.work_base().parent / "render-studio" / stamp
-        width = self.width.value()
-        height = max(2, round(width / self._aspect()))
+        width, height = self.output_tab.frame()
+        out = self.output_tab.settings()
         try:
             job, script = write_studio_job(
                 self.app.viewport.scene, self.app.viewport.camera, self.work,
                 self.preset.currentData(), self.slider_values(),
                 engine=self.engine.currentData(), quality=self.quality.currentIndex(),
                 width=width, height=height, hdri=self.hdri_settings(),
-                materials=self.material_specs())
+                materials=self.material_specs(), output=out)
         except Exception as exc:  # noqa: BLE001 - say it, never crash the app
             _log.exception("render job failed")
             self._set_status(f"Could not prepare the render: {exc}")
@@ -840,7 +868,11 @@ class StudioPanel(QWidget):
         self.proc.finished.connect(self._done)
         self._log_lines = []
         self._save_to, self._cancelled = save_to, False
-        self.output = Path(json.loads(job.read_text(encoding="utf-8"))["output"])
+        data = json.loads(job.read_text(encoding="utf-8"))
+        self.output = Path(data["output"])
+        extra = (data.get("studio") or {}).get("output", {}).get("path")
+        self.rendered = {"format": out["format"], "file": Path(extra) if extra else self.output,
+                         "jpeg_quality": out["jpeg_quality"]}
         if self.window is not None:
             self.window.set_mode("rendering")
         self._set_progress(0.0)
@@ -851,10 +883,14 @@ class StudioPanel(QWidget):
         """Ask where to save, then render and save it as it comes out (no retouching)."""
         if self.proc is not None:
             return
+        fmt = self.output_tab.format.currentData()
+        ext = output.extension(fmt)
         start = str(Path(QSettings().value(_SETTINGS + "save_dir", str(Path.home()))) /
-                    f"render-{time.strftime('%Y%m%d-%H%M%S')}.png")
+                    f"render-{time.strftime('%Y%m%d-%H%M%S')}{ext}")
         path, _f = QFileDialog.getSaveFileName(self.window or self, "Render and save", start,
-                                               "PNG (*.png);;JPEG (*.jpg)")
+                                               f"{output.FORMATS[fmt][0]} (*{ext})")
+        if path and not path.lower().endswith(ext) and not (fmt == "jpeg" and path.lower().endswith(".jpeg")):
+            path += ext
         if path:
             self.render(save_to=path)
 
@@ -885,15 +921,48 @@ class StudioPanel(QWidget):
                 self._set_status("Exposure measured; rendering…")
 
     def _save_as_rendered(self, path: str) -> bool:
-        """The render exactly as Blender wrote it, as PNG, or converted for JPEG."""
+        """The render exactly as Blender wrote it, in the Output tab's format (a JPEG is made
+        from the PNG, at its quality, over white where the sky is transparent)."""
+        r = getattr(self, "rendered", None) or {"format": "png", "file": self.output, "jpeg_quality": 92}
         try:
-            if Path(path).suffix.lower() in (".jpg", ".jpeg"):
-                return QImage(str(self.output)).save(path, "JPG", 95)
-            shutil.copyfile(self.output, path)
+            if r["format"] == "jpeg" or Path(path).suffix.lower() in (".jpg", ".jpeg"):
+                img = QImage(str(self.output))
+                if img.hasAlphaChannel():
+                    flat = QImage(img.size(), QImage.Format_RGB32)
+                    flat.fill(0xFFFFFFFF)
+                    from PySide6.QtGui import QPainter
+                    p = QPainter(flat)
+                    p.drawImage(0, 0, img)
+                    p.end()
+                    img = flat
+                return img.save(path, "JPG", int(r.get("jpeg_quality", 92)))
+            shutil.copyfile(r["file"], path)
             return True
         except OSError:
             _log.exception("could not save %s", path)
             return False
+
+    def _autosave(self) -> str | None:
+        """Every final render also in the Output tab's folder, when asked: the path, or None."""
+        target = self.output_tab.autosave_target()
+        if target is None:
+            return None
+        folder, pattern = target
+        r = getattr(self, "rendered", None) or {"format": "png"}
+        doc = ""
+        for attr in ("file_path", "path", "filename"):
+            v = getattr(self.app.scene, attr, None)
+            if v:
+                doc = Path(str(v)).stem
+                break
+        name = output.file_name(pattern, doc, presets.label(self.preset.currentData(), "en"),
+                                time.strftime("%Y%m%d-%H%M%S"), output.extension(r["format"]))
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return None
+        path = folder / name
+        return str(path) if self._save_as_rendered(str(path)) else None
 
     def _done(self, code, _status):
         self.proc = None
@@ -908,6 +977,7 @@ class StudioPanel(QWidget):
             self._back_to_preview_if_open()
             self.finished.emit(None)
             return
+        kept = self._autosave()
         if save_to:
             if self._save_as_rendered(save_to):
                 QSettings().setValue(_SETTINGS + "save_dir", str(Path(save_to).parent))
@@ -918,8 +988,11 @@ class StudioPanel(QWidget):
             self.finished.emit(self.output)
             return
         win = self.preview()
-        self._set_status(f"Done: {self.output.name}")
+        self._set_status(f"Done: {self.output.name}" + (f" · also saved in {kept}" if kept else ""))
         win.set_image(self.output)                        # the retouch tools and Save image…
+        r = getattr(self, "rendered", None)
+        win.set_rendered_file(r["file"] if r and not output.retouchable(r["format"]) else None,
+                              output.FORMATS[r["format"]][0] if r else "")
         win.show()
         win.raise_()
         self.finished.emit(self.output)

@@ -22,15 +22,17 @@ format is a public contract; ``version`` goes up if it ever changes::
           "warmth": 0.0,                 # -1..1
           "saturation": 1.06,            # multiple
           "vignette": 0.16 },
-        "hdri": null                     # or {"path": "...", "rotation": 0..360 degrees,
+        "hdri": null,                    # or {"path": "...", "rotation": 0..360 degrees,
                                          #     "brightness": stops, "light": true|false}
+        "output": {"size": "view", "height": 1080, "dpi": 300, "format": "png",
+                   "jpeg_quality": 92, "transparent": false}      # see output.py
       } }
 
 Pure Python: no Qt, so it can be tested and read by anything.
 """
 from __future__ import annotations
 
-from . import presets
+from . import output, presets
 
 VERSION = 1
 ENGINES = ("eevee", "cycles")
@@ -65,9 +67,10 @@ def clean(raw) -> dict | None:
         "look": look if look in presets.PRESETS else "clear",
         "engine": raw.get("engine") if raw.get("engine") in ENGINES else "eevee",
         "quality": int(_num(raw.get("quality"), 0, 2, 1)),
-        "width": int(_num(raw.get("width"), 320, 7680, 1920)),
+        "width": int(_num(raw.get("width"), 320, 16384, 1920)),
         "sliders": sliders,
         "hdri": None,
+        "output": output.clean(raw.get("output")),
     }
     h = raw.get("hdri")
     if isinstance(h, dict) and isinstance(h.get("path"), str) and h["path"]:

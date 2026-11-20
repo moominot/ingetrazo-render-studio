@@ -85,4 +85,12 @@ words = {"candle": "candle", "bulb": "bulbs", "bulb_big": "bulbs", "lantern": "b
 ok(set(words) == {p[0] for p in LT.PRESETS} and all(w in page for w in words.values()), "the ready-made lights are named in the help")
 ok("IES profile" in page and "Cycles" in page and str(int(LT.LM_PER_W)) in page, "the help explains IES profiles and the lumens")
 ok("Every copy of the component" in page and "Make it a Render Studio light" in page, "the help explains lights on objects and the Render tab's")
+# the Sun and Output tabs
+from render_studio import output as OUT
+ok('<a name="sun"></a>' in page and all(f"<b>{k}</b>" in page for k in ("Latitude, longitude", "North", "Date", "Hour", "Time zone")),
+   "the help explains the Sun tab's controls")
+ok("Golden hour" in page and "solstices" in page, "the help says what the looks do with the sun, and the season buttons")
+ok('<a name="output"></a>' in page and all(OUT.FORMATS[k][0].split(",")[0].split(" (")[0] in page for k in OUT.FORMAT_ORDER)
+   and "Transparent sky" in page and "Print resolution" in page and "{document}" in page,
+   "the help explains the Output tab: sizes, formats, transparent sky, saving every render")
 print("FAILED" if fails else "ALL OK"); sys.exit(1 if fails else 0)

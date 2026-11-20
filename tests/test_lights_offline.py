@@ -179,8 +179,8 @@ ok(len(scene.plugin_data["render_blender"]["lights"]) == 1 and ops.entry(scene, 
 
 # ---- the panel and its Lights tab ---------------------------------------------------------
 panel = P.StudioPanel(app); app.on_document_changed(panel.document_changed)
-ok(panel.tabs.count() == 2 and panel.tabs.tabText(0) == "Settings" and panel.tabs.tabText(1) == "Lights",
-   "the panel has two tabs: Settings and Lights")
+ok([panel.tabs.tabText(i) for i in range(panel.tabs.count())] == ["Settings", "Lights", "Sun", "Output"],
+   "the panel has its tabs: Settings, Lights, Sun, Output")
 lt_tab = panel.lights_tab
 heads = [lt_tab.tree.topLevelItem(i).text(0) for i in range(lt_tab.tree.topLevelItemCount())]
 ok(heads == ["On objects", "From IngeTrazo's Render tab"], f"the list shows the sections that have lights ({heads})")

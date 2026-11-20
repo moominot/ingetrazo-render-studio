@@ -46,6 +46,9 @@ class ImageWindow(QWidget):
         self.path = None
         self.original = None            # H×W×3 uint8 of the final picture
         self.shown = None               # …as retouched
+        self.alpha = None               # H×W uint8 when the sky was left transparent
+        self.rendered_file = None       # a 16-bit or EXR file Blender wrote, saved as it is
+        self.rendered_label = ""
         self.mode = "final"
         self._saved_to = None
         lay = QVBoxLayout(self)
@@ -219,12 +222,23 @@ class ImageWindow(QWidget):
             return self.show_draft(path)
         import numpy as np
         self.path = Path(path)
-        img = QImage(str(path)).convertToFormat(QImage.Format_RGB888)
-        w, h = img.width(), img.height()
-        ptr = img.constBits()
-        arr = np.frombuffer(ptr, dtype=np.uint8, count=img.bytesPerLine() * h)
-        arr = arr.reshape(h, img.bytesPerLine())[:, : w * 3].reshape(h, w, 3)
-        self.original = arr.copy()
+        src = QImage(str(path))
+        self.alpha = None
+        if src.hasAlphaChannel():
+            # A transparent sky: straight colours, and the alpha kept apart for saving.
+            rgba = src.convertToFormat(QImage.Format_RGBA8888)
+            w, h = rgba.width(), rgba.height()
+            a = np.frombuffer(rgba.constBits(), dtype=np.uint8, count=rgba.bytesPerLine() * h)
+            a = a.reshape(h, rgba.bytesPerLine())[:, : w * 4].reshape(h, w, 4)
+            self.alpha = a[..., 3].copy()
+            self.original = a[..., :3].copy()
+        else:
+            img = src.convertToFormat(QImage.Format_RGB888)
+            w, h = img.width(), img.height()
+            ptr = img.constBits()
+            arr = np.frombuffer(ptr, dtype=np.uint8, count=img.bytesPerLine() * h)
+            arr = arr.reshape(h, img.bytesPerLine())[:, : w * 3].reshape(h, w, 3)
+            self.original = arr.copy()
         was = self.mode
         self.set_mode("final")
         self._refresh(refit=was != "final")
@@ -242,20 +256,59 @@ class ImageWindow(QWidget):
         out = post.adjust(self.original, self.adjustments())
         self.shown = out
         h, w = out.shape[:2]
-        qimg = QImage(out.data, w, h, 3 * w, QImage.Format_RGB888).copy()
+        if self.alpha is not None and self.alpha.shape == (h, w):
+            # Over a checkerboard, so the transparent sky shows as such.
+            import numpy as np
+            yy, xx = np.mgrid[0:h, 0:w]
+            board = np.where(((yy // 12 + xx // 12) % 2)[..., None] == 0, 236, 204).astype(np.float32)
+            a = self.alpha[..., None].astype(np.float32) / 255.0
+            disp = np.ascontiguousarray((out * a + board * (1.0 - a)).astype(np.uint8))
+        else:
+            disp = out
+        qimg = QImage(disp.data, w, h, 3 * w, QImage.Format_RGB888).copy()
         self.view.set_pixmap(QPixmap.fromImage(qimg), refit=refit is True)
 
     def save_to(self, path: str) -> bool:
         if self.shown is None:
             return False
         h, w = self.shown.shape[:2]
+        jpeg = Path(path).suffix.lower() in (".jpg", ".jpeg")
+        if self.alpha is not None and self.alpha.shape == (h, w):
+            import numpy as np
+            if jpeg:                    # no transparency in a JPEG: over white
+                a = self.alpha[..., None].astype(np.float32) / 255.0
+                flat = np.ascontiguousarray((self.shown * a + 255.0 * (1.0 - a)).astype(np.uint8))
+                return QImage(flat.data, w, h, 3 * w, QImage.Format_RGB888).copy().save(path, None, 95)
+            rgba = np.ascontiguousarray(np.dstack([self.shown, self.alpha]))
+            return QImage(rgba.data, w, h, 4 * w, QImage.Format_RGBA8888).copy().save(path)
         return QImage(self.shown.data, w, h, 3 * w, QImage.Format_RGB888).copy().save(path)
+
+    def set_rendered_file(self, path, label: str = "") -> None:
+        """A 16-bit or EXR file Blender wrote beside the picture: Save image… offers it as it is."""
+        self.rendered_file = Path(path) if path else None
+        self.rendered_label = label
 
     def _save(self):
         start = str(Path(QSettings().value(_SETTINGS + "save_dir", str(Path.home()))) /
                     ((self.path.stem if self.path else "render") + ".png"))
-        path, _ = QFileDialog.getSaveFileName(self, "Save image", start,
-                                              "PNG (*.png);;JPEG (*.jpg)")
+        filters = "PNG (*.png);;JPEG (*.jpg)"
+        extra = self.rendered_file if self.rendered_file is not None and self.rendered_file.is_file() else None
+        if extra is not None:
+            ext = extra.suffix
+            filters = f"{self.rendered_label}, as rendered, without the retouching (*{ext});;" + filters
+            start = str(Path(start).with_suffix(ext))
+        path, chosen = QFileDialog.getSaveFileName(self, "Save image", start, filters)
+        if path and extra is not None and (chosen.startswith(self.rendered_label) or (
+                extra.suffix.lower() not in (".png", ".jpg", ".jpeg") and path.lower().endswith(extra.suffix.lower()))):
+            import shutil
+            try:
+                shutil.copyfile(extra, path)
+            except OSError:
+                self.status.setText(f"Could not write {path}")
+                return
+            QSettings().setValue(_SETTINGS + "save_dir", str(Path(path).parent))
+            self.status.setText(f"Saved as rendered: {path}")
+            return
         if path and self.save_to(path):
             QSettings().setValue(_SETTINGS + "save_dir", str(Path(path).parent))
             self.status.setText(f"Saved: {path}")

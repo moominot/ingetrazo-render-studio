@@ -246,6 +246,45 @@ deletes them.
 
 ![Lights tab](docs/lights_tab.png)
 
+## Sun
+
+The **Sun** tab sets where the model is and the date and hour of the sun. Render Studio keeps no sun of
+its own: it edits IngeTrazo's (the Shadows panel's `scene.shadows`, the location `scene.georef`, the north),
+so the 3D view's shadows, the Render tab and Render Studio show the same sun. Each change is one undo step.
+
+- **Latitude, longitude**, typed or chosen on a map (**Map…**): it becomes the model's location (the map and
+  the terrain follow it too). **North**: where true north lies; the shadows turn, the model does not.
+- **Date**, with the equinoxes and solstices as the site lives them (summer is December in the south);
+  **Hour** on a slider, with **Sunrise + 1 h**, **Noon** (solar noon) and **Sunset − 1 h**; the **time zone**
+  (from the longitude, or a real one); **Shadows in the 3D view**.
+- **The sun then**: its height, where it comes from, how long the shadows are; and what the look does with it
+  (Golden hour lowers it to 7°, Overcast and Night have none, a 360° background that lights the scene brings
+  its own).
+- The live preview gets the new sun without exporting the model again (nor for a light's change).
+
+![Sun tab](docs/sun_tab.png)
+
+## Output
+
+The **Output** tab sets the final picture's size and its file (kept in the document, `settings["output"]`).
+
+- **Size**: the 3D view's shape from a width (as before), a ready size (HD, Full HD, QHD, 4K UHD, square,
+  4:5, 9:16, A4 to A1 at the print resolution) or a size of its own, with **Keep proportions** and **⇄**
+  (landscape ↔ portrait). The camera keeps the view's height; the sides follow the picture's shape, and the
+  preview frames the same picture. The line under it gives pixels, megapixels, proportion and print size.
+- **Format**: PNG and JPEG (its quality) keep the preview window's retouching. PNG 16 bits, TIFF 16 bits and
+  OpenEXR (32-bit float, linear light) are written by Blender beside the PNG the window reads (`render-final.*`)
+  and saved as they are: **Render and save…** saves that file, and **Save image…** offers it beside the
+  retouched PNG and JPEG.
+- **Transparent sky**: the sky is left transparent and the ground and the model stay, to put another sky
+  behind. It is switched on only for the final picture, after the exposure is measured with the sky
+  (measured: the same exposure as the opaque picture). The preview window shows it over a checkerboard and
+  keeps it when saving a PNG; a JPEG gets white.
+- **Save every render**: each final render is also saved in a folder of this computer, named from
+  `{document}`, `{look}` and `{date}`.
+
+![Output tab](docs/output_tab.png)
+
 ## 360° background (HDRI)
 
 Any equirectangular image (.hdr, .exr, .jpg) as the world:
@@ -269,14 +308,14 @@ choose a 4K or larger file, for example a free one from polyhaven.com.
 
 ## Panel
 
-`Render Studio…` in the extensions menu opens the panel. It has two tabs, **Settings** and
-**Lights** (see [Lights](#lights)); what is under them (Materials…, Open preview…, the status) serves
-both. The Settings tab is in three groups:
+`Render Studio…` in the extensions menu opens the panel. It has four tabs: **Settings**,
+**Lights** (see [Lights](#lights)), **Sun** ([Sun](#sun)) and **Output** ([Output](#output)); what is under
+them (Materials…, Open preview…, the status) serves all. The Settings tab is in three groups:
 - **Look and light** (the scene: the preview and Render both draw it): the look, and sliders for exposure
   (EV), clouds, sun, warmth, saturation and vignette, each with its value and a line saying what it does;
 - **360° background** (HDRI), with rotation, brightness and "Lights the scene";
 - **Final render** (only Render uses it): the engine, EEVEE (fast, about 3 s) or Cycles (best, about 5 s
-  on an RTX GPU), the quality and the width.
+  on an RTX GPU) and the quality. The size is in the Output tab.
 
 There is no Render button in the panel: **Open preview…** opens the preview window.
 
@@ -353,7 +392,12 @@ plugin_data["render_studio"] = {
     "width": 1920,              # pixels; the height follows the 3D view
     "sliders": { "exposure_bias": 0.0, "clouds": 0.25, "sun_scale": 1.0,
                  "warmth": 0.0, "saturation": 1.06, "vignette": 0.16 },
-    "hdri": null                # or {"path": "...", "rotation": 0..360, "brightness": stops, "light": true}
+    "hdri": null,               # or {"path": "...", "rotation": 0..360, "brightness": stops, "light": true}
+    "output": { "size": "view", # view, hd, fullhd, qhd, uhd, square, portrait45, story, a4, a4p, a3, a3p,
+                                # a2, a1, custom
+                "height": 1080, "dpi": 300,
+                "format": "png",          # png jpeg png16 tiff16 exr
+                "jpeg_quality": 92, "transparent": false }
   } }
 ```
 
@@ -429,6 +473,12 @@ Render tab).
   an area light faces where it is aimed; EEVEE renders them all.
 - `tests/test_lights_job_offline.py` goes from IngeTrazo to the picture: a lamp post component (copied) with a spot,
   a free area light, a night look; given `blender.exe` (or `bpy`) it renders and checks where the ground is lit.
+- `tests/test_sun_output_offline.py` checks the Sun tab (IngeTrazo's own date, hour, zone, place and north,
+  each one undo step; the job's sun; the readout and the look's note; the preview keeps its model) and the
+  Output tab (every kind of size, formats, the document, the job's final file, a transparent sky in the
+  window, saving as rendered and every render).
+- `tests/test_output_job_offline.py` renders with a real Blender (or `bpy`): a size of its own, a transparent
+  sky (alpha, same exposure), a 16-bit PNG, a 16-bit TIFF and an OpenEXR (float, linear).
 - `tests/test_offline.py` writes a job with the panel's own code and
   renders it with Blender. It then adjusts and saves the image in the image
   window, without IngeTrazo running.

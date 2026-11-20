@@ -151,6 +151,52 @@ longer renders it).</p>
 <p>The lights are saved in the document (free ones in its data, the others on their objects); each change is one undo
 step. The preview follows them.</p>
 
+<a name="sun"></a>
+<h4>Sun</h4>
+<p>The <b>Sun</b> tab sets where the model is and the date and hour of the sun. They are IngeTrazo's own (the
+Shadows panel's date and hour, the model's location and north), so the shadows of the 3D view, the Render tab and
+Render Studio always show the same sun. Each change is one undo step.</p>
+<table cellspacing='0' cellpadding='3' width='100%'>
+<tr><td valign='top'><b>Latitude, longitude</b></td><td>Typed, or <b>Map…</b> to choose the place on a map. It
+becomes the model's location: the map and the terrain follow it too. Without one, the sun stands at IngeTrazo's
+default place.</td></tr>
+<tr><td valign='top'><b>North</b></td><td>Where true north lies, clockwise from the green axis. The shadows turn;
+the model does not move.</td></tr>
+<tr><td valign='top'><b>Date</b></td><td>Day and month; the four buttons give the equinoxes and solstices as the site
+lives them (summer is June in the north, December in the south).</td></tr>
+<tr><td valign='top'><b>Hour</b></td><td>The slider and the box; <b>Sunrise + 1 h</b>, <b>Noon</b> and <b>Sunset − 1 h</b>
+jump there. Daylight shows the hours the sun is up that day.</td></tr>
+<tr><td valign='top'><b>Time zone</b></td><td>The clock the hour is read on: from the longitude (solar time), or a real
+zone (summer time included) to match a watch.</td></tr>
+<tr><td valign='top'><b>Shadows in the 3D view</b></td><td>IngeTrazo's own sun shadows in the model, with this date
+and hour.</td></tr>
+</table>
+<p><b>The sun then</b> says how high it is, where it comes from and how long the shadows are. Some looks change it:
+<b>Golden hour</b> lowers it to 7° (same compass direction), <b>Overcast</b> and <b>Night</b> have none, and a 360°
+background that lights the scene brings its own.</p>
+
+<a name="output"></a>
+<h4>Output</h4>
+<p>The <b>Output</b> tab sets the final picture's size and its file. They are saved in the document.</p>
+<table cellspacing='0' cellpadding='3' width='100%'>
+<tr><td valign='top'><b>Size</b></td><td><b>Same shape as the 3D view</b> (a width; the height follows the view), a
+ready size (HD, Full HD, QHD, 4K UHD, square, portrait 4:5, vertical 9:16, A4, A3, A2 and A1 at the print resolution)
+or <b>Custom</b>. Typing a width or a height makes it Custom; <b>Keep proportions</b> changes the other with it;
+<b>⇄</b> turns it between landscape and portrait. The preview frames the same picture: the view's height is kept,
+its sides change.</td></tr>
+<tr><td valign='top'><b>Print resolution</b></td><td>Dots per inch: the paper sizes are worked out at it, and the line
+under the size says how big a print is.</td></tr>
+<tr><td valign='top'><b>Format</b></td><td><b>PNG</b> and <b>JPEG</b> (with its quality) keep the preview window's
+retouching. <b>PNG, 16 bits</b>, <b>TIFF, 16 bits</b> and <b>OpenEXR</b> (32-bit float, linear light, for compositing)
+keep more of the light for editing elsewhere; they are saved as Blender wrote them, and Save image… offers them
+beside the retouched PNG and JPEG.</td></tr>
+<tr><td valign='top'><b>Transparent sky</b></td><td>The sky is left transparent (the ground and the model stay), to
+put another sky behind it; the exposure is still measured with the sky. Not for JPEG. The preview window shows it over
+a checkerboard.</td></tr>
+<tr><td valign='top'><b>Save every render</b></td><td>Each final render is also saved in a folder of this computer,
+named from {{document}}, {{look}} and {{date}}.</td></tr>
+</table>
+
 <a name="hdri"></a>
 <h4>360° background (HDRI)</h4>
 <p>Any equirectangular 360° image (.hdr, .exr, .jpg) can be the world around the model. Choose <b>None</b>, one of

@@ -1883,6 +1883,23 @@ def serve(scene, figures):
         say("done", req["output"])
 
 
+def save_final(scene, out):
+    """The final picture again in the Output tab's format (16-bit PNG or TIFF, OpenEXR),
+    beside the PNG the preview window reads. EXR keeps the scene's linear light."""
+    st = scene.render.image_settings
+    for key, value in (out.get("image_settings") or {}).items():
+        try:
+            setattr(st, key, value)
+        except (AttributeError, TypeError, ValueError) as exc:
+            say("output setting skipped", key, value, exc)
+    result = bpy.data.images.get("Render Result")
+    if result is None:
+        say("error", "no render result to save")
+        return
+    result.save_render(filepath=out["path"], scene=scene)
+    say("saved", out["path"])
+
+
 def main():
     job = core["load_job"]()
     scene, figures = build(job)
@@ -1890,8 +1907,15 @@ def main():
         serve(scene, figures)
         return
     w, h = int(job["width"]), int(job["height"])
+    out = (job.get("studio") or {}).get("output") or {}
+    if out.get("transparent"):
+        # The sky left transparent — only now: the exposure was measured with it.
+        scene.render.film_transparent = True
+        scene.render.image_settings.color_mode = "RGBA"
     say("rendering", w, "x", h)
     bpy.ops.render.render(write_still=True)
+    if out.get("path"):
+        save_final(scene, out)
     if job.get("blend"):
         bpy.ops.wm.save_as_mainfile(filepath=job["blend"])
         say("blend", job["blend"])

@@ -20,6 +20,12 @@ except Exception:  # noqa: BLE001 - plain Python (tests of the format)
         pass
 
 
+def _not_model(scene) -> None:
+    """A version bump that is not the model's: the live preview keeps the model it
+    exported (see ``panel.live_model_key``)."""
+    scene._rs_not_model = getattr(scene, "_rs_not_model", 0) + 1
+
+
 class LightsCommand(Command):
     """Set, in one step: the free lights (``free``), some groups' ``ext``
     (``groups`` = {group: new ext}) and the Render tab's data (``tab``).
@@ -53,6 +59,7 @@ class LightsCommand(Command):
         for g, ext in self.groups:
             g.ext = copy.deepcopy(ext)
         scene.version += 1
+        _not_model(scene)
 
     def undo(self, scene) -> None:
         mine, tab, exts = self.before
@@ -65,6 +72,7 @@ class LightsCommand(Command):
         for g, ext in exts:
             g.ext = copy.deepcopy(ext)
         scene.version += 1
+        _not_model(scene)
 
 
 def run(app, cmd) -> None:
