@@ -88,6 +88,37 @@ t_move = images[n][0] - t1 if len(images) > n else -1
 ok(wait(lambda: len(images) > n + 1), "…and its draft")
 print(f"   camera move → quick image {t_move:.2f} s (includes the {live._rest()} ms rest)")
 
+ok(wait(lambda: live._ready and not live._busy and live._done_key is not None), "settled")
+n = len(images); t_m = time.time()
+while time.time() - t_m < 4.0:                      # a slow orbit, as a hand drags it
+    app.viewport.camera.yaw += 0.01
+    t_end = time.time() + 0.03
+    while time.time() < t_end:
+        qa.processEvents(); time.sleep(0.003)
+moving = images[n:]
+fps = len(moving) / 4.0
+print(f"   while orbiting for 4 s: {len(moving)} frames, {fps:.1f} per second")
+ok(fps >= 2.0, f"Follow the camera: frames keep coming while it moves ({fps:.1f}/s)")
+ok(len(moving) and size(moving[-1][1]) == 320, "...small ones (320 px)")
+ok(wait(lambda: live._done_key == live._seen_key), "when it stops, the draft")
+
+n = len(images); t_mat = time.time()
+app.data["materials"]["Gespa"]["grass_height"] = 0.25           # a material edit
+ok(wait(lambda: live._ready and live._kept_specs["Gespa"]["grass_height"] == 0.25), "Follow changes: a material edit is taken in by itself")
+m = len(images)
+ok(wait(lambda: len(images) > m), "...and shows")
+print(f"   material edit → image {images[m][0] - t_mat:.1f} s")
+n = len(images); t_two = time.time()
+app.data["materials"]["Gespa"]["grass_height"] = 0.12              # two edits in a row: the second
+panel.preset.setCurrentIndex(panel.preset.findData("overcast"))     # arrives while the first builds
+t_end = time.time() + 0.35
+while time.time() < t_end:
+    qa.processEvents(); time.sleep(0.005)
+app.data["materials"]["Gespa"]["grass_height"] = 0.10
+ok(wait(lambda: live._ready and live._kept_specs["Gespa"]["grass_height"] == 0.10 and len(images) > n),
+   "edits in a row: each taken in turn")
+ok(live.starts == 1, "...without starting Blender again")
+
 glb = live._work / "model.glb"; mt = glb.stat().st_mtime_ns
 n = len(images); t2 = time.time()
 panel.preset.setCurrentIndex(panel.preset.findData("golden_hour"))
@@ -104,6 +135,11 @@ print(f"   change of model → quick image {time.time() - t3:.1f} s")
 ok(live.starts == 1 and glb.stat().st_mtime_ns != mt, "…same Blender, model exported again")
 job = json.load(open(live._work / "job.json"))
 ok(job["engine"] == "eevee" and job["studio"].get("live"), "the live job is the lightened EEVEE draft")
+print("   Blender starts:", live.starts)
+print("   restart why:", getattr(live, "restarts_why", None), " ended:", hasattr(live, "ended_tail"))
+if live.starts > 1 or fails:
+    print("   Blender's last lines before it stopped:\n      "
+          + "\n      ".join(getattr(live, "ended_tail", live.tail)[-30:]))
 live.stop()
 ok(live._proc is None, "stopping closes Blender")
 print(f"\n{len(fails)} failure(s)")

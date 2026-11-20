@@ -30,5 +30,5 @@ for line in sys.stdin:
         continue
     n += 1
     png(req["output"], max(1, int(req["width"]) // 8), max(1, int(req["height"]) // 8), (40 + n * 20 % 200, 90, 160))
-    note(f"render {n} samples={req.get('samples')} width={req.get('width')}")
+    note(f"render {n} samples={req.get('samples')} width={req.get('width')} eye={req['camera']['eye']}")
     print("INGETRAZO done", req["output"], flush=True)

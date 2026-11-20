@@ -365,6 +365,23 @@ class StudioPanel(QWidget):
                                  "then a cleaner draft. Always a light EEVEE draft; Engine and Quality are for Render.")
         self.live_box.toggled.connect(self._live_toggled)
         outer.addWidget(self.live_box)
+        follow = QHBoxLayout()
+        follow.setContentsMargins(18, 0, 0, 0)
+        self.follow_camera_box = QCheckBox("Follow the camera")
+        self.follow_camera_box.setToolTip("On: frames come while you move the 3D view, then a cleaner image when "
+                                          "you stop. Off: the live image keeps its camera.")
+        self.follow_changes_box = QCheckBox("Follow changes")
+        self.follow_changes_box.setToolTip("On: edits of the model, its textures and the materials show in the "
+                                           "live image. Off: it keeps the model and materials it has (the look "
+                                           "and sliders still apply).")
+        st_live = QSettings()
+        for box, key in ((self.follow_camera_box, "live_follow_camera"),
+                         (self.follow_changes_box, "live_follow_changes")):
+            box.setChecked(str(st_live.value(_SETTINGS + key, "true")).lower() in ("true", "1"))
+            box.toggled.connect(lambda on, k=key: self._follow_toggled(k, on))
+            follow.addWidget(box)
+        follow.addStretch(1)
+        outer.addLayout(follow)
         self.render_btn = QPushButton("Render")
         self.render_btn.clicked.connect(self.render)
         outer.addWidget(self.render_btn)
@@ -388,26 +405,35 @@ class StudioPanel(QWidget):
         return (id(scene), getattr(scene, "content_version", 0))
 
     def live_key(self):
-        """What the live scene depends on besides the camera: the model, the
-        look and every setting, the materials' render settings, the proportions."""
+        """What the live scene depends on besides the camera, in three parts:
+        (the model, the materials' render settings, the look with every
+        setting and the proportions)."""
         try:
             doc = json.dumps(self.settings_dict(), sort_keys=True)
             mats_ = json.dumps(self.material_specs(), sort_keys=True, default=str)
         except Exception:  # noqa: BLE001
             doc = mats_ = ""
-        scene = self.app.scene
-        return (id(scene), getattr(scene, "content_version", 0), doc, mats_, round(self._aspect(), 3))
+        return (self.live_model_key(), mats_, (doc, round(self._aspect(), 3)))
 
-    def live_job(self, work: Path, width: int, height: int, reuse_model: bool = False):
+    def live_job(self, work: Path, width: int, height: int, reuse_model: bool = False,
+                 materials: dict | None = None):
         """The job of the live Blender: the current look and settings, a draft
         in serve mode — always EEVEE, lightened (the Engine and Quality chosen
         are for Render). ``reuse_model``: the model file in ``work`` is still
-        good (only a setting changed)."""
+        good (only a setting changed, or the live view keeps its model).
+        ``materials``: the render settings to use (default: the document's)."""
         return write_studio_job(
             self.app.scene, self.app.viewport.camera, work, self.preset.currentData(),
             self.slider_values(), engine="eevee", quality=0, width=width,
-            height=height, hdri=self.hdri_settings(), materials=self.material_specs(), serve=True,
+            height=height, hdri=self.hdri_settings(),
+            materials=self.material_specs() if materials is None else materials, serve=True,
             live=True, reuse_model=reuse_model)
+
+    def _follow_toggled(self, key: str, on: bool):
+        QSettings().setValue(_SETTINGS + key, bool(on))
+        if self._live is not None:
+            self._live.set_follow_camera(self.follow_camera_box.isChecked())
+            self._live.set_follow_changes(self.follow_changes_box.isChecked())
 
     def _live_toggled(self, on: bool):
         if on:
@@ -421,6 +447,8 @@ class StudioPanel(QWidget):
                 self.live_box.setChecked(False)
                 self.live_box.blockSignals(False)
                 return
+            self._live.set_follow_camera(self.follow_camera_box.isChecked())
+            self._live.set_follow_changes(self.follow_changes_box.isChecked())
             self._live.start()
         elif self._live is not None:
             self._live.stop()

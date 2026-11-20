@@ -84,13 +84,18 @@ it, up to 2. Not available while a 360° background lights the scene.</td></tr>
 <tr><td valign='top'><b>Vignette</b></td><td>Darkens the corners of the picture to draw the eye to the centre.</td></tr>
 <tr><td valign='top'><b>Materials…</b></td><td>Opens the material editor (see below).</td></tr>
 <tr><td valign='top'><b>Live view</b></td><td>Keeps Blender open with your scene and look loaded, and an image
-follows the 3D view. Move the camera and stop: a moment later a <b>quick</b>, rough image appears, and if you stay put
-a cleaner <b>draft</b> replaces it. It always uses EEVEE with its slowest effects off and lighter grass, whatever the
-<b>Engine</b> and <b>Quality</b> say (those are for Render), so an interior meant for Cycles looks only roughly right
-here. Change the model, the look, a slider, the 360° background or a material setting and the scene is rebuilt in the
-same Blender, usually in about a second (only the first start takes longer). Press <b>Render</b> for the final image:
-the live Blender is closed first and the live view stays off afterwards, so the draft does not draw over your picture;
-tick the box again to bring it back.</td></tr>
+follows your work. It always uses EEVEE with its slowest effects off and lighter grass, whatever the <b>Engine</b> and
+<b>Quality</b> say (those are for Render), so an interior meant for Cycles looks only roughly right here. The first start
+takes a few seconds; after that everything happens in the same Blender.
+<br><b>Follow the camera</b>: while you orbit or walk, small rough frames keep coming (three or four a second, as fast as
+Blender renders them); stop, and a <b>quick</b> image comes, then a cleaner <b>draft</b>. Off: the image keeps the camera
+it had, so you can look elsewhere in the 3D view while watching one view change.
+<br><b>Follow changes</b>: an edit of the model, of a texture or of a material's render settings shows by itself, in about
+a second (the scene is rebuilt in the same Blender; the model is exported again only when it changed). Off: the live image
+keeps the model and materials it had while you work; the look and the panel's sliders still apply. Tick it again to bring
+your edits in.
+<br>Press <b>Render</b> for the final image: the live Blender is closed first and the live view stays off afterwards, so the
+draft does not draw over your picture; tick the box again to bring it back.</td></tr>
 <tr><td valign='top'><b>Render</b></td><td>Starts the render. It is disabled while one is running. The line below the
 bar says what is happening, or why it could not start (for example, Blender was not found).</td></tr>
 </table>

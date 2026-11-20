@@ -10,6 +10,10 @@ from pathlib import Path
 from PySide6.QtCore import QEventLoop, QTimer
 from PySide6.QtWidgets import QApplication
 qa = QApplication.instance() or QApplication([])
+from PySide6.QtCore import QSettings                 # settings in a throwaway file, not the user's
+QSettings.setDefaultFormat(QSettings.IniFormat)
+QSettings.setPath(QSettings.IniFormat, QSettings.UserScope, tmp)
+qa.setOrganizationName("RenderStudioTest"); qa.setApplicationName("live")
 from PySide6.QtGui import QVector3D
 from core.scene import Scene
 from core.mesh import Mesh
@@ -41,8 +45,9 @@ class App:
         m = Mesh(); P_ = QVector3D
         for q in ([P_(0,0,0),P_(1,0,0),P_(1,1,0),P_(0,1,0)], [P_(0,0,1),P_(1,0,1),P_(1,1,1),P_(0,1,1)]): m.add_face(q)
         self.scene.groups.append(Group(m, name="box"))
-    def document_data(self, d=None): return d
-    def set_document_data(self, v): pass
+        self.data = {}
+    def document_data(self, d=None): return json.loads(json.dumps(self.data)) if self.data else d
+    def set_document_data(self, v): self.data = json.loads(json.dumps(v))
     def on_document_changed(self, fn): pass
 app = App()
 panel = P.StudioPanel(app)
@@ -86,6 +91,59 @@ ok(wait(lambda: live.loads >= 3 and live._ready), "changing the look reloads the
 ok(live.starts == 1 and glb.stat().st_mtime_ns == t_glb, "...in the same Blender, without exporting the model again")
 ok(json.load(open(live._work / "job.json"))["engine"] == "eevee", "...still EEVEE while Render is set to Cycles")
 ok(wait(lambda: any("render" in l for l in log_lines()[-1:])), "and renders it")
+
+# ---- Follow the camera: frames while it moves -------------------------------------------
+ok(wait(lambda: live._ready and not live._busy and live._done_key is not None), "settled")
+n2 = len(renders())
+for i in range(40):                                  # a drag: the camera changes at every poll
+    app.viewport.camera.yaw += 0.02
+    t_end = time.time() + 0.025
+    while time.time() < t_end:
+        qa.processEvents(); time.sleep(0.003)
+during = renders()[n2:]
+ok(len([l for l in during if "width=320" in l]) >= 3, f"while the camera moves, small frames come ({len(during)} so far)")
+ok(not any("samples=8" in l for l in during), "...and no draft while it moves")
+ok(wait(lambda: any("samples=8" in l for l in renders()[n2:])), "when it stops: the quick image, then the draft")
+
+# ---- Follow the camera off: the image keeps its camera ---------------------------------
+ok(wait(lambda: live._ready and not live._busy and live._done_key == live._quick_key), "settled again")
+panel.follow_camera_box.setChecked(False)
+kept_eye = str(live._frozen["eye"])
+n3 = len(renders())
+app.viewport.camera.yaw += 0.6
+t_end = time.time() + 0.6
+while time.time() < t_end:
+    qa.processEvents(); time.sleep(0.01)
+ok(all(kept_eye in l for l in renders()[n3:]), "Follow the camera off: moving the 3D view gives no image of it")
+loads0 = live.loads
+panel.preset.setCurrentIndex(panel.preset.findData("overcast"))
+ok(wait(lambda: live.loads > loads0 and any("samples=8" in l for l in renders()[n3:])), "a change still renders...")
+ok(all(kept_eye in l for l in renders()[n3:]), "...from the kept camera")
+panel.follow_camera_box.setChecked(True)
+ok(wait(lambda: any(kept_eye not in l for l in renders()[n3:])), "on again: it follows the 3D view again")
+
+# ---- Follow changes off: the live scene keeps its model and materials -------------------
+ok(wait(lambda: live._ready and not live._busy), "ready")
+panel.follow_changes_box.setChecked(False)
+loads1, t_glb = live.loads, glb.stat().st_mtime_ns
+app.scene.version += 1
+app.data = {**app.data, "materials": {"X": {"type": "grass", "grass_height": 0.2}}}
+t_end = time.time() + 0.6
+while time.time() < t_end:
+    qa.processEvents(); time.sleep(0.01)
+ok(live.loads == loads1, "Follow changes off: a model or material edit does not reload")
+panel.preset.setCurrentIndex(panel.preset.findData("clear"))
+ok(wait(lambda: live.loads > loads1 and live._ready), "the look still applies...")
+jl = json.load(open(live._work / "job.json"))
+ok(glb.stat().st_mtime_ns == t_glb and "X" not in (jl["studio"].get("materials") or {}),
+   "...with the kept model (not exported) and the kept materials")
+loads2 = live.loads
+panel.follow_changes_box.setChecked(True)
+ok(wait(lambda: live.loads > loads2 and live._ready), "on again: the edits come in")
+jl = json.load(open(live._work / "job.json"))
+ok(glb.stat().st_mtime_ns != t_glb and "X" in (jl["studio"].get("materials") or {}), "...model exported, materials applied")
+ok(live.starts == 1, "all in the same Blender")
+ok(str(QSettings().value("render_studio/live_follow_changes")).lower() in ("true", "1"), "the switches are remembered")
 
 # a final render pauses the live view; the final image stays on screen
 panel._pause_live()

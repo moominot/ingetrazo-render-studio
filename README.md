@@ -212,18 +212,27 @@ the image as PNG or JPEG.
 
 ## Live view
 
-**Live view** (a box in the panel) keeps Blender open with the scene and the look loaded, and an
-image follows the 3D view: move the camera and stop, and a quick, rough image (480 px, 1 sample)
-comes after a quarter of a second; if the camera stays put, the draft (960 px, 8 samples) replaces
-it. The live Blender always uses EEVEE with its costliest effects off (ray tracing, fast GI, fine
+**Live view** (a box in the panel) keeps one Blender open with the scene and the look loaded, and
+an image follows your work. Two switches under it, remembered between sessions:
+
+- **Follow the camera**: while the 3D view moves, small frames (320 px, 1 sample) come one after
+  another as fast as Blender renders them, each showing the camera as it is when Blender is free;
+  250 ms after it stops a quick image (480 px, 1 sample) comes, then the draft (960 px, 8 samples).
+  Off: the live image keeps its camera.
+- **Follow changes**: an edit of the model, its textures or the materials' render settings rebuilds
+  the scene in the same Blender (`{"reload": job}` on its input); the model is exported again only
+  when it changed. A change that comes while the previous one is still being built waits for it.
+  Off: the live scene keeps the model and materials it has; the look and sliders still apply.
+
+The live Blender always uses EEVEE with its costliest effects off (ray tracing, fast GI, fine
 shadows) and grass at a third of its density: the panel's **Engine** and **Quality** are for
-**Render**. Changing the model, the look, a slider, the 360° background or a material setting
-rebuilds the scene in the SAME Blender (`{"reload": job}` on its input): no new start, and the model
-is exported again only when the model changed. On a test machine a change of look now shows in
-about 1 s instead of restarting Blender (3 to 10 s), and a camera move in about 0.7 s. It speaks the protocol of
-IngeTrazo's own «Sync with the view» (Blender in `serve` mode), extended with `reload`, so the draft
-has the look, sky and materials of the final render. **Render** closes the live Blender first and
-leaves the live view off, so the draft does not cover the final image.
+**Render**. Measured on a test machine (Blender 5.3): first start about 3 s, a camera stop to the
+quick image about 0.3 s, a change of look, material or model about 0.7–1 s, and 3–4 frames a second
+while the camera moves. That last figure is EEVEE's fixed cost per image (about a quarter of a second
+whatever its size; saving it and the compositor barely count): a smoother motion would need an
+interactive viewport, which a Blender running in the background does not have. It speaks the protocol
+of IngeTrazo's own «Sync with the view» (Blender in `serve` mode), extended with `reload`. **Render**
+closes the live Blender first and leaves the live view off, so the draft does not cover the final image.
 
 ## Settings in the document
 
@@ -278,7 +287,8 @@ Render tab).
 - `tests/test_relief_bpy.py` renders a brick wall and a pool with a REAL Blender (the `bpy` module, `pip install bpy`) with and without relief and checks the height map and the difference; skipped when `bpy` is missing.
 - `tests/test_cube_preview_offline.py` checks the cube preview (picture, tile, colour, polish, metal, relief, glass, glow) and its wiring in the editor.
 - `tests/test_live_blender_offline.py` runs the live view with a real Blender (house on a lawn) and times the
-  quick image, the draft, a camera move, a change of look (same Blender, model kept) and of the model.
+  quick image, the draft, frames while orbiting, a material edit, edits in a row, a change of look (same Blender,
+  model kept) and of the model.
 - `tests/test_live_offline.py` runs the live view against a stand-in for Blender (`tests/fake_blender.py`, same protocol): first draft, camera moves, model/look changes, a final render, switching off.
 - `tests/test_doc_settings_offline.py` checks the settings kept in the document.
 - `tests/test_materials_list_offline.py` checks the material list (faces, groups painted whole, nested, registry).
