@@ -196,7 +196,8 @@ def render(params: dict, size: int = 180) -> QPixmap:
             p.restore()
 
     if kind == "grass":
-        _grass(p, faces, size, float(params.get("grass_height", 0.08)), base, texture)
+        _grass(p, faces, size, float(params.get("grass_height", 0.08)), base, texture,
+               params.get("grass_density"))
 
     # the edges
     p.setBrush(Qt.NoBrush)
@@ -207,9 +208,11 @@ def render(params: dict, size: int = 180) -> QPixmap:
     return px
 
 
-def _grass(p: QPainter, faces, size: int, height: float, base: QColor, texture) -> None:
+def _grass(p: QPainter, faces, size: int, height: float, base: QColor, texture,
+           density=None) -> None:
     """Blades on the top face, ``height`` metres tall (the cube is 1 m), in the
-    material's colour (its picture's average when it has one), back to front."""
+    material's colour (its picture's average when it has one), back to front;
+    ``density`` (tufts per m²) sets how many."""
     import random
     if texture is not None and not texture.isNull():
         avg = texture.scaled(1, 1, Qt.IgnoreAspectRatio, Qt.SmoothTransformation).pixelColor(0, 0)
@@ -220,7 +223,9 @@ def _grass(p: QPainter, faces, size: int, height: float, base: QColor, texture) 
     metre = (faces["left"][2].y() - faces["left"][1].y())    # the cube's vertical edge: 1 m
     length = max(3.0, metre * max(0.0, height))
     pts = []
-    for _ in range(int(260 + 900 * min(1.0, 0.12 / max(height, 0.01)))):
+    count = (int(260 + 900 * min(1.0, 0.12 / max(height, 0.01))) if not density
+             else int(max(40.0, min(2400.0, 4.0 * float(density)))))
+    for _ in range(count):
         u, v = rng.random(), rng.random()
         x = t0.x() + (t1.x() - t0.x()) * u + (t3.x() - t0.x()) * v
         y = t0.y() + (t1.y() - t0.y()) * u + (t3.y() - t0.y()) * v

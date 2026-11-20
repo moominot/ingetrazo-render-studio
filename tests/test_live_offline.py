@@ -57,15 +57,15 @@ live = LiveSession(panel, argv_factory=lambda job, script: [sys.executable, fake
 panel._live = live
 live.image.connect(panel._live_image); live.state.connect(panel.status.setText)
 
-panel.live_box.setChecked(True)
-ok(wait(lambda: panel.window is not None and panel.window.isVisible() and panel.window.original is not None), "ticking Live view opens the image window with a first draft")
+panel.open_preview()
+ok(wait(lambda: panel.window is not None and panel.window.isVisible() and panel.window.has_image()), "Open preview opens the window and the live view gives it a first draft")
 ok(live.loads == 1 and any("studio=True serve=True" in l for l in log_lines()), "Blender was loaded once, with the look (studio block) and in serve mode")
 renders = lambda: [l for l in log_lines() if l.startswith("render")]
 ok(wait(lambda: any("samples=8" in l for l in renders())), "the draft follows (8 samples)")
 first = renders()[:2]
 ok(len(first) == 2 and "samples=1 width=480" in first[0] and "samples=8 width=960" in first[1],
    f"quick first (1 sample, half width), then the draft: {first}")
-ok("Draft" in panel.window.note.text() and panel.window.note.isVisible(), "the window says it is a draft")
+ok(panel.window.mode == "preview" and "draft" in panel.window.note.text() and panel.window.note.isVisible(), "the window says it is a draft")
 job = json.load(open(live._work / "job.json"))
 ok(job["serve"] is True and job["studio"]["clouds"] >= 0 and job["width"] == 960, "job: serve mode, the look's studio block, draft width")
 ok(job["engine"] == "eevee" and job["studio"].get("live") is True, "the live job is a lightened EEVEE draft")
@@ -107,7 +107,7 @@ ok(wait(lambda: any("samples=8" in l for l in renders()[n2:])), "when it stops: 
 
 # ---- Follow the camera off: the image keeps its camera ---------------------------------
 ok(wait(lambda: live._ready and not live._busy and live._done_key == live._quick_key), "settled again")
-panel.follow_camera_box.setChecked(False)
+panel.window.follow_camera_box.setChecked(False)
 kept_eye = str(live._frozen["eye"])
 n3 = len(renders())
 app.viewport.camera.yaw += 0.6
@@ -119,12 +119,12 @@ loads0 = live.loads
 panel.preset.setCurrentIndex(panel.preset.findData("overcast"))
 ok(wait(lambda: live.loads > loads0 and any("samples=8" in l for l in renders()[n3:])), "a change still renders...")
 ok(all(kept_eye in l for l in renders()[n3:]), "...from the kept camera")
-panel.follow_camera_box.setChecked(True)
+panel.window.follow_camera_box.setChecked(True)
 ok(wait(lambda: any(kept_eye not in l for l in renders()[n3:])), "on again: it follows the 3D view again")
 
 # ---- Follow changes off: the live scene keeps its model and materials -------------------
 ok(wait(lambda: live._ready and not live._busy), "ready")
-panel.follow_changes_box.setChecked(False)
+panel.window.follow_changes_box.setChecked(False)
 loads1, t_glb = live.loads, glb.stat().st_mtime_ns
 app.scene.version += 1
 app.data = {**app.data, "materials": {"X": {"type": "grass", "grass_height": 0.2}}}
@@ -138,31 +138,37 @@ jl = json.load(open(live._work / "job.json"))
 ok(glb.stat().st_mtime_ns == t_glb and "X" not in (jl["studio"].get("materials") or {}),
    "...with the kept model (not exported) and the kept materials")
 loads2 = live.loads
-panel.follow_changes_box.setChecked(True)
+panel.window.follow_changes_box.setChecked(True)
 ok(wait(lambda: live.loads > loads2 and live._ready), "on again: the edits come in")
 jl = json.load(open(live._work / "job.json"))
 ok(glb.stat().st_mtime_ns != t_glb and "X" in (jl["studio"].get("materials") or {}), "...model exported, materials applied")
 ok(live.starts == 1, "all in the same Blender")
 ok(str(QSettings().value("render_studio/live_follow_changes")).lower() in ("true", "1"), "the switches are remembered")
 
-# a final render pauses the live view; the final image stays on screen
-panel._pause_live()
+# a final render stops the live view; the final picture stays on screen; Back to preview brings it back
+panel._stop_live()
 ok(not live.active and live._proc is None, "a final render stops the live Blender")
-panel._resume_live(keep_final=True)
-ok(not panel.live_box.isChecked() and not live.active, "after the final render the live view stays off (it would draw over the final image)")
-panel.live_box.setChecked(True)
-ok(wait(lambda: live.active and live._ready and live.starts == 2), "ticking it again brings it back (a new Blender)")
-panel._pause_live(); panel._resume_live(keep_final=False)
-ok(wait(lambda: live.active), "a render that did not start resumes the live view")
+panel.window.set_mode("final")
+ok(panel.window.bar_final.isVisibleTo(panel.window) and not panel.window.bar_preview.isVisibleTo(panel.window),
+   "the final picture shows the retouch tools, not the preview's buttons")
+panel.back_to_preview()
+ok(wait(lambda: live.active and live._ready and live.starts == 2), "Back to preview brings the live view back (a new Blender)")
+ok(panel.window.mode == "preview" and panel.window.bar_preview.isVisibleTo(panel.window), "...and the preview's buttons")
+panel._stop_live(); panel._back_to_preview_if_open()
+ok(wait(lambda: live.active), "a render that gave no picture to retouch resumes the live preview")
 
 loads = live.loads
-panel.live_box.setChecked(False); qa.processEvents()
-ok(not live.active and live._proc is None, "unticking stops it and closes Blender")
+panel.window.close(); qa.processEvents()
+ok(not live.active and live._proc is None, "closing the window stops the live view and closes Blender")
 app.viewport.camera.yaw += 0.4; time.sleep(0.3); qa.processEvents()
 ok(live.loads == loads, "nothing happens after it is off")
+panel.open_preview()
+ok(wait(lambda: live.active and live._ready), "Open preview brings it back")
+panel.window.close(); qa.processEvents()
 
-# no Blender: it says so and unticks
+# no Blender: it says so, and no window opens
 p2 = P.StudioPanel(app); p2.blender = lambda: None
-p2.live_box.setChecked(True)
-ok(not p2.live_box.isChecked() and "Blender was not found" in p2.status.text(), "without Blender: a message, and the box unticks")
+ok(p2.open_preview() is None and p2.window is None and "Blender was not found" in p2.status.text(),
+   "without Blender: a message, and no window")
+ok(not p2.preview_btn.isEnabled(), "...and Open preview is off")
 print("FAILED" if fails else "ALL OK"); sys.exit(1 if fails else 0)

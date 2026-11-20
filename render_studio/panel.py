@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Render Studio's side-tray tab and its image window.
+"""Render Studio's side-tray tab.
 
-The tab: a look (preset), the engine and size, a few sliders that change
-the render (clouds, sun, exposure, warmth, saturation, vignette), an
-optional 360° background (HDRI) that can light the scene too, Render.
-The window: the image, with live adjustments that need no new render, and
-Save. Blender is the one IngeTrazo's Render tab found; the lights placed
-there are used (they matter for Night and Interior).
+The tab sets the scene: a look (preset), a few sliders that change it (clouds, sun, exposure,
+warmth, saturation, vignette), an optional 360° background (HDRI) that can light it, and the
+engine and size of the final render. **Open preview…** opens the preview window (preview.py): a
+live view you can zoom and move, with Render (then retouch and Save image…) and Render and
+save…. Blender is the one IngeTrazo's Render tab found; the lights placed there are used (they
+matter for Night and Interior).
 """
 from __future__ import annotations
 
@@ -17,13 +17,15 @@ import time
 from pathlib import Path
 
 from PySide6.QtCore import QLocale, QProcess, QProcessEnvironment, QSettings, Qt, QTimer, Signal
-from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QHBoxLayout,
-                               QLabel, QProgressBar, QPushButton, QScrollArea, QSizePolicy,
-                               QSlider, QSpinBox, QToolButton, QVBoxLayout, QWidget)
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame, QGroupBox,
+                               QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSpinBox,
+                               QToolButton, QVBoxLayout, QWidget)
 
-from . import materials as mats, pbr, post, presets, settings_store
+from . import materials as mats, pbr, presets, settings_store, widgets
 from .live import LiveSession
+from .preview import ImageWindow  # noqa: F401 - re-exported: panel.ImageWindow
+from .widgets import SliderRow
 
 _log = logging.getLogger(__name__)
 _SETTINGS = "render_studio/"
@@ -64,6 +66,32 @@ def bundled_hdris() -> list:
         return []
 
 
+#: The oldest Blender the look's script works with.
+MIN_BLENDER = (4, 2)
+
+
+def blender_version_ok(command, timeout: float = 60.0):
+    """Ask ``command`` (Blender's argv prefix) for its version: (True, "") for a
+    Blender ≥ MIN_BLENDER, else (False, why, in words for the panel)."""
+    import re
+    import subprocess
+    if not command:
+        return False, "There is no program at that path."
+    try:
+        r = subprocess.run([*command, "--version"], capture_output=True, text=True, timeout=timeout,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, f"That program could not be started ({exc.__class__.__name__})."
+    m = re.search(r"Blender\s+(\d+)\.(\d+)", (r.stdout or "") + (r.stderr or ""))
+    if not m:
+        return False, "That program is not Blender."
+    version = (int(m.group(1)), int(m.group(2)))
+    if version < MIN_BLENDER:
+        return False, (f"That is Blender {version[0]}.{version[1]}; Render Studio needs "
+                       f"{MIN_BLENDER[0]}.{MIN_BLENDER[1]} or newer.")
+    return True, ""
+
+
 def apply_hdri(block: dict, hdri: dict | None) -> dict:
     """The look's block with a 360° background: ``hdri`` = {path, rotation
     (degrees), strength (multiplier), light (it lights the scene)}. When it
@@ -92,6 +120,10 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
     block, ambience = presets.studio(preset_key)
     block = apply_hdri(block, hdri)
     block = presets.apply_sliders(block, sliders)
+    try:
+        materials = mats.with_detected(scene, materials)     # «Gespa» grows grass, «Aigua» ripples
+    except Exception:  # noqa: BLE001 - never stops a render
+        _log.exception("material names not read")
     if materials:
         block["materials"] = mats.job_block(materials)
     try:
@@ -141,128 +173,7 @@ class _model_kept:
         return False
 
 
-def _slider(lo, hi, value, steps=200):
-    s = QSlider(Qt.Horizontal)
-    s.setRange(0, steps)
-    s.setProperty("lo", lo)
-    s.setProperty("hi", hi)
-    s.setValue(int(round((value - lo) / (hi - lo) * steps)))
-    return s
-
-
-def _value(s: QSlider) -> float:
-    lo, hi = float(s.property("lo")), float(s.property("hi"))
-    return lo + (hi - lo) * s.value() / s.maximum()
-
-
-class ImageWindow(QDialog):
-    """The render, fitted to the window, with live adjustments and Save."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Render Studio")
-        self.resize(1100, 760)
-        self.path = None
-        self.original = None            # H×W×3 uint8
-        self.shown = None
-        lay = QVBoxLayout(self)
-        self.view = QLabel()
-        self.view.setAlignment(Qt.AlignCenter)
-        self.view.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
-        self.view.setMinimumSize(320, 200)
-        lay.addWidget(self.view, 1)
-        self.note = QLabel("")
-        self.note.setStyleSheet("color: gray")
-        self.note.setVisible(False)
-        lay.addWidget(self.note)
-        form = QFormLayout()
-        self.adj = {}
-        for key, label, lo, hi, val in (("exposure", "Exposure (EV)", -2.0, 2.0, 0.0),
-                                        ("contrast", "Contrast", 0.6, 1.6, 1.0),
-                                        ("saturation", "Saturation", 0.0, 1.8, 1.0),
-                                        ("warmth", "Warmth", -1.0, 1.0, 0.0),
-                                        ("vignette", "Vignette", 0.0, 0.8, 0.0)):
-            s = _slider(lo, hi, val)
-            s.valueChanged.connect(self._refresh)
-            self.adj[key] = s
-            form.addRow(label, s)
-        lay.addLayout(form)
-        row = QHBoxLayout()
-        help_btn = QToolButton()
-        help_btn.setText("?")
-        help_btn.setToolTip("What each adjustment does")
-        help_btn.clicked.connect(self._help)
-        row.addWidget(help_btn)
-        reset = QPushButton("Reset")
-        reset.clicked.connect(self._reset)
-        save = QPushButton("Save image…")
-        save.clicked.connect(self._save)
-        row.addWidget(reset)
-        row.addStretch(1)
-        row.addWidget(save)
-        lay.addLayout(row)
-
-    def set_note(self, text: str):
-        self.note.setText(text)
-        self.note.setVisible(bool(text))
-
-    def _help(self):
-        from . import ui_help
-        ui_help.show(self, "image")
-
-    def set_image(self, path: Path):
-        import numpy as np
-        self.path = Path(path)
-        img = QImage(str(path)).convertToFormat(QImage.Format_RGB888)
-        w, h = img.width(), img.height()
-        ptr = img.constBits()
-        arr = np.frombuffer(ptr, dtype=np.uint8, count=img.bytesPerLine() * h)
-        arr = arr.reshape(h, img.bytesPerLine())[:, : w * 3].reshape(h, w, 3)
-        self.original = arr.copy()
-        self._refresh()
-
-    def adjustments(self) -> dict:
-        return {k: _value(s) for k, s in self.adj.items()}
-
-    def _reset(self):
-        for key, s in self.adj.items():
-            neutral = post.NEUTRAL[key]
-            lo, hi = float(s.property("lo")), float(s.property("hi"))
-            s.setValue(int(round((neutral - lo) / (hi - lo) * s.maximum())))
-
-    def _refresh(self, *_a):
-        if self.original is None:
-            return
-        out = post.adjust(self.original, self.adjustments())
-        self.shown = out
-        h, w = out.shape[:2]
-        qimg = QImage(out.data, w, h, 3 * w, QImage.Format_RGB888).copy()
-        self._pixmap = QPixmap.fromImage(qimg)
-        self._fit()
-
-    def resizeEvent(self, ev):
-        super().resizeEvent(ev)
-        self._fit()
-
-    def _fit(self):
-        pm = getattr(self, "_pixmap", None)
-        if pm is not None:
-            self.view.setPixmap(pm.scaled(self.view.size(), Qt.KeepAspectRatio,
-                                          Qt.SmoothTransformation))
-
-    def save_to(self, path: str) -> bool:
-        if self.shown is None:
-            return False
-        h, w = self.shown.shape[:2]
-        return QImage(self.shown.data, w, h, 3 * w, QImage.Format_RGB888).copy().save(path)
-
-    def _save(self):
-        start = str(Path(QSettings().value(_SETTINGS + "save_dir", str(Path.home()))) /
-                    ((self.path.stem if self.path else "render") + ".png"))
-        path, _ = QFileDialog.getSaveFileName(self, "Save image", start,
-                                              "PNG (*.png);;JPEG (*.jpg)")
-        if path and self.save_to(path):
-            QSettings().setValue(_SETTINGS + "save_dir", str(Path(path).parent))
+_slider, _value = widgets.slider, widgets.value
 
 
 class StudioPanel(QWidget):
@@ -279,41 +190,40 @@ class StudioPanel(QWidget):
         lang = _lang()
         outer = QVBoxLayout(self)
         outer.setContentsMargins(6, 6, 6, 6)
+        self.need_box = self._need_blender_box()
+        outer.addWidget(self.need_box)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
         host = QWidget()
-        form = QFormLayout(host)
+        col = QVBoxLayout(host)
+        col.setContentsMargins(0, 0, 4, 0)
+
+        # The look and its sliders: they change the SCENE (the preview and Render both draw it).
+        box_look = QGroupBox("Look and light")
+        form = QFormLayout(box_look)
+        form.addRow(self._caption("These change the scene itself: the preview and Render both show them."))
         self.preset = QComboBox()
         for key in presets.ORDER:
             self.preset.addItem(presets.label(key, lang), key)
         self.preset.setCurrentIndex(max(0, self.preset.findData(st.value(_SETTINGS + "preset", "clear"))))
+        self.preset.setToolTip("The light and the mood of the picture. Changing it puts that look's own values "
+                               "in the sliders below.")
         form.addRow("Look", self.preset)
-        self.engine = QComboBox()
-        self.engine.addItem("EEVEE — fast", "eevee")
-        self.engine.addItem("Cycles — best quality", "cycles")
-        self.engine.setCurrentIndex(max(0, self.engine.findData(st.value(_SETTINGS + "engine", "eevee"))))
-        form.addRow("Engine", self.engine)
-        self.quality = QComboBox()
-        for q in ("Draft", "Medium", "High"):
-            self.quality.addItem(q)
-        self.quality.setCurrentIndex(int(st.value(_SETTINGS + "quality", 1)))
-        form.addRow("Quality", self.quality)
-        self.width = QSpinBox()
-        self.width.setRange(320, 7680)
-        self.width.setSingleStep(160)
-        self.width.setSuffix(" px")
-        self.width.setValue(int(st.value(_SETTINGS + "width", 1920)))
-        form.addRow("Width", self.width)
-        self.sliders = {}
+        self.sliders, self.slider_rows = {}, {}
         for key, (label, lo, hi, default, _unit) in presets.SLIDERS.items():
             block, _amb = presets.studio(self.preset.currentData())
             value = default if default is not None else block.get(key, 0.0)
             s = _slider(lo, hi, float(value))
-            s.setToolTip(label)
-            self.sliders[key] = s
-            form.addRow(label, s)
+            row = SliderRow(s, presets.SLIDER_FORMATS[key], presets.SLIDER_HINTS[key])
+            self.sliders[key], self.slider_rows[key] = s, row
+            form.addRow(label, row)
         self.preset.currentIndexChanged.connect(self._preset_changed)
+        col.addWidget(box_look)
+
         # The 360° background.
+        box_bg = QGroupBox("360° background")
+        form2 = QFormLayout(box_bg)
         self.hdri = QComboBox()
         self.hdri.setToolTip(HDRI_TIP)
         self.hdri.addItem("None", "")
@@ -329,23 +239,53 @@ class StudioPanel(QWidget):
         self.hdri.setCurrentIndex(max(0, self.hdri.findData(saved)))
         self._hdri_prev = self.hdri.currentIndex()
         self.hdri.currentIndexChanged.connect(self._hdri_changed)
-        form.addRow("360° background", self.hdri)
+        form2.addRow("Image", self.hdri)
         self.hdri_rotation = _slider(0.0, 360.0, float(st.value(_SETTINGS + "hdri_rotation", 0.0)), 360)
-        self.hdri_rotation.setToolTip("Turns the image about the vertical (degrees).")
-        form.addRow("Rotation", self.hdri_rotation)
+        self.hdri_rotation_row = SliderRow(self.hdri_rotation, "{:.0f}°", "Turns the image about the vertical")
+        form2.addRow("Rotation", self.hdri_rotation_row)
         self.hdri_strength = _slider(-3.0, 3.0, float(st.value(_SETTINGS + "hdri_strength", 0.0)), 120)
-        self.hdri_strength.setToolTip("The image's brightness in stops, against the lamps and the look's light.")
-        form.addRow("Brightness", self.hdri_strength)
+        self.hdri_strength_row = SliderRow(self.hdri_strength, "{:+.1f} stops",
+                                           "Its brightness, against the lamps and the look's light")
+        form2.addRow("Brightness", self.hdri_strength_row)
         self.hdri_light = QCheckBox("Lights the scene")
         self.hdri_light.setToolTip("On: the image lights the model (its sun casts the shadows). "
                                    "Off: the look lights it, the image is only seen behind it.")
         self.hdri_light.setChecked(str(st.value(_SETTINGS + "hdri_light", "true")).lower() != "false")
         self.hdri_light.toggled.connect(self._hdri_enable)
-        form.addRow("", self.hdri_light)
+        form2.addRow("", self.hdri_light)
         self._hdri_enable()
+        col.addWidget(box_bg)
+
+        # What only the final render uses.
+        box_final = QGroupBox("Final render")
+        form3 = QFormLayout(box_final)
+        form3.addRow(self._caption("Only Render uses these; the preview is always a quick draft."))
+        self.engine = QComboBox()
+        self.engine.addItem("EEVEE — fast", "eevee")
+        self.engine.addItem("Cycles — best quality", "cycles")
+        self.engine.setCurrentIndex(max(0, self.engine.findData(st.value(_SETTINGS + "engine", "eevee"))))
+        self.engine.setToolTip("EEVEE: about 3 s. Cycles: the truest light, about 5 s on an RTX card "
+                               "(the Interior look needs it).")
+        form3.addRow("Engine", self.engine)
+        self.quality = QComboBox()
+        for q in ("Draft", "Medium", "High"):
+            self.quality.addItem(q)
+        self.quality.setCurrentIndex(int(st.value(_SETTINGS + "quality", 1)))
+        self.quality.setToolTip("How many samples: more is less noisy and slower.")
+        form3.addRow("Quality", self.quality)
+        self.width = QSpinBox()
+        self.width.setRange(320, 7680)
+        self.width.setSingleStep(160)
+        self.width.setSuffix(" px")
+        self.width.setValue(int(st.value(_SETTINGS + "width", 1920)))
+        self.width.setToolTip("The picture's width; the height follows the 3D view.")
+        form3.addRow("Width", self.width)
+        col.addWidget(box_final)
+        col.addStretch(1)
         scroll.setWidget(host)
-        scroll.setMinimumHeight(host.sizeHint().height() + 8)
+        scroll.setMinimumHeight(min(host.sizeHint().height() + 8, 520))
         outer.addWidget(scroll, 1)
+
         self.help_btn = QToolButton()
         self.help_btn.setText("?")
         self.help_btn.setToolTip("How Render Studio works, and what each control does")
@@ -359,45 +299,136 @@ class StudioPanel(QWidget):
         outer.addLayout(mrow)
         self.editor = None
         self._live = None
-        self._live_resume = False
-        self.live_box = QCheckBox("Live view")
-        self.live_box.setToolTip("Keeps Blender open: when you stop moving the camera a quick image comes, "
-                                 "then a cleaner draft. Always a light EEVEE draft; Engine and Quality are for Render.")
-        self.live_box.toggled.connect(self._live_toggled)
-        outer.addWidget(self.live_box)
-        follow = QHBoxLayout()
-        follow.setContentsMargins(18, 0, 0, 0)
-        self.follow_camera_box = QCheckBox("Follow the camera")
-        self.follow_camera_box.setToolTip("On: frames come while you move the 3D view, then a cleaner image when "
-                                          "you stop. Off: the live image keeps its camera.")
-        self.follow_changes_box = QCheckBox("Follow changes")
-        self.follow_changes_box.setToolTip("On: edits of the model, its textures and the materials show in the "
-                                           "live image. Off: it keeps the model and materials it has (the look "
-                                           "and sliders still apply).")
-        st_live = QSettings()
-        for box, key in ((self.follow_camera_box, "live_follow_camera"),
-                         (self.follow_changes_box, "live_follow_changes")):
-            box.setChecked(str(st_live.value(_SETTINGS + key, "true")).lower() in ("true", "1"))
-            box.toggled.connect(lambda on, k=key: self._follow_toggled(k, on))
-            follow.addWidget(box)
-        follow.addStretch(1)
-        outer.addLayout(follow)
-        self.render_btn = QPushButton("Render")
-        self.render_btn.clicked.connect(self.render)
-        outer.addWidget(self.render_btn)
-        self.bar = QProgressBar()
-        self.bar.setRange(0, 100)
-        self.bar.setVisible(False)
-        outer.addWidget(self.bar)
+        self._save_to = None
+        self._cancelled = False
+        self.preview_btn = QPushButton("Open preview…")
+        self.preview_btn.setToolTip("Opens the preview window: a live view of the scene that you can zoom and move, "
+                                    "with Render (then retouch and save) and Render and save…")
+        self.preview_btn.setDefault(True)
+        self.preview_btn.clicked.connect(self.open_preview)
+        outer.addWidget(self.preview_btn)
         self.status = QLabel("")
         self.status.setWordWrap(True)
         outer.addWidget(self.status)
+        for combo in (self.engine, self.quality):
+            combo.currentIndexChanged.connect(self._update_summary)
+        self.width.valueChanged.connect(self._update_summary)
         self._init_document_settings()
+        self.check_blender()
 
-    # -- live view ----------------------------------------------------------------
+    @staticmethod
+    def _caption(text: str) -> QLabel:
+        label = QLabel(text)
+        label.setWordWrap(True)
+        label.setStyleSheet("color: gray; font-size: 11px")
+        return label
+
+    # -- Blender ------------------------------------------------------------------
+    def _need_blender_box(self) -> QFrame:
+        """Shown while IngeTrazo has no Blender: what it is for, where it is
+        (a path and Browse…), and where to download it."""
+        from core import render_blender as rb
+        box = QFrame()
+        box.setFrameShape(QFrame.StyledPanel)
+        lay = QVBoxLayout(box)
+        lay.setContentsMargins(8, 6, 8, 6)
+        title = QLabel("<b>Render Studio needs Blender</b>")
+        lay.addWidget(title)
+        text = QLabel("Blender (free, version 4.2 or newer) makes the images. If it is installed, "
+                      "choose its program; if not, download it, install it and choose it here.")
+        text.setWordWrap(True)
+        lay.addWidget(text)
+        row = QHBoxLayout()
+        self.blender_path = QLineEdit()
+        self.blender_path.setPlaceholderText({"windows": "C:\\Program Files\\Blender Foundation\\…\\blender.exe",
+                                              "macos": "/Applications/Blender.app"}.get(rb.package_kind(),
+                                                                                       "/usr/bin/blender"))
+        self.blender_path.setToolTip("The Blender program. IngeTrazo's Render tab uses the same one.")
+        self.blender_path.returnPressed.connect(lambda: self.set_blender_path(self.blender_path.text()))
+        browse = QPushButton("Browse…")
+        browse.clicked.connect(self._browse_blender)
+        row.addWidget(self.blender_path, 1)
+        row.addWidget(browse)
+        lay.addLayout(row)
+        link = QLabel(f'<a href="{rb.DOWNLOAD_URL}">Download Blender from blender.org</a>')
+        link.setOpenExternalLinks(True)
+        link.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        lay.addWidget(link)
+        steps = []
+        try:
+            steps = rb.install_steps()
+        except Exception:  # noqa: BLE001 - an older IngeTrazo: the link is enough
+            pass
+        if rb.package_kind() not in ("windows", "macos"):     # Linux packages: the exact command
+            for line, cmd in steps:
+                note = QLabel(line + (f"<br><code>{cmd}</code>" if cmd else ""))
+                note.setWordWrap(True)
+                note.setTextInteractionFlags(Qt.TextSelectableByMouse)
+                lay.addWidget(note)
+        self.blender_msg = QLabel("")
+        self.blender_msg.setWordWrap(True)
+        self.blender_msg.setStyleSheet("color: #b04020")
+        self.blender_msg.setVisible(False)
+        lay.addWidget(self.blender_msg)
+        box.setVisible(False)
+        return box
+
     def blender(self):
         from core import render_blender as rb
         return rb.find_blender(str(QSettings().value(rb.SETTINGS_KEY, "") or "") or None)
+
+    def check_blender(self):
+        """Show the «needs Blender» box, and switch off Render and Live view, while
+        there is none. Returns the Blender found, or None."""
+        try:
+            found = self.blender()
+        except Exception:  # noqa: BLE001 - never breaks the panel
+            found = None
+        self.need_box.setVisible(found is None)
+        self.preview_btn.setEnabled(found is not None)
+        return found
+
+    def _browse_blender(self):
+        from core import render_blender as rb
+        kind = rb.package_kind()
+        start = self.blender_path.text() or {"windows": "C:/Program Files/Blender Foundation",
+                                             "macos": "/Applications"}.get(kind, "/usr/bin")
+        filt = {"windows": "Blender (blender.exe);;Programs (*.exe)",
+                "macos": "Blender (*.app);;All files (*)"}.get(kind, "All files (*)")
+        path, _f = QFileDialog.getOpenFileName(self, "Where is Blender?", start, filt)
+        if path:
+            self.set_blender_path(path)
+
+    def set_blender_path(self, path: str) -> bool:
+        """Use the Blender at ``path`` (a .app on macOS is fine): checked by
+        asking its version, then saved where IngeTrazo's Render tab keeps it."""
+        from core import render_blender as rb
+        path = rb.app_bundle_executable(str(path).strip().strip('"'))
+        self.blender_path.setText(path)
+        ok, why = blender_version_ok([*rb.find_blender(path).command]
+                                     if path and (rb.in_flatpak() or Path(path).is_file()) else None)
+        self.blender_msg.setText(why)
+        self.blender_msg.setVisible(bool(why))
+        if not ok:
+            return False
+        QSettings().setValue(rb.SETTINGS_KEY, path)
+        self._add_bundled_hdris()
+        found = self.check_blender()
+        self.status.setText(f"Blender: {found.where}" if found else "")
+        return found is not None
+
+    def _add_bundled_hdris(self):
+        """Blender's own 360° images, once a Blender is set (before «Choose a file…»)."""
+        for path in bundled_hdris():
+            if self.hdri.findData(str(path)) < 0:
+                self.hdri.insertItem(self.hdri.count() - 1, f"{path.stem.capitalize()} (Blender, 1K)", str(path))
+
+    def showEvent(self, ev):
+        super().showEvent(ev)
+        if self.need_box.isVisible():            # installed or set meanwhile (the Render tab)
+            self.check_blender()
+
+    # -- live view ----------------------------------------------------------------
 
     def live_model_key(self):
         """What the live scene's MODEL file depends on: the document and its content."""
@@ -415,74 +446,103 @@ class StudioPanel(QWidget):
             doc = mats_ = ""
         return (self.live_model_key(), mats_, (doc, round(self._aspect(), 3)))
 
+    def live_engine(self) -> str:
+        """The live view's engine: EEVEE, lightened — but Cycles for a look that
+        needs it (Interior: EEVEE can't fill a room lit through a window, so its
+        preview would not look like the render). The panel's Engine is for Render."""
+        block, _amb = presets.studio(self.preset.currentData())
+        return "cycles" if block.get("engine_hint") == "cycles" else "eevee"
+
     def live_job(self, work: Path, width: int, height: int, reuse_model: bool = False,
                  materials: dict | None = None):
         """The job of the live Blender: the current look and settings, a draft
-        in serve mode — always EEVEE, lightened (the Engine and Quality chosen
-        are for Render). ``reuse_model``: the model file in ``work`` is still
-        good (only a setting changed, or the live view keeps its model).
-        ``materials``: the render settings to use (default: the document's)."""
+        in serve mode — EEVEE lightened, or Cycles for the Interior look (the
+        Engine and Quality chosen are for Render). ``reuse_model``: the model
+        file in ``work`` is still good (only a setting changed, or the live view
+        keeps its model). ``materials``: the render settings to use (default:
+        the document's)."""
         return write_studio_job(
             self.app.scene, self.app.viewport.camera, work, self.preset.currentData(),
-            self.slider_values(), engine="eevee", quality=0, width=width,
+            self.slider_values(), engine=self.live_engine(), quality=0, width=width,
             height=height, hdri=self.hdri_settings(),
             materials=self.material_specs() if materials is None else materials, serve=True,
             live=True, reuse_model=reuse_model)
 
+    # -- the preview window and its live view -------------------------------------------
+    def preview(self) -> ImageWindow:
+        """The preview window (made once, kept for the session)."""
+        if self.window is None:
+            self.window = ImageWindow(self.app.window if hasattr(self.app, "window") else None, panel=self)
+            self._update_summary()
+        return self.window
+
+    def open_preview(self):
+        """Open the preview window and start the live view in it. Returns the window,
+        or None when there is no Blender (the panel says how to choose one)."""
+        if self.check_blender() is None:
+            self.status.setText("Blender was not found: choose it above.")
+            return None
+        win = self.preview()
+        if self.proc is None and win.mode != "final":
+            win.set_mode("preview")
+        win.show()
+        win.raise_()
+        win.activateWindow()
+        if self.proc is None and win.mode == "preview":
+            self._start_live()
+        return win
+
+    def back_to_preview(self):
+        """From the final picture back to the live preview."""
+        win = self.preview()
+        if self.proc is None:
+            win.set_mode("preview")
+            self._start_live()
+
+    def preview_closed(self):
+        """The window was closed: the live Blender is not needed any more. (A render under
+        way goes on, and shows its picture when it is ready.)"""
+        self._stop_live()
+
+    def _start_live(self):
+        if self._live is None:
+            self._live = LiveSession(self)
+            self._live.image.connect(self._live_image)
+            self._live.state.connect(self._set_status)
+        win = self.preview()
+        self._live.set_follow_camera(win.follow_camera_box.isChecked())
+        self._live.set_follow_changes(win.follow_changes_box.isChecked())
+        self._live.start()
+
+    def _stop_live(self):
+        if self._live is not None and self._live.active:
+            self._live.stop()
+
     def _follow_toggled(self, key: str, on: bool):
         QSettings().setValue(_SETTINGS + key, bool(on))
-        if self._live is not None:
-            self._live.set_follow_camera(self.follow_camera_box.isChecked())
-            self._live.set_follow_changes(self.follow_changes_box.isChecked())
-
-    def _live_toggled(self, on: bool):
-        if on:
-            if self._live is None:
-                self._live = LiveSession(self)
-                self._live.image.connect(self._live_image)
-                self._live.state.connect(self.status.setText)
-            if self.blender() is None:
-                self.status.setText("Blender was not found. Set it up in IngeTrazo's Render tab first.")
-                self.live_box.blockSignals(True)
-                self.live_box.setChecked(False)
-                self.live_box.blockSignals(False)
-                return
-            self._live.set_follow_camera(self.follow_camera_box.isChecked())
-            self._live.set_follow_changes(self.follow_changes_box.isChecked())
-            self._live.start()
-        elif self._live is not None:
-            self._live.stop()
-            self.status.setText("Live view off.")
+        if self._live is not None and self.window is not None:
+            self._live.set_follow_camera(self.window.follow_camera_box.isChecked())
+            self._live.set_follow_changes(self.window.follow_changes_box.isChecked())
 
     def _live_image(self, path):
-        if not Path(path).is_file():
+        """A frame of the live view: into the window while it shows the preview."""
+        if not Path(path).is_file() or self.window is None or self.window.mode != "preview":
             return
-        if self.window is None:
-            self.window = ImageWindow(self.app.window if hasattr(self.app, "window") else None)
-        self.window.set_image(Path(path))
-        self.window.set_note("Draft from the live view. Press Render for the final image.")
-        self.window.show()
+        self.window.show_draft(path)
 
-    def _pause_live(self):
-        """A final render and the live Blender should not run together."""
-        self._live_resume = bool(self._live is not None and self._live.active)
-        if self._live_resume:
-            self._live.stop()
+    def _set_status(self, text: str):
+        self.status.setText(text)
+        if self.window is not None:
+            self.window.set_status(text)
 
-    def _resume_live(self, keep_final: bool = False):
-        """After a render. ``keep_final``: the final image is on screen, so the
-        live view stays off (it would draw its draft over it); the box is
-        unticked and ticking it again brings the live view back."""
-        resume = getattr(self, "_live_resume", False)
-        self._live_resume = False
-        if not resume or self._live is None or not self.live_box.isChecked():
-            return
-        if keep_final:
-            self.live_box.blockSignals(True)
-            self.live_box.setChecked(False)
-            self.live_box.blockSignals(False)
-        else:
-            self._live.start()
+    def _set_progress(self, fraction: float):
+        if self.window is not None:
+            self.window.set_progress(fraction)
+
+    def _update_summary(self, *_a):
+        if self.window is not None:
+            self.window.set_summary(f"Render: {self.engine.currentText().split(' —')[0]} · "
+                                    f"{self.quality.currentText()} · {self.width.value()} px")
 
     # -- the settings, in the document --------------------------------------------
     def _init_document_settings(self):
@@ -565,7 +625,10 @@ class StudioPanel(QWidget):
             for w in widgets:
                 w.blockSignals(False)
             self._applying = False
+        for row in (*self.slider_rows.values(), self.hdri_rotation_row, self.hdri_strength_row):
+            row.update_value()                       # their signals were blocked
         self._hdri_enable()
+        self._update_summary()
 
     def _schedule_save(self, *_a):
         if not self._applying:
@@ -634,13 +697,13 @@ class StudioPanel(QWidget):
 
     def _hdri_enable(self, *_a):
         on = bool(self.hdri.currentData())
-        for w in (self.hdri_rotation, self.hdri_strength, self.hdri_light):
+        for w in (self.hdri_rotation_row, self.hdri_strength_row, self.hdri_light):
             w.setEnabled(on)
         lit = on and self.hdri_light.isChecked()
         # The image's own sky and sun replace the look's: these do nothing then.
         for key in ("clouds", "sun_scale"):
-            if key in self.sliders:
-                self.sliders[key].setEnabled(not lit)
+            if key in self.slider_rows:
+                self.slider_rows[key].setEnabled(not lit)
 
     def hdri_settings(self) -> dict | None:
         path = self.hdri.currentData()
@@ -709,17 +772,20 @@ class StudioPanel(QWidget):
         except Exception:  # noqa: BLE001
             return 16 / 9
 
-    def render(self):
+    def render(self, save_to: str | None = None):
+        """Make the final picture. ``save_to``: save it there as soon as it is ready, as
+        rendered (no retouching), and go back to the live preview; without it the window
+        shows the picture with the retouch tools."""
         from core import render_blender as rb
         if self.proc is not None:
             return
-        found = rb.find_blender(str(QSettings().value(rb.SETTINGS_KEY, "") or "") or None)
+        found = self.check_blender()
         if found is None:
-            self.status.setText("Blender was not found. Set it up in IngeTrazo's Render tab first.")
+            self.status.setText("Blender was not found: choose it above.")
             self.finished.emit(None)
             return
         self._remember()
-        self._pause_live()
+        self._stop_live()                  # a final render and the live Blender should not run together
         stamp = time.strftime("%Y%m%d-%H%M%S")
         self.work = rb.work_base().parent / "render-studio" / stamp
         width = self.width.value()
@@ -733,8 +799,8 @@ class StudioPanel(QWidget):
                 materials=self.material_specs())
         except Exception as exc:  # noqa: BLE001 - say it, never crash the app
             _log.exception("render job failed")
-            self.status.setText(f"Could not prepare the render: {exc}")
-            self._resume_live()
+            self._set_status(f"Could not prepare the render: {exc}")
+            self._back_to_preview_if_open()
             self.finished.emit(None)
             return
         argv = [*found.command, "-b", "--factory-startup", "--python", str(script), "--", str(job)]
@@ -747,12 +813,39 @@ class StudioPanel(QWidget):
         self.proc.readyReadStandardOutput.connect(self._read)
         self.proc.finished.connect(self._done)
         self._log_lines = []
+        self._save_to, self._cancelled = save_to, False
         self.output = Path(json.loads(job.read_text(encoding="utf-8"))["output"])
-        self.render_btn.setEnabled(False)
-        self.bar.setVisible(True)
-        self.bar.setValue(0)
-        self.status.setText("Blender is preparing the scene…")
+        if self.window is not None:
+            self.window.set_mode("rendering")
+        self._set_progress(0.0)
+        self._set_status("Blender is preparing the scene…")
         self.proc.start(argv[0], argv[1:])
+
+    def render_and_save(self):
+        """Ask where to save, then render and save it as it comes out (no retouching)."""
+        if self.proc is not None:
+            return
+        start = str(Path(QSettings().value(_SETTINGS + "save_dir", str(Path.home()))) /
+                    f"render-{time.strftime('%Y%m%d-%H%M%S')}.png")
+        path, _f = QFileDialog.getSaveFileName(self.window or self, "Render and save", start,
+                                               "PNG (*.png);;JPEG (*.jpg)")
+        if path:
+            self.render(save_to=path)
+
+    def cancel_render(self):
+        if self.proc is not None:
+            self._cancelled = True
+            self.proc.kill()
+
+    def _back_to_preview_if_open(self):
+        """After a render that gave no picture to retouch: the live preview again, if the
+        window is still open."""
+        win = self.window
+        if win is not None and win.isVisible():
+            win.set_mode("preview")
+            self._start_live()
+        elif win is not None:
+            win.set_mode("preview")
 
     def _read(self):
         from core import render_blender as rb
@@ -761,26 +854,46 @@ class StudioPanel(QWidget):
             self._log_lines.append(line)
             p = rb.progress_of(line)
             if p is not None:
-                self.bar.setValue(int(p * 100))
+                self._set_progress(p)
             if line.startswith("INGETRAZO meter"):
-                self.status.setText("Exposure measured; rendering…")
+                self._set_status("Exposure measured; rendering…")
+
+    def _save_as_rendered(self, path: str) -> bool:
+        """The render exactly as Blender wrote it, as PNG, or converted for JPEG."""
+        try:
+            if Path(path).suffix.lower() in (".jpg", ".jpeg"):
+                return QImage(str(self.output)).save(path, "JPG", 95)
+            shutil.copyfile(self.output, path)
+            return True
+        except OSError:
+            _log.exception("could not save %s", path)
+            return False
 
     def _done(self, code, _status):
         self.proc = None
-        self.render_btn.setEnabled(True)
-        self.bar.setVisible(False)
+        save_to, self._save_to = self._save_to, None
         failed = code != 0 or not self.output.exists()
-        self._resume_live(keep_final=not failed)
-        if failed:
-            tail = "\n".join(l for l in self._log_lines if "Error" in l or "INGETRAZO" in l)[-600:]
-            self.status.setText(f"The render failed (code {code}).\n{tail}")
+        if self._cancelled or failed:
+            if self._cancelled:
+                self._set_status("Render cancelled.")
+            else:
+                tail = "\n".join(l for l in self._log_lines if "Error" in l or "INGETRAZO" in l)[-600:]
+                self._set_status(f"The render failed (code {code}).\n{tail}")
+            self._back_to_preview_if_open()
             self.finished.emit(None)
             return
-        self.status.setText(f"Done: {self.output.name}")
-        if self.window is None:
-            self.window = ImageWindow(self.app.window if hasattr(self.app, "window") else None)
-        self.window.set_note("")
-        self.window.set_image(self.output)
-        self.window.show()
-        self.window.raise_()
+        if save_to:
+            if self._save_as_rendered(save_to):
+                QSettings().setValue(_SETTINGS + "save_dir", str(Path(save_to).parent))
+                self._set_status(f"Saved: {save_to}")
+            else:
+                self._set_status(f"Rendered, but {save_to} could not be written (the picture is in {self.output}).")
+            self._back_to_preview_if_open()
+            self.finished.emit(self.output)
+            return
+        win = self.preview()
+        self._set_status(f"Done: {self.output.name}")
+        win.set_image(self.output)                        # the retouch tools and Save image…
+        win.show()
+        win.raise_()
         self.finished.emit(self.output)

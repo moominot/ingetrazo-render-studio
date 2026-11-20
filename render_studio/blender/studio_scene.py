@@ -899,7 +899,7 @@ GRASS_DENSITY = 260.0
 GRASS_DENSITY_MIN = 60.0
 GRASS_BLADES = 9
 #: The most tufts in one render: past it the whole lawn gets sparser (memory and time).
-GRASS_MAX_TUFTS = 250_000
+GRASS_MAX_TUFTS = 600_000
 GRASS_TUFT_RADIUS = 0.35            # × the height
 GRASS_BLADE_WIDTH = 0.045           # × the height, at the root
 
@@ -1073,14 +1073,16 @@ def _grass_node_group(name, branches):
 
 
 def build_grass(specs, factor=1.0):
-    """Grow the grass of every material of type «grass» (see above), ``factor``
-    times as dense (the live view's draft is sparser). Returns the number of
-    tufts asked for."""
-    kinds = {}
+    """Grow the grass of every material of type «grass» (see above), at its own
+    ``grass_density`` (tufts per m²; the height's automatic one when it has none),
+    ``factor`` times as dense. Returns the number of tufts asked for."""
+    kinds, dens = {}, {}
     for mat in bpy.data.materials:
         spec = _spec_for(mat, specs)
         if spec and spec.get("type") == "grass" and mat.node_tree:
             kinds[mat.name] = float(spec.get("grass_height", 0.08))
+            if spec.get("grass_density"):
+                dens[mat.name] = max(1.0, float(spec["grass_density"]))
     if not kinds:
         return 0
     hidden = bpy.data.collections.new("studio grass tufts")
@@ -1097,7 +1099,8 @@ def build_grass(specs, factor=1.0):
             area = _grass_area(obj, {i})
             if area <= 0.0:
                 continue
-            d = grass_density(kinds[mat.name]) * max(0.01, float(factor))
+            d = dens.get(mat.name) or grass_density(kinds[mat.name])
+            d *= max(0.01, float(factor))
             plan.append((obj, mat, d, area))
             total += d * area
     if not plan:
@@ -1119,7 +1122,8 @@ def build_grass(specs, factor=1.0):
         mod = obj.modifiers.new("Studio grass", "NODES")
         mod.node_group = _grass_node_group("studio grass " + obj.name, branches)
     count = int(total * thin)
-    say("grass", ", ".join(f"{m} {h * 100:.0f} cm" for m, h in kinds.items()),
+    say("grass", ", ".join(f"{m} {h * 100:.0f} cm {dens.get(m) or grass_density(h):.0f}/m2"
+                           for m, h in kinds.items()),
         f"- {count} tufts" + (f" (thinned to {thin:.0%})" if thin < 1.0 else ""))
     return count
 
@@ -1656,8 +1660,9 @@ def add_studio_lights(scene, lights):
 
 # ---- the render ------------------------------------------------------------------------
 
-#: The live view: grass this much sparser (it is a draft), EEVEE without its costliest effects.
-LIVE_GRASS = 0.35
+#: The live view: the grass as dense as in the render (what you see is what you get);
+#: EEVEE without its costliest effects, or Cycles (the Interior look) kept between images.
+LIVE_GRASS = 1.0
 LIVE_EEVEE = (("use_raytracing", False), ("use_fast_gi", False), ("shadow_resolution_scale", 0.5),
               ("use_shadow_jitter_viewport", False), ("shadow_ray_count", 1), ("shadow_step_count", 4),
               ("use_volumetric_shadows", False))
@@ -1776,6 +1781,19 @@ def build(job):
                     setattr(ev, attr, value)
                 except (TypeError, ValueError):
                     pass
+    if st.get("live") and job.get("engine") == "cycles":
+        # The Interior look's live view: Cycles, its scene kept between images (only the
+        # camera changes), denoised so a few samples read as a picture.
+        scene.render.use_persistent_data = True
+        cy = scene.cycles
+        for attr, value in (("use_denoising", True), ("denoising_use_gpu", True),
+                            ("denoising_prefilter", "FAST"), ("use_adaptive_sampling", False)):
+            if hasattr(cy, attr):
+                try:
+                    setattr(cy, attr, value)
+                except (TypeError, ValueError):
+                    pass
+        say("live", "cycles")
     for attr, value in (st.get("eevee_overrides") or {}).items():   # for tuning
         target = scene.eevee
         for part in attr.split(".")[:-1]:

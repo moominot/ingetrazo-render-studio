@@ -132,9 +132,37 @@ n = len(images); t3 = time.time()
 app.scene.version += 1
 ok(wait(lambda: len(images) > n), "a change of the model gives a new image")
 print(f"   change of model → quick image {time.time() - t3:.1f} s")
+ok(wait(lambda: live._model_key == panel.live_model_key() and live._ready), "…the new model is loaded")
 ok(live.starts == 1 and glb.stat().st_mtime_ns != mt, "…same Blender, model exported again")
 job = json.load(open(live._work / "job.json"))
 ok(job["engine"] == "eevee" and job["studio"].get("live"), "the live job is the lightened EEVEE draft")
+
+# The Interior look: the live view switches to Cycles (EEVEE can't fill a window-lit room).
+n = len(images); t4 = time.time()
+panel.preset.setCurrentIndex(panel.preset.findData("interior"))
+ok(panel.live_engine() == "cycles", "the Interior look's live view is Cycles")
+ok(wait(lambda: len(images) > n), "…an image comes")
+print(f"   change to Interior (Cycles) → quick image {images[n][0] - t4:.1f} s" if len(images) > n else "")
+job = json.load(open(live._work / "job.json"))
+ok(job["engine"] == "cycles" and job["studio"].get("live"), "…the live job is Cycles")
+ok(wait(lambda: live._ready and not live._busy and live._done_key is not None), "…and its draft")
+ok(any("| Sample 32/32" in l for l in live.tail), "…Blender rendered it with Cycles (32 samples for the draft)")
+n = len(images); t5 = time.time()
+app.viewport.camera.yaw += 0.4
+ok(wait(lambda: len(images) > n), "a camera move in Cycles gives a new image")
+print(f"   Cycles: camera move → quick image {images[n][0] - t5:.2f} s" if len(images) > n else "")
+ok(wait(lambda: live._done_key == live._seen_key and not live._busy), "…and its draft")
+print(f"   Cycles: quick → draft {images[-1][0] - images[n][0]:.2f} s")
+n = len(images); t_m = time.time()
+while time.time() - t_m < 4.0:
+    app.viewport.camera.yaw += 0.01
+    t_end = time.time() + 0.03
+    while time.time() < t_end:
+        qa.processEvents(); time.sleep(0.003)
+print(f"   Cycles while orbiting for 4 s: {len(images) - n} frames, {(len(images) - n) / 4.0:.1f} per second")
+panel.preset.setCurrentIndex(panel.preset.findData("clear"))
+ok(panel.live_engine() == "eevee", "another look: back to EEVEE")
+ok(live.starts == 1, "…all in the same Blender")
 print("   Blender starts:", live.starts)
 print("   restart why:", getattr(live, "restarts_why", None), " ended:", hasattr(live, "ended_tail"))
 if live.starts > 1 or fails:
