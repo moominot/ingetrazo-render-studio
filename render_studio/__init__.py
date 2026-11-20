@@ -7,11 +7,13 @@ photographic finish; then live adjustments of the image (exposure,
 contrast, saturation, warmth, vignette) without rendering again.
 
 It drives the same Blender IngeTrazo's Render tab found, with IngeTrazo's
-own scene script plus ``blender/studio_scene.py`` for the look.
+own scene script plus ``blender/studio_scene.py`` for the look. Proxies
+(light stand-ins whose full model is in an .igz of its own) are rendered as
+their full models, placed by Blender as instances (proxies.py).
 """
 from __future__ import annotations
 
-__version__ = "0.12.0"
+__version__ = "0.13.0"
 
 import logging
 import os

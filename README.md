@@ -285,6 +285,34 @@ The **Output** tab sets the final picture's size and its file (kept in the docum
 
 ![Output tab](docs/output_tab.png)
 
+## Proxies
+
+A **proxy** is a light stand-in in the drawing (an envelope, a box…) for a heavy model — a tree, a sofa, a car —
+whose full model is kept in an `.igz` of its own. The Components manager inserts models this way
+(**As proxy**), and so does the [Proxies](https://github.com/PESI3D/ingetrazo-proxies) extension
+(Create Proxies…); Render Studio reads their data (`group.ext["proxy_tool"]`) and renders the **full
+models**, with nothing to do before the render:
+
+- every proxy showing its stand-in is left out of the model file, and its original is written once
+  to a `.glb` kept in a cache (`render-studio/proxies` beside Blender's work folder) and reused
+  until the original file or the proxy's paint changes;
+- Blender imports each original **once** and places it with a collection instance at every
+  placement: a hundred trees cost one tree in memory and nothing in the export, also in the live
+  view;
+- the original's materials go through everything the model's do (material settings, texture sets,
+  finishes, white model);
+- the file is looked for relative to the drawing first (a project folder moved as a whole), then
+  where it was written; a proxy whose original is missing is rendered as drawn, and the status line
+  names it. Hidden proxies and proxies on hidden layers stay out, as any object; a proxy showing its
+  original is rendered as the model it is.
+
+Lights placed inside an original are not read while it is a proxy (place them on the proxy itself).
+
+The Components manager also turns objects already in the drawing into proxies from the right-click
+menu (Make proxy, Show original, Show proxy, Open original in a new tab).
+
+![Proxies: envelopes in the drawing, full models in the render](docs/proxies.png)
+
 ## 360° background (HDRI)
 
 Any equirectangular image (.hdr, .exr, .jpg) as the world:
@@ -471,6 +499,10 @@ Render tab).
   <repo> <render_scene.py> <out dir>`, or `python` with the `bpy` module): each kind becomes the right Blender light
   with the axes the viewport draws; a spot's lumens in its cone; an IES profile keeps the power and only shapes it;
   an area light faces where it is aimed; EEVEE renders them all.
+- `tests/test_proxies_blender.py` checks the proxies: the job lists each original once with its placements
+  (not the hidden one; the one without its file is named and rendered as drawn), the stand-ins are out of the
+  model file, the drawing is left as it was, the cached `.glb` is reused and a new paint makes a new one; with a
+  Blender (`<blender.exe>` or `bpy` as the 4th argument) the picture shows the originals at both places.
 - `tests/test_lights_job_offline.py` goes from IngeTrazo to the picture: a lamp post component (copied) with a spot,
   a free area light, a night look; given `blender.exe` (or `bpy`) it renders and checks where the ground is lit.
 - `tests/test_sun_output_offline.py` checks the Sun tab (IngeTrazo's own date, hour, zone, place and north,
