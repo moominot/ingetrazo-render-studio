@@ -27,22 +27,22 @@ scene.materials["Brick"] = Material("Brick", texture={"path": "x.png", "sw": 1.0
 wall = Group(Mesh(), name="wall"); wall.xform = QMatrix4x4()
 quad(wall.mesh)
 wall.material = {"mat": "Brick", "texture": {"path": "x.png", "sw": 1.0, "sh": 1.0}}
-scene.groups.append(wall)
+scene.groups.append(wall); scene.version += 1  # direct edits: the caches follow the version
 used = M.used_materials(scene)
 ok(used.get("Brick") == 1, f"a group painted whole counts ({used})")
 
 # nested component painted whole
 outer = Group(Mesh(), name="outer"); inner = Group(Mesh(), name="inner"); inner.xform = QMatrix4x4()
-inner.material = {"mat": "Plaster"}; outer.adopt([inner]); scene.groups.append(outer)
-scene.materials["Plaster"] = Material("Plaster", color=(0.9, 0.9, 0.9))
+inner.material = {"mat": "Plaster"}; outer.adopt([inner]); scene.groups.append(outer); scene.version += 1
+scene.materials["Plaster"] = Material("Plaster", color=(0.9, 0.9, 0.9)); scene.version += 1
 ok(M.used_materials(scene).get("Plaster") == 1, "a nested component painted whole counts")
 
 # faces
-f = quad(scene.mesh, 2.0); f.attrs["mat"] = "Glass"
+f = quad(scene.mesh, 2.0); f.attrs["mat"] = "Glass"; scene.version += 1
 ok(M.used_materials(scene).get("Glass") == 1, "a loose face counts (even without a registry entry)")
 
 # registry only
-scene.materials["Unused"] = Material("Unused", color=(1, 0, 0))
+scene.materials["Unused"] = Material("Unused", color=(1, 0, 0)); scene.version += 1
 ok(M.used_materials(scene).get("Unused") == 0, "a registry material nothing wears is listed (0)")
 ok(M.used_materials(Scene()) == {}, "an empty document: empty list")
 

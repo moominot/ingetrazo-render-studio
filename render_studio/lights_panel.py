@@ -431,6 +431,9 @@ class LightsTab(QWidget):
 
     def select(self, key) -> None:
         """Choose the light ``key`` in the list (from the 3D view, say)."""
+        if getattr(self, "_stale", False):      # changed while out of sight
+            self._stale = False
+            self.refresh()
         it = self._item(key)
         if it is not None:
             self.tree.setCurrentItem(it)
@@ -834,4 +837,16 @@ class LightsTab(QWidget):
 
     def document_changed(self):
         self.view_pick = None
+        if not self.isVisible():
+            # Called on every edit and selection: with the tab out of sight
+            # nobody reads the list, and building it walks the whole model.
+            self._stale = True
+            return
+        self._stale = False
         self.refresh()
+
+    def showEvent(self, ev):  # noqa: N802
+        super().showEvent(ev)
+        if getattr(self, "_stale", False):
+            self._stale = False
+            self.refresh()

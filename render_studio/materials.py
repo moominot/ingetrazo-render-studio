@@ -217,12 +217,36 @@ def _paint_name(group):
     return paint.get("mat") if isinstance(paint, dict) and paint.get("mat") else None
 
 
+_USED_CACHE = {"ref": None, "version": None, "out": None}
+
+
 def used_materials(scene) -> dict:
     """name → number of places painted with it: faces over the whole model
     (loose geometry, groups and components, nested) and groups or components
     painted whole. Every material of the document's registry is listed too,
     with 0 when nothing wears it yet, so the list is never empty while the
-    model has named materials."""
+    model has named materials.
+
+    Remembered for the model's ``content_version`` (selecting does not change
+    it): it reads every face's paint, over 588 000 faces about a second and
+    a half each time the panels ask (2026-11-20)."""
+    import weakref
+    version = getattr(scene, "content_version", None)
+    cache = _USED_CACHE
+    if (version is not None and cache["out"] is not None
+            and cache["version"] == version
+            and cache["ref"] is not None and cache["ref"]() is scene):
+        return dict(cache["out"])
+    out = _used_materials(scene)
+    if version is not None:
+        try:
+            cache.update(ref=weakref.ref(scene), version=version, out=out)
+        except TypeError:
+            cache.update(ref=None, version=None, out=None)
+    return dict(out)
+
+
+def _used_materials(scene) -> dict:
     counts: dict = {}
     seen: set = set()
 
