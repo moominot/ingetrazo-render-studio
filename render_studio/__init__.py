@@ -13,7 +13,7 @@ their full models, placed by Blender as instances (proxies.py).
 """
 from __future__ import annotations
 
-__version__ = "0.14.3"
+__version__ = "0.14.4"
 
 import logging
 import os

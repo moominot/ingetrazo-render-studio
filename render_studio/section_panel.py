@@ -23,9 +23,11 @@ def _note(text: str = "") -> QLabel:
 class SectionTab(QWidget):
     changed = Signal()
 
-    def __init__(self, app, parent=None):
+    def __init__(self, app, parent=None, live=None):
         super().__init__(parent)
         self.app = app
+        self._live = live                       # () -> bool: the preview window is open
+        self._stale = False                     # the model changed while nobody needed the list
         self._wanted = None                     # the material chosen (kept while it is not in the list)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -64,7 +66,7 @@ class SectionTab(QWidget):
 
     # -- values -----------------------------------------------------------------------
     def settings(self) -> dict:
-        return {"cap": self.cap.isChecked(), "material": self.material.currentData(),
+        return {"cap": self.cap.isChecked(), "material": self._wanted,
                 "light": self.light.currentData()}
 
     def apply(self, raw) -> None:
@@ -98,9 +100,33 @@ class SectionTab(QWidget):
         self.material.blockSignals(False)
         self._counts = counts
 
+    def matters(self) -> bool:
+        """Whether the model's changes are worth following here: the preview window is open and a
+        section plane is active (that is when the cap exists), or the tab is on screen (someone
+        is about to choose the cap material). Otherwise it did nothing but read every face's
+        paint on every edit and selection."""
+        if self.isVisible() or self._live is None:
+            return True
+        try:
+            return bool(self._live()) and self.app.scene.active_section() is not None
+        except Exception:  # noqa: BLE001 - an old IngeTrazo: no sections, nothing to follow
+            return False
+
     def document_changed(self) -> None:
+        if not self.matters():
+            self._stale = True
+            return
+        self.catch_up()
+
+    def catch_up(self) -> None:
+        self._stale = False
         self._fill()
         self._paint()
+
+    def showEvent(self, ev) -> None:  # noqa: N802
+        super().showEvent(ev)
+        if self._stale:
+            self.catch_up()
 
     # -- ui -----------------------------------------------------------------------------
     def _paint(self) -> None:

@@ -341,7 +341,7 @@ class StudioPanel(QWidget):
         from .sun_panel import SunTab
         self.sun_tab = SunTab(app, self)
         from .section_panel import SectionTab
-        self.section_tab = SectionTab(app)
+        self.section_tab = SectionTab(app, live=self._preview_open)
         for tab_widget, title in ((self.sun_tab, "Sun"), (self.section_tab, "Section"), (self.output_tab, "Output")):
             sc = QScrollArea()
             sc.setWidgetResizable(True)
@@ -578,6 +578,12 @@ class StudioPanel(QWidget):
             win.set_mode("preview")
             self._start_live()
 
+    def _preview_open(self) -> bool:
+        """The preview window is on screen and its live view runs."""
+        win = self.window
+        return bool(win is not None and win.isVisible()
+                    and self._live is not None and self._live.active)
+
     def preview_closed(self):
         """The window was closed: the live Blender is not needed any more. (A render under
         way goes on, and shows its picture when it is ready.)"""
@@ -592,6 +598,7 @@ class StudioPanel(QWidget):
         self._live.set_follow_camera(win.follow_camera_box.isChecked())
         self._live.set_follow_changes(win.follow_changes_box.isChecked())
         self._live.start()
+        self.section_tab.document_changed()       # it follows the model from here on
 
     def _stop_live(self):
         if self._live is not None and self._live.active:
