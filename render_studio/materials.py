@@ -97,7 +97,8 @@ def shown_controls(kind: str, *, picture: bool = False, set_relief: bool = False
       texture set that gives the relief and no map chosen, the slider does
       nothing (the set's map is used as it is), so only its map row shows.
     * Glow: glowing only. Ripple size: water. Grass height and density: grass.
-    * Transparency: not grass (the blades cover the face).
+    * Transparency and its map (white opaque, black transparent): not grass (the blades cover the
+      face).
     * Map image size: a map file on a material without a picture (with one,
       maps follow the picture's size). Change picture: a material with one.
     """
@@ -115,7 +116,7 @@ def shown_controls(kind: str, *, picture: bool = False, set_relief: bool = False
     if kind == "grass":
         shown |= {"grass_height", "grass_density"}
     else:
-        shown.add("transparency")
+        shown |= {"transparency", "map:opacity"}
     if file_maps and not picture:
         shown.add("map_size")
     if picture:

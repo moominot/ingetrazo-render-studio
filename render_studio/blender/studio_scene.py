@@ -603,6 +603,28 @@ def _map_value(mat, bsdf, m):
     return out
 
 
+def _apply_opacity_map(mat, bsdf, alpha):
+    """Put a 0..1 value (white opaque, black transparent) on the material's Alpha, times what
+    it already has (the picture's own cut-out, or the opacity the model gave the material), and
+    let the renderer blend it: a cut-out is dithered, so it casts a shadow through its holes."""
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    socket = bsdf.inputs["Alpha"]
+    old = next(iter(socket.links), None)
+    mul = nodes.new("ShaderNodeMath"); mul.operation = "MULTIPLY"
+    if old is not None:
+        links.new(old.from_socket, mul.inputs[0])
+    else:
+        mul.inputs[0].default_value = float(socket.default_value)
+    links.new(alpha, mul.inputs[1])
+    links.new(mul.outputs[0], socket)
+    for attr, val in (("surface_render_method", "DITHERED"), ("blend_method", "HASHED")):
+        if hasattr(mat, attr):
+            try:
+                setattr(mat, attr, val)
+            except (TypeError, ValueError):
+                pass
+
+
 def _scaled(mat, socket, factor):
     nodes, links = mat.node_tree.nodes, mat.node_tree.links
     mul = nodes.new("ShaderNodeMath"); mul.operation = "MULTIPLY"
@@ -844,6 +866,12 @@ def apply_material_specs(specs, with_sets=()):
                 val = _map_value(mat, bsdf, m)
                 if val is not None:
                     mat.node_tree.links.new(_scaled(mat, val, spec[key]), bsdf.inputs[names[0]])
+        m = maps.get("opacity") or {}
+        if m.get("source") and kind != "grass":
+            val = _map_value(mat, bsdf, m)          # where it is see-through: black is transparent
+            if val is not None:
+                _apply_opacity_map(mat, bsdf, val)
+                mat["studio_opacity_map"] = True
         if kind in ("generic", "glow", "grass"):
             core["_set"](bsdf, ("Transmission Weight", "Transmission"), 0.0)
         elif kind == "glass" and "transparency" in spec:

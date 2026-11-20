@@ -39,6 +39,14 @@ _SOURCES = {
     "bump": (("", "Automatic"), ("grain", "Fine grain"), ("picture", "Picture (B/W)"),
              ("file", "Height map file…"), ("normal", "Normal map file…")),
     "glow": (("", "No map"), ("picture", "Picture (B/W)"), ("file", "Mask file…")),
+    # white = opaque, black = transparent (a cut-out: leaves, a fence, a lace)
+    "opacity": (("", "No map"), ("file", "Image file… (black = transparent)")),
+}
+_MAP_TIPS = {
+    "opacity": "A picture that says where the material is see-through: white is opaque, black is transparent, "
+               "greys in between (a cut-out: leaves, a fence, a lace). The render and the preview use it; the "
+               "3D view shows the Transparency slider's value. It follows the material's own picture's "
+               "layout when it has one.",
 }
 MAP_FILTER = "Images (*.png *.jpg *.jpeg *.tif *.tiff *.bmp *.exr *.hdr *.tga)"
 _SETTINGS = "render_studio/"
@@ -128,8 +136,8 @@ class MapRow(QWidget):
         for value, label in _SOURCES[key]:
             self.source.addItem(label, value)
         self._first_label = _SOURCES[key][0][1]
-        self.source.setToolTip("Where the setting varies over the surface. With a map, "
-                               "the slider above scales it.")
+        self.source.setToolTip(_MAP_TIPS.get(key) or (
+            "Where the setting varies over the surface. With a map, the slider above scales it."))
         self.source.activated.connect(self._source_chosen)
         lay.addWidget(self.source, 2)
         self.invert = QCheckBox("Invert")
@@ -354,6 +362,9 @@ class MaterialEditor(QDialog):
         self._rows["transparency"] = trow
         self.sliders["transparency"] = self.transparency
         self.values["transparency"] = self.transparency_value
+        self.maps["opacity"] = MapRow("opacity", self._changed)
+        form.addRow("", self.maps["opacity"])
+        self._rows["map:opacity"] = self.maps["opacity"]
         for key, label, lo, hi, tip in _FIELDS:
             s = QSlider(Qt.Horizontal)
             s.setRange(0, 100)
@@ -502,6 +513,7 @@ class MaterialEditor(QDialog):
             self.maps["bump"].set_texture_set(ts["normal"], normal=True, what="normal map")
         else:
             self.maps["bump"].set_texture_set(ts.get("displacement", ""), what="displacement")
+        self.maps["opacity"].set_texture_set(ts.get("opacity") or "", what="opacity map")
         self.maps["glow"].set_texture_set("")
 
     def detected(self, name):
