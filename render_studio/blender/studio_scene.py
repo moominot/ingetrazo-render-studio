@@ -1575,6 +1575,85 @@ def measure_exposure(scene, target=0.2, bias=0.0, fraction=25, samples=8, white=
             pass
 
 
+# ---- lights --------------------------------------------------------------------------------
+
+BLENDER_LIGHT = {"point": "POINT", "spot": "SPOT", "area": "AREA", "sun": "SUN"}
+
+
+def _ies_nodes(data, path):
+    """An IES profile on a light (Cycles reads it; EEVEE ignores light nodes):
+    the profile's shape drives the light's emission strength."""
+    data.use_nodes = True
+    nt = data.node_tree
+    emit = next((n for n in nt.nodes if n.type == "EMISSION"), None)
+    if emit is None:
+        emit = nt.nodes.new("ShaderNodeEmission")
+        out = next((n for n in nt.nodes if n.type == "OUTPUT_LIGHT"), None) or nt.nodes.new("ShaderNodeOutputLight")
+        nt.links.new(emit.outputs[0], out.inputs[0])
+    ies = nt.nodes.new("ShaderNodeTexIES")
+    ies.mode = "EXTERNAL"
+    ies.filepath = path
+    nt.links.new(ies.outputs[0], emit.inputs["Strength"])
+    return ies
+
+
+def add_studio_lights(scene, lights):
+    """Render Studio's lights (``render_studio/lights.py``): point, spot, area
+    and sun, in the world, with Blender's own power (``energy``) already
+    worked out. Returns the objects made."""
+    made = []
+    col = bpy.data.collections.new("Render Studio lights")
+    scene.collection.children.link(col)
+    for i, lt in enumerate(lights):
+        kind = BLENDER_LIGHT.get(lt.get("type"), "POINT")
+        name = lt.get("name") or f"Studio {lt.get('type', 'point')} {i + 1}"
+        data = bpy.data.lights.new(name, type=kind)
+        data.energy = float(lt.get("energy", 0.0))
+        data.color = tuple(float(c) for c in (lt.get("color") or (1.0, 1.0, 1.0))[:3])
+        if hasattr(data, "use_shadow"):
+            data.use_shadow = bool(lt.get("shadow", True))
+        if kind in ("POINT", "SPOT"):
+            data.shadow_soft_size = float(lt.get("radius", 0.05))
+        if kind == "SPOT":
+            data.spot_size = math.radians(float(lt.get("spot_angle", 60.0)))
+            data.spot_blend = float(lt.get("spot_blend", 0.25))
+        elif kind == "AREA":
+            shape = str(lt.get("shape", "square")).upper()
+            data.shape = shape if shape in ("SQUARE", "RECTANGLE", "DISK", "ELLIPSE") else "SQUARE"
+            data.size = float(lt.get("size", 0.6))
+            if data.shape in ("RECTANGLE", "ELLIPSE"):
+                data.size_y = float(lt.get("size_y", data.size))
+            if hasattr(data, "spread"):
+                data.spread = math.radians(float(lt.get("spread", 180.0)))
+        elif kind == "SUN":
+            data.angle = math.radians(float(lt.get("sun_angle", 0.53)))
+        if lt.get("ies") and kind != "SUN":
+            try:
+                _ies_nodes(data, lt["ies"])
+            except Exception as exc:  # noqa: BLE001 - the light stays, without its profile
+                say("ies failed", os.path.basename(lt["ies"]), exc)
+        obj = bpy.data.objects.new(name, data)
+        col.objects.link(obj)
+        obj.location = Vector(lt.get("pos") or (0.0, 0.0, 0.0))
+        if kind != "POINT" or lt.get("ies"):
+            # A light shines along its local -Z; ``spin`` turns it about that axis.
+            from mathutils import Quaternion
+            d = Vector(lt.get("dir") or (0.0, 0.0, -1.0))
+            if d.length < 1e-9:
+                d = Vector((0.0, 0.0, -1.0))
+            q = d.normalized().to_track_quat("-Z", "Y") @ Quaternion((0.0, 0.0, 1.0),
+                                                                     math.radians(float(lt.get("spin", 0.0))))
+            obj.rotation_mode = "QUATERNION"
+            obj.rotation_quaternion = q
+        made.append(obj)
+    if lights:
+        kinds = {}
+        for lt in lights:
+            kinds[lt.get("type", "point")] = kinds.get(lt.get("type", "point"), 0) + 1
+        say("studio lights", len(lights), ", ".join(f"{n} {k}" for k, n in sorted(kinds.items())))
+    return made
+
+
 # ---- the render ------------------------------------------------------------------------
 
 #: The live view: grass this much sparser (it is a draft), EEVEE without its costliest effects.
