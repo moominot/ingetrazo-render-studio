@@ -54,6 +54,11 @@ class SetMaterialOpacityCommand(RestampMaterialCommand):
             self._new = (Material(self._name, color=old.color, texture=old.texture,
                                   opacity=self._opacity, finish=old.finish)
                          if old is not None else None)
+        if not hasattr(self, "_glass"):
+            from .materials import material_kind
+            # A glass material is made see-through by its own Transparency setting (the opacity the
+            # model gave it is not read), so this is no change of the model for the live view.
+            self._glass = material_kind(scene, self._name) == "glass"
         if self._new is not None:
             scene.materials[self._name] = self._new
         for f, _before in self._old_faces:
@@ -67,6 +72,9 @@ class SetMaterialOpacityCommand(RestampMaterialCommand):
         self._count_meshes(scene)
         _dirty_group_chunks(scene)
         scene.version += 1
+        if self._glass:
+            from .light_ops import _not_model
+            _not_model(scene)
 
     def undo(self, scene) -> None:
         from core.history import _dirty_group_chunks
@@ -87,6 +95,9 @@ class SetMaterialOpacityCommand(RestampMaterialCommand):
         self._count_meshes(scene)
         _dirty_group_chunks(scene)
         scene.version += 1
+        if getattr(self, "_glass", False):
+            from .light_ops import _not_model
+            _not_model(scene)
 
 
 def material_opacity(scene, name):

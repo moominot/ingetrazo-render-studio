@@ -2108,9 +2108,11 @@ def _same(a, b):
     return json.dumps(a, sort_keys=True, default=str) == json.dumps(b, sort_keys=True, default=str)
 
 
-def _light_affecting(a, b):
+def _light_affecting(a, b, engine="eevee"):
     """Whether a change of one material's settings moves the light of the scene (it glows, lets light
-    through, or stops doing either): the exposure is measured again, which needs a scene built anew."""
+    through, or stops doing either): the exposure is measured again, which needs a scene built anew.
+    The Transparency of a glass in EEVEE is an alpha (see :func:`glass_see_through`): no more light moves
+    than a material's roughness moves, so the exposure is kept."""
     a, b = a or {}, b or {}
     kinds = ("glow", "glass", "water")
     ka, kb = a.get("type", "generic"), b.get("type", "generic")
@@ -2119,6 +2121,8 @@ def _light_affecting(a, b):
     if kb == "glow" and (a.get("glow") != b.get("glow")
                          or not _same((a.get("maps") or {}).get("glow"), (b.get("maps") or {}).get("glow"))):
         return True
+    if kb == "glass" and engine != "cycles":
+        return False
     return kb in ("glass", "water") and a.get("transparency") != b.get("transparency")
 
 
@@ -2141,7 +2145,7 @@ def _patch_names(job):
             continue
         if m.name not in _STATE["pristine"]:
             return None
-        if (a or {}).get("type") == "grass" or (b or {}).get("type") == "grass" or _light_affecting(a, b):
+        if (a or {}).get("type") == "grass" or (b or {}).get("type") == "grass" or _light_affecting(a, b, job.get("engine", "eevee")):
             return None
         names.add(m.name)
     return names

@@ -222,6 +222,21 @@ def _paint_name(group):
 _USED_CACHE = {"ref": None, "version": None, "out": None}
 
 
+def material_kind(scene, name) -> str:
+    """The type the render gives the material ``name``: its settings', else the one its name (or its
+    picture's file name) suggests, else generic."""
+    from pathlib import Path
+    data = (getattr(scene, "plugin_data", None) or {}).get("render_studio") or {}
+    spec = (data.get("materials") or {}).get(name)
+    if isinstance(spec, dict) and spec:
+        return spec.get("type", "generic")
+    mat = (getattr(scene, "materials", None) or {}).get(name)
+    tex = (getattr(mat, "texture", None) or {}) if mat is not None else {}
+    pic = tex.get("base") or tex.get("path") or ""
+    found = detected_spec(name, Path(str(pic)).name if pic else None)
+    return found.get("type", "generic") if found else "generic"
+
+
 def model_version(scene):
     """The document's version without Render Studio's own writes (the materials' settings, the
     look, the lights: they bump it but change no face's paint, and not the model file either; see
