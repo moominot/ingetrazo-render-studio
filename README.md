@@ -1,7 +1,7 @@
 # Render Studio for IngeTrazo
 
-Photographic renders from IngeTrazo with one click: pick a look, press
-**Render**, then fine-tune the image live without rendering again.
+Photographic renders from IngeTrazo: pick a look, watch it in a live preview you can zoom and
+move, press **Render**, then fine-tune the picture without rendering again.
 
 It drives the same Blender that IngeTrazo's own Render tab uses (Blender
 4.2+; tested with 5.3), with IngeTrazo's scene script plus
@@ -11,7 +11,7 @@ When IngeTrazo finds no Blender, the panel says so at the top: a path box with *
 macOS `Blender.app` is fine), a link to blender.org's download page and, on Linux packages
 (Flatpak, Snap), the exact install command. The chosen program is asked for its version (4.2 or
 newer) and saved under IngeTrazo's own key (`render/blender_path`), so the Render tab uses it too.
-**Render** and **Live view** stay off until there is one.
+**Open preview…** stays off until there is one.
 
 ![Looks](docs/looks.png)
 
@@ -231,24 +231,40 @@ choose a 4K or larger file, for example a free one from polyhaven.com.
 
 ## Panel
 
-`Render Studio…` in the extensions menu opens the panel. It has:
-- the look;
-- the engine: EEVEE (fast, about 3 s) or Cycles (best, about 5 s on an RTX GPU);
-- the quality and the width;
-- sliders that change the render itself: exposure (EV), clouds, sun, warmth,
-  saturation and vignette;
-- a 360° background (HDRI), with rotation, brightness and "Lights the scene".
+`Render Studio…` in the extensions menu opens the panel, in three groups:
+- **Look and light** (the scene: the preview and Render both draw it): the look, and sliders for exposure
+  (EV), clouds, sun, warmth, saturation and vignette, each with its value and a line saying what it does;
+- **360° background** (HDRI), with rotation, brightness and "Lights the scene";
+- **Final render** (only Render uses it): the engine, EEVEE (fast, about 3 s) or Cycles (best, about 5 s
+  on an RTX GPU), the quality and the width.
 
-The finished image opens in its own window. There you can adjust
-exposure, contrast, saturation, warmth and vignette instantly, then save
-the image as PNG or JPEG.
+There is no Render button in the panel: **Open preview…** opens the preview window.
 
 ![Panel](docs/panel.png)
 
+## Preview window
+
+One window to look at the scene and to make the picture, in three states:
+
+- **Preview**: the live view (below), which you can zoom and move. **Render** makes the final picture with
+  the panel's engine, quality and width (shown beside the buttons); **Render and save…** asks for a PNG or
+  JPEG file first, renders, saves the picture exactly as rendered (no retouching) and returns to the preview.
+- **Rendering**: the progress bar and **Cancel**. The live Blender is closed meanwhile. Closing the window
+  does not stop the render: the picture opens when it is ready.
+- **Final picture**: the render with the retouch sliders (exposure in EV, contrast, saturation, warmth,
+  vignette: they change the picture instantly, nothing is rendered again), **Reset**, **Save image…**
+  (what you see, PNG or JPEG) and **Back to preview**.
+
+The panel's sliders and the retouch sliders share some names but not their effect: the panel's change
+the **scene** (a new preview or render), the retouch ones only the **finished picture**; each shows its
+value and what it does. Zoom: the mouse wheel zooms where the cursor is, dragging moves, a double click
+goes between Fit and 100 %, keys `+` `-` `0` `1`; the zoom and place stay while live frames of other sizes
+arrive (`widgets.ZoomView`). The code is in `preview.py` (window), `widgets.py` (zoom view, slider rows) and
+`panel.py`.
 ## Live view
 
-**Live view** (a box in the panel) keeps one Blender open with the scene and the look loaded, and
-an image follows your work. Two switches under it, remembered between sessions:
+The **live view** (the preview window's first state) keeps one Blender open with the scene and the look loaded, and
+an image follows your work. Two switches in the window, remembered between sessions:
 
 - **Follow the camera**: while the 3D view moves, small frames (320 px, 1 sample) come one after
   another as fast as Blender renders them, each showing the camera as it is when Blender is free;
@@ -259,7 +275,7 @@ an image follows your work. Two switches under it, remembered between sessions:
   when it changed. A change that comes while the previous one is still being built waits for it.
   Off: the live scene keeps the model and materials it has; the look and sliders still apply.
 
-The live Blender uses EEVEE with its costliest effects off (ray tracing, fast GI, fine
+The live Blender (it starts when the window opens and stops when it closes) uses EEVEE with its costliest effects off (ray tracing, fast GI, fine
 shadows): the panel's **Engine** and **Quality** are for **Render**. The **Interior** look is the
 exception (0.11.0): EEVEE can't fill a room lit through a window, so its live view is **Cycles**
 (persistent data, GPU denoiser; 2 samples while moving, 4 for the quick image, 32 for the draft),
@@ -269,7 +285,7 @@ while the camera moves. That last figure is EEVEE's fixed cost per image (about 
 whatever its size; saving it and the compositor barely count): a smoother motion would need an
 interactive viewport, which a Blender running in the background does not have. It speaks the protocol
 of IngeTrazo's own «Sync with the view» (Blender in `serve` mode), extended with `reload`. **Render**
-closes the live Blender first and leaves the live view off, so the draft does not cover the final image.
+closes the live Blender first and leaves the live view off, so the draft does not cover the final image; **Back to preview** brings it back.
 
 ## Settings in the document
 
@@ -334,6 +350,11 @@ Render tab).
 - `tests/test_help_offline.py` checks the help against the code.
 - `tests/test_grass_sets_editor_offline.py` checks the Grass type in the editor (height and density sliders,
   presets, cube preview) and how the editor shows a picture's texture set.
+- `tests/test_preview_offline.py` checks the preview window without Blender: zoom and pan (wheel, drag, double click, keys,
+  kept across frames of other sizes), its three states and what each shows, the retouch sliders, and the panel's value
+  labels and hints.
+- `tests/test_workflow_blender_offline.py` runs the workflow with a REAL Blender: preview, Render, retouch and save, Back to
+  preview, Render and save… (PNG, JPEG, cancelled dialog), Cancel, and closing the window during a render.
 - `tests/test_detect_offline.py` checks the names recognised (and the look-alikes that are not), the editor's
   ◦ mark and note, and the render job.
 - `tests/test_shown_controls_offline.py` checks which controls the editor shows for each type, picture and

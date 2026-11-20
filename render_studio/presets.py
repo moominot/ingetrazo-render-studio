@@ -90,6 +90,23 @@ SLIDERS = {
 }
 
 
+#: How each panel slider's value reads, and what it does (a gray line under it). They change the
+#: SCENE that the preview and Render draw; the retouch sliders of the preview window (post.py)
+#: change the finished picture instead.
+SLIDER_FORMATS = {
+    "exposure_bias": "{:+.1f} EV", "clouds": "{:.0%}", "sun_scale": "×{:.2f}",
+    "warmth": "{:+.2f}", "saturation": "×{:.2f}", "vignette": "{:.2f}",
+}
+SLIDER_HINTS = {
+    "exposure_bias": "Brighter or darker, in stops (on top of the auto exposure)",
+    "clouds": "How cloudy the sky is (off with a 360° background)",
+    "sun_scale": "Strength of the sun and its shadows (×1 = the look's)",
+    "warmth": "Colour of the light: cooler, bluish ← → warmer, yellowish",
+    "saturation": "How vivid the colours are in the render",
+    "vignette": "Darkens the corners of the render",
+}
+
+
 def apply_sliders(block: dict, sliders: dict) -> dict:
     """The preset's block with the user's sliders on top: exposure in
     stops, clouds as coverage, the sun as a multiple of the preset's, warmth

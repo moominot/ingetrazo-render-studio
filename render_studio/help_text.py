@@ -49,26 +49,43 @@ def html() -> str:
     return f"""
 <a name="panel"></a>
 <h3>Render Studio: how it works</h3>
-<p>Render Studio makes a realistic picture of your model with one click. You choose a <b>look</b> (the light and
-the mood), press <b>Render</b>, and then fine-tune the finished image <i>without rendering again</i>. It uses
+<p>Render Studio makes a realistic picture of your model. You choose a <b>look</b> (the light and
+the mood), watch it in a live <b>preview</b>, press <b>Render</b>, and then fine-tune the finished image <i>without rendering again</i>. It uses
 Blender (free, 4.2 or newer) in the background. When IngeTrazo can't find one, the panel says so at the top: choose
 the Blender program there (type its path or <b>Browse…</b>; on a Mac the Blender app itself), or follow the link to
 download it from blender.org, install it and choose it. The path is checked (it must be Blender 4.2 or newer) and kept
 where IngeTrazo's Render tab keeps it, so both use the same Blender.</p>
 
-<h4>In five steps</h4>
+<h4>In four steps</h4>
 <ol>
-<li>Point the 3D view at what you want to render: the picture takes the <b>current camera</b> and its proportions.</li>
-<li>Choose a <b>Look</b>, the <b>Engine</b>, the <b>Quality</b> and the <b>Width</b>.</li>
-<li>Optionally move the sliders, add a 360° background or adjust the <b>Materials…</b>.</li>
-<li>Press <b>Render</b>. The bar shows the progress; the image opens in its own window.</li>
-<li>In that window adjust the exposure, contrast, saturation, warmth and vignette instantly, and <b>Save image…</b>.</li>
+<li>Choose a <b>Look</b> and move the sliders (the scene), and set the <b>Engine</b>, <b>Quality</b> and <b>Width</b> of the final render.</li>
+<li>Press <b>Open preview…</b>: a window with a <b>live preview</b> of the 3D view that you can zoom and move.</li>
+<li>Press <b>Render</b> for the final picture. Then the retouch sliders and <b>Save image…</b> appear. Or press
+<b>Render and save…</b> to choose a file and get the picture saved straight away, with no retouching.</li>
+<li>In the retouch tools, adjust the picture instantly and <b>Save image…</b>; <b>Back to preview</b> returns to the live view.</li>
 </ol>
 
+<h4>Two kinds of sliders</h4>
+<p>Some names appear twice (exposure, saturation, warmth, vignette) because they do two different things:
+the <b>panel's</b> sliders change the <b>scene</b> (the light, the sky), so the preview and Render both draw them, and
+a change makes the preview update; the preview window's <b>retouch</b> sliders change the <b>finished picture</b> only,
+instantly, without rendering again. Every slider shows its value and a line saying what it does.</p>
+
 <h4>The panel</h4>
+<p>Three groups: <b>Look and light</b> (the scene), <b>360° background</b> and <b>Final render</b> (only Render uses
+the engine, quality and width; the preview is always a quick draft).</p>
 <table cellspacing='0' cellpadding='3' width='100%'>
 <tr><td valign='top'><b>Look</b></td><td>The light and mood: see the list below. Changing it puts that look's own
 values into the sliders it sets.</td></tr>
+<tr><td valign='top'><b>Exposure</b></td><td>How bright the render is, in stops (EV) from -3 to +3, on top of the
+automatic exposure that every look applies. 0 is what the look meters.</td></tr>
+<tr><td valign='top'><b>Clouds</b></td><td>Cloud cover, 0 to 100 %. Not available while a 360° background lights
+the scene (its own sky replaces the look's).</td></tr>
+<tr><td valign='top'><b>Sun</b></td><td>The sun's strength as a multiple of the look's: 0 none, 1 as the look has
+it, up to 2. Not available while a 360° background lights the scene.</td></tr>
+<tr><td valign='top'><b>Warmth</b></td><td>Colour of the light, from cool and bluish (-1) to warm and yellowish (+1).</td></tr>
+<tr><td valign='top'><b>Saturation</b></td><td>Intensity of the colours in the render: 0 is black and white, 1.6 is vivid.</td></tr>
+<tr><td valign='top'><b>Vignette</b></td><td>Darkens the corners of the render to draw the eye to the centre.</td></tr>
 <tr><td valign='top'><b>Engine</b></td><td><b>EEVEE</b> is fast (about 3 seconds). <b>Cycles</b> gives the best
 quality (about 5 seconds on an RTX graphics card, slower without one), with truer light bouncing.</td></tr>
 <tr><td valign='top'><b>Quality</b></td><td>Draft, Medium or High: the number of samples. EEVEE uses 16 / 64 / 128 and
@@ -76,34 +93,10 @@ Cycles 32 / 128 / 512. More samples mean less noise and a slower render. Use Dra
 final picture.</td></tr>
 <tr><td valign='top'><b>Width</b></td><td>The picture's width in pixels (320 to 7680). The height follows the
 proportions of the 3D view.</td></tr>
-<tr><td valign='top'><b>Exposure</b></td><td>How bright the picture is, in stops (EV) from -3 to +3, on top of the
-automatic exposure that every look applies. 0 is what the look meters.</td></tr>
-<tr><td valign='top'><b>Clouds</b></td><td>Cloud cover, 0 to 100 %. Not available while a 360° background lights
-the scene (its own sky replaces the look's).</td></tr>
-<tr><td valign='top'><b>Sun</b></td><td>The sun's strength as a multiple of the look's: 0 none, 1 as the look has
-it, up to 2. Not available while a 360° background lights the scene.</td></tr>
-<tr><td valign='top'><b>Warmth</b></td><td>Colour of the light, from cool and bluish (-1) to warm and yellowish (+1).</td></tr>
-<tr><td valign='top'><b>Saturation</b></td><td>Intensity of the colours: 0 is black and white, 1.6 is vivid.</td></tr>
-<tr><td valign='top'><b>Vignette</b></td><td>Darkens the corners of the picture to draw the eye to the centre.</td></tr>
 <tr><td valign='top'><b>Materials…</b></td><td>Opens the material editor (see below).</td></tr>
-<tr><td valign='top'><b>Live view</b></td><td>Keeps Blender open with your scene and look loaded, and an image
-follows your work. It uses EEVEE with its slowest effects off, whatever the <b>Engine</b> and <b>Quality</b> say (those
-are for Render), except with the <b>Interior</b> look: EEVEE can't fill a room lit through a window, so there the live
-view uses <b>Cycles</b> (a few samples, denoised; best with a graphics card), and the preview looks like the render. The
-grass is as dense as in the render. The first start takes a few seconds; after that everything happens in the same Blender.
-<br><b>Follow the camera</b>: while you orbit or walk, small rough frames keep coming (three or four a second, as fast as
-Blender renders them); stop, and a <b>quick</b> image comes, then a cleaner <b>draft</b>. Off: the image keeps the camera
-it had, so you can look elsewhere in the 3D view while watching one view change.
-<br><b>Follow changes</b>: an edit of the model, of a texture or of a material's render settings shows by itself, in about
-a second (the scene is rebuilt in the same Blender; the model is exported again only when it changed). Off: the live image
-keeps the model and materials it had while you work; the look and the panel's sliders still apply. Tick it again to bring
-your edits in.
-<br>Press <b>Render</b> for the final image: the live Blender is closed first and the live view stays off afterwards, so the
-draft does not draw over your picture; tick the box again to bring it back.</td></tr>
-<tr><td valign='top'><b>Render</b></td><td>Starts the render. It is disabled while one is running. The line below the
-bar says what is happening, or why it could not start (for example, Blender was not found).</td></tr>
+<tr><td valign='top'><b>Open preview…</b></td><td>Opens the preview window (see below). The line under it says what is
+happening, or why it could not start (for example, Blender was not found).</td></tr>
 </table>
-
 <h4>Settings are saved in the document</h4>
 <p>The look, engine, quality, width, sliders and 360° background are kept <b>inside the IngeTrazo document</b>
 (next to the materials' render settings), a moment after each change, one undo step per pause. Save the drawing and
@@ -133,9 +126,34 @@ light.</td></tr>
 file, for example a free one from polyhaven.com. The ground melts into the image's horizon.</p>
 
 <a name="image"></a>
-<h4>The image window</h4>
-<p>The finished picture opens in its own window, fitted to its size. The sliders change the <b>picture</b>, instantly,
-without rendering again, and what you see is what you save.</p>
+<h4>The preview window</h4>
+<p>One window to look at the scene and to make the picture. It has three states:</p>
+<table cellspacing='0' cellpadding='3' width='100%'>
+<tr><td valign='top'><b>Preview</b></td><td>The live view: Blender stays open with your scene and look, and an image follows your
+work. It uses EEVEE with its slowest effects off, whatever the <b>Engine</b> and <b>Quality</b> say (those are for Render),
+except with the <b>Interior</b> look: EEVEE can't fill a room lit through a window, so there the preview uses <b>Cycles</b> (a
+few samples, denoised; best with a graphics card) and looks like the render. The grass is as dense as in the render. The
+first start takes a few seconds; after that everything happens in the same Blender. Closing the window stops it.
+<br><b>Follow the camera</b>: while you orbit or walk, small rough frames keep coming (three or four a second, as fast as
+Blender renders them); stop, and a <b>quick</b> image comes, then a cleaner <b>draft</b>. Off: the image keeps the camera
+it had, so you can look elsewhere in the 3D view while watching one view change.
+<br><b>Follow changes</b>: an edit of the model, of a texture or of a material's render settings shows by itself, in about
+a second (the scene is rebuilt in the same Blender; the model is exported again only when it changed). Off: the preview
+keeps the model and materials it had while you work; the look and the panel's sliders still apply. Tick it again to bring
+your edits in.
+<br><b>Render</b> makes the final picture with the panel's engine, quality and width (shown beside the buttons).
+<b>Render and save…</b> asks for a file (PNG or JPEG) first, makes the picture, saves it exactly as rendered and goes back to
+the preview.</td></tr>
+<tr><td valign='top'><b>Rendering</b></td><td>The progress bar and <b>Cancel</b>. The live Blender is closed meanwhile. If you close the
+window the render goes on, and the picture opens when it is ready.</td></tr>
+<tr><td valign='top'><b>Final picture</b></td><td>The finished render, with the retouch sliders below it; they change the <b>picture</b>
+instantly, without rendering again, and what you see is what you save. The live view stays off so it does not draw over it;
+<b>Back to preview</b> brings it back.</td></tr>
+</table>
+<p><b>Zoom and move</b> (preview and final picture): the mouse wheel zooms where the cursor is, dragging moves the picture, a
+double click goes between <b>Fit</b> and <b>100 %</b> (one picture pixel per screen pixel); the keys <b>+</b> and <b>-</b> zoom,
+<b>0</b> fits and <b>1</b> is 100 %. The zoom and place stay while new preview frames arrive.</p>
+<p><b>Retouch sliders</b> (final picture only):</p>
 <table cellspacing='0' cellpadding='3' width='100%'>
 <tr><td valign='top'><b>Exposure (EV)</b></td><td>-2 to +2 stops; highlights soften instead of clipping.</td></tr>
 <tr><td valign='top'><b>Contrast</b></td><td>0.6 flat to 1.6 punchy; 1 is as rendered.</td></tr>
@@ -143,9 +161,9 @@ without rendering again, and what you see is what you save.</p>
 <tr><td valign='top'><b>Warmth</b></td><td>-1 cooler to +1 warmer.</td></tr>
 <tr><td valign='top'><b>Vignette</b></td><td>0 to 0.8, darkens the corners.</td></tr>
 <tr><td valign='top'><b>Reset</b></td><td>Puts every slider back to neutral.</td></tr>
-<tr><td valign='top'><b>Save image…</b></td><td>Saves the adjusted picture as PNG or JPEG.</td></tr>
+<tr><td valign='top'><b>Save image…</b></td><td>Saves the retouched picture as PNG or JPEG.</td></tr>
+<tr><td valign='top'><b>Back to preview</b></td><td>Returns to the live view to change the scene and render again.</td></tr>
 </table>
-
 <a name="materials"></a>
 <h3>The material editor</h3>
 <p>Controls how each material of the model <b>renders</b>, in a few simple settings. The list shows the
