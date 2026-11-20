@@ -18,7 +18,7 @@ LOOKS = {
     "white_model": "Every material white, a neutral finish: for studying volumes and light, as a model.",
     "interior": "Exposed for the room; the window may burn out, as in a photograph. It switches to "
                 "<b>Cycles</b>, because EEVEE cannot fill a room that is lit through a window.",
-    "night": "Dark moonlight, stars and moonlit clouds. The document's lamps glow (light bloom).",
+    "night": "Dark moonlight, stars and moonlit clouds. The lights of the Lights tab glow (light bloom).",
 }
 
 PRESET_NOTES = {
@@ -108,6 +108,48 @@ they come back with it; another tab or file shows its own. Undo and redo move th
 <p>Every look shares: <b>automatic exposure</b> (a small pre-render is metered, highlights protected), <b>AgX</b> tone
 mapping with white balance, a <b>distance haze</b> that fades the ground into the horizon, paper-white surfaces
 capped at 80 % so they do not glow, and a light finish of saturation and vignette.</p>
+
+<a name="lights"></a>
+<h4>Lights</h4>
+<p>The <b>Lights</b> tab of the panel places lights for the render, of the four kinds Blender has. They are drawn in
+the 3D view (a bulb, a spot's cone, an area light's outline and the way it faces, a sun's rays), in their colour,
+grey when off; <b>Show in the 3D view</b> hides them. Click one with the Select tool to choose it; Supr deletes it.</p>
+<table cellspacing='0' cellpadding='3' width='100%'>
+<tr><td valign='top'><b>Point light</b></td><td>A bulb that lights all round. <b>Bulb size</b>: bigger, softer shadows.</td></tr>
+<tr><td valign='top'><b>Spot</b></td><td>A cone of light: <b>Beam angle</b> and <b>Soft edge</b> (0 a hard edge, 1 it fades
+from the centre). Its lumens go into its cone: a narrow spot is brighter in its beam.</td></tr>
+<tr><td valign='top'><b>Area light</b></td><td>A glowing square, rectangle, disc or ellipse: an LED panel, a tube, a strip,
+a window's light. <b>Width</b>, <b>Length</b>, <b>Turn</b> about the way it faces, <b>Spread</b> (180° all over, less like
+a louvre; Cycles only).</td></tr>
+<tr><td valign='top'><b>Sun</b></td><td>Parallel light from far away, in W/m²: a second sun, moonlight. <b>Disc</b>: bigger,
+softer shadows. Added over the model at once (it has no place, only a direction).</td></tr>
+</table>
+<p><b>Adding.</b> <b>+ Point</b>, <b>+ Spot</b>, <b>+ Area</b>, or <b>Add a ready-made light…</b> (a candle, bulbs,
+a downlight, a track spot, a street lamp, a floodlight, an LED panel, a fluorescent tube, an LED strip, a window fill,
+a ceiling disc, moonlight), then a click in the 3D view, snapped like any tool. On a face, a bulb sits a hand away from
+it, and a spot or an area light shines away from it: a downlight clicked on a ceiling hangs under it and shines down,
+a panel clicked on a wall lies on it. In the air, they shine down. Esc cancels.</p>
+<p><b>On an object.</b> With <b>On the object clicked</b>, the light goes on the group or component whose face you
+click: moving, turning or copying the object takes its light along; every copy of a component has its own. With
+<b>Every copy of the component</b> a change (power, colour, beam…) reaches the light on every copy, each where it is;
+moving it inside the object moves it in every copy. <b>Put on selected object</b> and <b>Free it</b> move a light
+on and off an object without moving it. A light on a hidden object, or on a hidden tag, does not light the render.</p>
+<p><b>Power</b> in <b>lumens</b>, as a lamp's box says, or in Blender's own <b>W</b> (radiant power, not a bulb's
+electrical watts); switching keeps the brightness. Lumens become Blender watts at 381 lm/W (Blender's manual puts an
+800 lm bulb at 2.1 W): a starting point, not a photometric truth. The automatic exposure still sets the picture's
+brightness, so what counts most is how the lights compare. <b>Colour</b>: a temperature, from a candle (1000 K) to a blue
+sky (12 000 K), or a colour of your own (<b>…</b>). <b>Aim</b>: a heading (0° north, 90° east) and a tilt below the
+horizon (90° straight down), or <b>Aim…</b> and a click on the point to look at. <b>Place</b>: X, Y, Z, or <b>Move…</b>
+and a click. <b>Casts shadows</b> can be turned off for a fill light.</p>
+<p><b>IES profile</b> (point lights and spots): a manufacturer's photometric file gives the light its real shape (the
+scallops of a downlight on a wall). The power set here stays the total; the profile only shapes it. Only <b>Cycles</b>
+reads it: EEVEE lights the same lamp evenly.</p>
+<p><b>The Render tab's lights.</b> The point lights and spots placed in IngeTrazo's own Render tab are listed too,
+dashed in the 3D view, and both renders use them. Here only what that tab knows can change (place, aim, power,
+colour, beam); <b>Make it a Render Studio light</b> moves one here, with every setting (the Render tab then no
+longer renders it).</p>
+<p>The lights are saved in the document (free ones in its data, the others on their objects); each change is one undo
+step. The preview follows them.</p>
 
 <a name="hdri"></a>
 <h4>360° background (HDRI)</h4>

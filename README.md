@@ -208,6 +208,44 @@ them to the imported materials by the picture's name.
 
 ![Materials](docs/materials.png)
 
+## Lights
+
+The panel's **Lights** tab (also **Render Studio lights…** in the menu) places lights for the render, of
+the four kinds Blender has, and draws them in the 3D view: a bulb, a spot's cone, an area light's outline
+and the way it faces, a sun's rays; in their colour, grey when off. The Select tool picks them and Supr
+deletes them.
+
+| Kind | Settings |
+|---|---|
+| Point light | power, colour, bulb size (soft shadows), IES profile |
+| Spot | the same, beam angle and soft edge, aim |
+| Area light | square, rectangle, disc or ellipse; width, length, turn, spread (Cycles), aim |
+| Sun | strength in W/m², colour, disc size, direction |
+
+- **Adding**: **+ Point / Spot / Area / Sun**, or a ready-made light (candle, bulbs, downlight, track spot,
+  street lamp, floodlight, LED panel, fluorescent tube, LED strip, window fill, ceiling disc, moonlight), then a
+  click in the 3D view (snapped). On a face a bulb sits 10 cm off it, and a spot or an area light shines away
+  from it: a downlight clicked on a ceiling hangs under it and shines down. A sun is added at once.
+- **On an object**: with **On the object clicked** the light goes on the group or component clicked, in its
+  axes (`group.ext["render_studio"]["lights"]`): moving, turning or copying the object takes it along.
+  **Every copy of the component** sends a change to the light on every copy (each keeps its place unless it
+  is moved inside the object). **Put on selected object** / **Free it** move a light on and off an object
+  where it stands. Hidden objects and hidden tags give no light.
+- **Power** in lumens or Blender watts (radiant, not electrical); switching keeps the brightness. Lumens
+  become watts at 381 lm/W, the figure of Blender's manual for an 800 lm bulb (2.1 W): a starting point,
+  the automatic exposure still sets the picture's brightness. A spot's lumens go into its cone, because a
+  Blender spot is a point light with a mask (measured: a 40° spot and a bulb of the same watts light the
+  floor under them alike).
+- **IES profiles** (point lights and spots, Cycles only): the profile shapes the light and the power set
+  stays the total. The extension reads the `.ies` file, integrates its lumens, and scales Cycles' IES node
+  by 1 / (0.070665 × mean candela): 0.070665 is what Cycles 5.3 gives per candela, measured and checked by
+  `tests/test_lights_blender.py`.
+- **The Render tab's lights** are listed too (dashed in the view) and rendered once; here only what that tab
+  knows can change. **Make it a Render Studio light** moves one here in one undo step.
+- Every change is one undo step; the preview follows the lights.
+
+![Lights tab](docs/lights_tab.png)
+
 ## 360° background (HDRI)
 
 Any equirectangular image (.hdr, .exr, .jpg) as the world:
@@ -231,7 +269,9 @@ choose a 4K or larger file, for example a free one from polyhaven.com.
 
 ## Panel
 
-`Render Studio…` in the extensions menu opens the panel, in three groups:
+`Render Studio…` in the extensions menu opens the panel. It has two tabs, **Settings** and
+**Lights** (see [Lights](#lights)); what is under them (Materials…, Open preview…, the status) serves
+both. The Settings tab is in three groups:
 - **Look and light** (the scene: the preview and Render both draw it): the look, and sliders for exposure
   (EV), clouds, sun, warmth, saturation and vignette, each with its value and a line saying what it does;
 - **360° background** (HDRI), with rotation, brightness and "Lights the scene";
@@ -298,6 +338,13 @@ apply them yet: that needs a change in IngeTrazo):
 ```
 plugin_data["render_studio"] = {
   "materials": { "<material name>": { …render settings of that material… } },
+  "lights": [ { "id": "a1b2c3d4", "name": "", "type": "point",   # point spot area sun
+                "on": true, "pos": [x, y, z], "dir": [dx, dy, dz], "spin": 0.0,
+                "unit": "lm", "power": 800.0,                      # lm or W; a sun: W/m²
+                "kelvin": 2700, "color": [r, g, b],                # kelvin null: color is its own
+                "radius": 0.05, "spot_angle": 40.0, "spot_blend": 0.25,
+                "shape": "square", "size": 0.6, "size_y": 0.6, "spread": 180.0,
+                "sun_angle": 0.53, "shadow": true, "ies": "" } ],
   "settings": {
     "version": 1,
     "look": "clear",            # clear partly_cloudy golden_hour overcast white_model interior night
@@ -309,6 +356,10 @@ plugin_data["render_studio"] = {
     "hdri": null                # or {"path": "...", "rotation": 0..360, "brightness": stops, "light": true}
   } }
 ```
+
+Lights on an object are in that group's own data, `group.ext["render_studio"] = {"lights": [...]}`, in
+the same format with `pos` and `dir` in the group's axes. `render_studio/lights.py` reads and cleans them
+(no Qt, no Blender).
 
 `render_studio/settings_store.py` reads and cleans it (unknown looks fall back, numbers are
 clamped) and has no Qt dependency.
@@ -368,6 +419,16 @@ Render tab).
 - `tests/test_pbr_blender.py` runs in Blender (`blender -b --factory-startup --python tests/test_pbr_blender.py --
   <repo> <render_scene.py> <out dir>`): two small sets (Poly Haven and ambientCG style) rendered with and without
   them in EEVEE and Cycles, the nodes checked, and a DirectX normal map shown to render like the OpenGL one.
+- `tests/test_lights_offline.py` checks the lights without Blender: the format and its cleaning, lumens and
+  watts, aims and axes, IES files read and integrated, lights on objects (moved, turned, copied, every copy
+  edited, hidden), every edit undone and redone, the Render tab's lights edited and converted, the Lights tab
+  (kinds, fields, placing on a face, presets, Supr) and the render job.
+- `tests/test_lights_blender.py` runs in Blender (`blender -b --factory-startup --python tests/test_lights_blender.py --
+  <repo> <render_scene.py> <out dir>`, or `python` with the `bpy` module): each kind becomes the right Blender light
+  with the axes the viewport draws; a spot's lumens in its cone; an IES profile keeps the power and only shapes it;
+  an area light faces where it is aimed; EEVEE renders them all.
+- `tests/test_lights_job_offline.py` goes from IngeTrazo to the picture: a lamp post component (copied) with a spot,
+  a free area light, a night look; given `blender.exe` (or `bpy`) it renders and checks where the ground is lit.
 - `tests/test_offline.py` writes a job with the panel's own code and
   renders it with Blender. It then adjusts and saves the image in the image
   window, without IngeTrazo running.

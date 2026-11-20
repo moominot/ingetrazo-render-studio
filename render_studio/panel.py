@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Render Studio's side-tray tab.
 
-The tab sets the scene: a look (preset), a few sliders that change it (clouds, sun, exposure,
-warmth, saturation, vignette), an optional 360° background (HDRI) that can light it, and the
-engine and size of the final render. **Open preview…** opens the preview window (preview.py): a
-live view you can zoom and move, with Render (then retouch and Save image…) and Render and
-save…. Blender is the one IngeTrazo's Render tab found; the lights placed there are used (they
-matter for Night and Interior).
+Two tabs inside it. **Settings** sets the scene: a look (preset), a few sliders that change it
+(clouds, sun, exposure, warmth, saturation, vignette), an optional 360° background (HDRI) that can
+light it, and the engine and size of the final render. **Lights** (lights_panel.py) places point,
+spot, area and sun lights; the lights of IngeTrazo's Render tab are rendered too. Under the tabs,
+**Open preview…** opens the preview window (preview.py): a live view you can zoom and move, with
+Render (then retouch and Save image…) and Render and save…. Blender is the one IngeTrazo's Render
+tab found.
 """
 from __future__ import annotations
 
@@ -19,10 +20,10 @@ from pathlib import Path
 from PySide6.QtCore import QLocale, QProcess, QProcessEnvironment, QSettings, Qt, QTimer, Signal
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame, QGroupBox,
-                               QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSpinBox,
+                               QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSpinBox, QTabWidget,
                                QToolButton, QVBoxLayout, QWidget)
 
-from . import materials as mats, pbr, presets, settings_store, widgets
+from . import lights as studio_lights, materials as mats, pbr, presets, settings_store, widgets
 from .live import LiveSession
 from .preview import ImageWindow  # noqa: F401 - re-exported: panel.ImageWindow
 from .widgets import SliderRow
@@ -135,10 +136,17 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
         block["pbr"] = sets
     if live:
         block["live"] = True
+    try:
+        # Every light: Render Studio's (free and on objects) and the Render tab's.
+        block["lights"] = studio_lights.job_block(scene)
+        tab_lights = []
+    except Exception:  # noqa: BLE001 - never stops a render: the Render tab's lights, as before
+        _log.exception("lights not read")
+        tab_lights = document_lights(scene)
     with _model_kept(work if reuse_model else None):
         job = rb.write_job(scene, camera, work, engine=engine, quality=quality, width=width,
                            height=height, ground=ground, ambience=ambience,
-                           lights=document_lights(scene), serve=serve)
+                           lights=tab_lights, serve=serve)
     data = json.loads(job.read_text(encoding="utf-8"))
     data["studio"] = block
     job.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -284,7 +292,22 @@ class StudioPanel(QWidget):
         col.addStretch(1)
         scroll.setWidget(host)
         scroll.setMinimumHeight(min(host.sizeHint().height() + 8, 520))
-        outer.addWidget(scroll, 1)
+        # Tabs: the global settings, then the lights (more to come: place and
+        # sun, output). What is under them (materials, preview, status) serves all.
+        from .lights_panel import LightsTab
+        self.tabs = QTabWidget()
+        self.tabs.setDocumentMode(True)
+        self.tabs.addTab(scroll, "Settings")
+        self.lights_tab = LightsTab(app)
+        lscroll = QScrollArea()
+        lscroll.setWidgetResizable(True)
+        lscroll.setFrameShape(QFrame.NoFrame)
+        lscroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)   # it fits the tray's width
+        lscroll.setWidget(self.lights_tab)
+        self.tabs.addTab(lscroll, "Lights")
+        self.tabs.setCurrentIndex(min(1, max(0, int(st.value(_SETTINGS + "tab", 0) or 0))))
+        self.tabs.currentChanged.connect(lambda i: QSettings().setValue(_SETTINGS + "tab", int(i)))
+        outer.addWidget(self.tabs, 1)
 
         self.help_btn = QToolButton()
         self.help_btn.setText("?")
@@ -440,7 +463,7 @@ class StudioPanel(QWidget):
         (the model, the materials' render settings, the look with every
         setting and the proportions)."""
         try:
-            doc = json.dumps(self.settings_dict(), sort_keys=True)
+            doc = json.dumps(self.settings_dict(), sort_keys=True) + studio_lights.signature(self.app.scene)
             mats_ = json.dumps(self.material_specs(), sort_keys=True, default=str)
         except Exception:  # noqa: BLE001
             doc = mats_ = ""
@@ -730,6 +753,9 @@ class StudioPanel(QWidget):
     def document_changed(self):
         if self.editor is not None and self.editor.isVisible():
             self.editor.refresh()
+        lights_tab = getattr(self, "lights_tab", None)
+        if lights_tab is not None:
+            lights_tab.document_changed()
         if getattr(self, "_save_timer", None) is None or self._save_timer.isActive():
             return                       # a change of ours is waiting to be saved
         sid = id(self.app.scene)

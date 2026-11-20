@@ -1584,7 +1584,7 @@ def measure_exposure(scene, target=0.2, bias=0.0, fraction=25, samples=8, white=
 BLENDER_LIGHT = {"point": "POINT", "spot": "SPOT", "area": "AREA", "sun": "SUN"}
 
 
-def _ies_nodes(data, path):
+def _ies_nodes(data, path, scale=1.0):
     """An IES profile on a light (Cycles reads it; EEVEE ignores light nodes):
     the profile's shape drives the light's emission strength."""
     data.use_nodes = True
@@ -1597,6 +1597,7 @@ def _ies_nodes(data, path):
     ies = nt.nodes.new("ShaderNodeTexIES")
     ies.mode = "EXTERNAL"
     ies.filepath = path
+    ies.inputs["Strength"].default_value = float(scale)
     nt.links.new(ies.outputs[0], emit.inputs["Strength"])
     return ies
 
@@ -1633,22 +1634,28 @@ def add_studio_lights(scene, lights):
             data.angle = math.radians(float(lt.get("sun_angle", 0.53)))
         if lt.get("ies") and kind != "SUN":
             try:
-                _ies_nodes(data, lt["ies"])
+                _ies_nodes(data, lt["ies"], lt.get("ies_scale", 1.0))
             except Exception as exc:  # noqa: BLE001 - the light stays, without its profile
                 say("ies failed", os.path.basename(lt["ies"]), exc)
         obj = bpy.data.objects.new(name, data)
         col.objects.link(obj)
         obj.location = Vector(lt.get("pos") or (0.0, 0.0, 0.0))
-        if kind != "POINT" or lt.get("ies"):
-            # A light shines along its local -Z; ``spin`` turns it about that axis.
-            from mathutils import Quaternion
+        if lt.get("basis"):
+            # The light's own axes, worked out by the extension (lights.light_basis):
+            # its -Z is where it shines, X and Y lay out an area's sides — the same
+            # axes the viewport draws it with.
+            from mathutils import Matrix
+            x, y, z = (Vector(a) for a in lt["basis"])
+            obj.matrix_world = Matrix((
+                (x[0], y[0], z[0], obj.location[0]),
+                (x[1], y[1], z[1], obj.location[1]),
+                (x[2], y[2], z[2], obj.location[2]),
+                (0.0, 0.0, 0.0, 1.0)))
+        elif kind != "POINT":
             d = Vector(lt.get("dir") or (0.0, 0.0, -1.0))
             if d.length < 1e-9:
                 d = Vector((0.0, 0.0, -1.0))
-            q = d.normalized().to_track_quat("-Z", "Y") @ Quaternion((0.0, 0.0, 1.0),
-                                                                     math.radians(float(lt.get("spin", 0.0))))
-            obj.rotation_mode = "QUATERNION"
-            obj.rotation_quaternion = q
+            obj.rotation_euler = d.normalized().to_track_quat("-Z", "Y").to_euler()
         made.append(obj)
     if lights:
         kinds = {}
@@ -1748,7 +1755,10 @@ def build(job):
     if ground and not (st.get("hdri") and st.get("hdri_light", True)):
         world_ground(scene, st.get("ground_color") or ground["color"],
                      float(st.get("world_ground_level", 2.0)))
-    core["add_lights"](scene, job.get("lights") or [])
+    if isinstance(st.get("lights"), list):
+        add_studio_lights(scene, st["lights"])     # Render Studio's (the Render tab's are among them)
+    else:
+        core["add_lights"](scene, job.get("lights") or [])
     if ground:
         color = st.get("ground_color") or ground["color"]
         core["add_ground"](scene, ground["z"], ground["size"], color)

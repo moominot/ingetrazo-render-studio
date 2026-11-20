@@ -47,6 +47,8 @@ KEY = "render_studio"
 TYPES = ("point", "spot", "area", "sun")
 SHAPES = ("square", "rectangle", "disk", "ellipse")
 UNITS = ("W", "lm")
+#: The kinds an IES profile can shape (Cycles; EEVEE ignores light nodes).
+IES_TYPES = ("point", "spot")
 MIN_KELVIN, MAX_KELVIN = 1000, 12000
 DEFAULT_KELVIN = 2700
 
@@ -178,6 +180,76 @@ def power_label(light: dict) -> str:
     return f"{light.get('power', 0):g} W"
 
 
+# ---- IES profiles --------------------------------------------------------------------
+
+#: What Cycles' IES Texture gives per candela of the file (Blender 5.3, measured:
+#: tests/test_lights_blender.py checks it). Dividing by it and by the profile's
+#: mean intensity keeps the light's power as set: the profile only shapes it.
+CYCLES_IES_PER_CD = 0.070665
+
+
+def read_ies(path) -> dict | None:
+    """An IES LM-63 photometric file: ``{"vertical": [deg], "horizontal": [deg],
+    "candela": [[cd per vertical] per horizontal], "lumens": the file's own,
+    "flux": integrated, "mean_cd": flux / 4π}``; None when it can't be read."""
+    try:
+        with open(path, encoding="latin-1") as fh:
+            text = fh.read()
+    except OSError:
+        return None
+    lines = text.splitlines()
+    i = next((k for k, ln in enumerate(lines) if ln.strip().upper().startswith("TILT")), None)
+    if i is None:
+        return None
+    rest = " ".join(lines[i + 1:]).replace(",", " ").split()
+    try:
+        nums = [float(t) for t in rest]
+        if lines[i].strip().upper() != "TILT=NONE" and lines[i].strip().upper().startswith("TILT=INCLUDE"):
+            n = int(nums[1])                    # lamp geometry, pairs, angles, factors
+            nums = nums[2 + 2 * n:]
+        n_lamps, lm_lamp, mult, n_v, n_h = nums[0], nums[1], nums[2], int(nums[3]), int(nums[4])
+        nums = nums[13:]                        # past the 10 header numbers and the 3 ballast ones
+        vert, nums = nums[:n_v], nums[n_v:]
+        horiz, nums = nums[:n_h], nums[n_h:]
+        cd = [[v * mult for v in nums[k * n_v:(k + 1) * n_v]] for k in range(n_h)]
+    except (IndexError, ValueError):
+        return None
+    if n_v < 1 or n_h < 1 or len(cd[-1]) != n_v:
+        return None
+    flux = _ies_flux(vert, horiz, cd)
+    return {"vertical": vert, "horizontal": horiz, "candela": cd,
+            "lumens": n_lamps * lm_lamp if lm_lamp > 0 else None,
+            "flux": flux, "mean_cd": flux / (4.0 * math.pi)}
+
+
+def _ies_flux(vert, horiz, cd) -> float:
+    """Lumens of a candela grid: ∫∫ I sinθ dθ dφ, the horizontal symmetry of
+    LM-63 (one plane: all round; to 90°: a quadrant; to 180°: a half)."""
+    def ring(row):                               # ∫ I(θ) sinθ dθ over the vertical angles
+        if len(vert) < 2:
+            return 0.0
+        # I(θ) linear between the samples (as Blender interpolates them),
+        # integrated exactly: right even for a coarse file.
+        tot = 0.0
+        for a, b, ia, ib in zip(vert, vert[1:], row, row[1:]):
+            ta, tb = math.radians(a), math.radians(b)
+            dt = tb - ta
+            if dt <= 0.0:
+                continue
+            tot += ia * (math.cos(ta) - math.cos(tb)) + (ib - ia) / dt * (
+                math.sin(tb) - math.sin(ta) - dt * math.cos(tb))
+        return tot
+    rings = [ring(r) for r in cd]
+    if len(horiz) == 1:
+        return 2.0 * math.pi * rings[0]
+    span = math.radians(horiz[-1] - horiz[0])
+    tot = sum(0.5 * (ra + rb) * math.radians(hb - ha)
+              for ha, hb, ra, rb in zip(horiz, horiz[1:], rings, rings[1:]))
+    if span <= 1e-9:
+        return 2.0 * math.pi * rings[0]
+    return tot * (2.0 * math.pi / span)
+
+
 # ---- directions ---------------------------------------------------------------------
 
 def aim_from_angles(heading_deg: float, tilt_deg: float) -> list:
@@ -194,6 +266,27 @@ def angles_from_aim(d) -> tuple:
     tilt = math.degrees(math.asin(max(-1.0, min(1.0, -z / n))))
     heading = math.degrees(math.atan2(x, y)) % 360.0 if math.hypot(x, y) > 1e-9 else 0.0
     return round(heading, 1), round(tilt, 1)
+
+
+def light_basis(direction, spin_deg: float = 0.0):
+    """The light's own axes ``(x, y, z)`` in the world, as Blender lays a light
+    out: it shines along -z; z's up is world Z where it can be (world Y for a
+    light aiming straight up or down); ``spin`` turns x and y about z. An
+    area's ``size`` runs along x and ``size_y`` along y."""
+    z = [-c for c in _unit(direction)]
+    up = [0.0, 0.0, 1.0]
+    dot = sum(a * b for a, b in zip(up, z))
+    y = [u - dot * c for u, c in zip(up, z)]
+    if math.sqrt(sum(c * c for c in y)) < 1e-6:
+        up = [0.0, 1.0, 0.0]
+        dot = sum(a * b for a, b in zip(up, z))
+        y = [u - dot * c for u, c in zip(up, z)]
+    y = _unit(y)
+    x = [y[1] * z[2] - y[2] * z[1], y[2] * z[0] - y[0] * z[2], y[0] * z[1] - y[1] * z[0]]
+    a = math.radians(float(spin_deg or 0.0))
+    ca, sa = math.cos(a), math.sin(a)
+    x, y = ([ca * xi + sa * yi for xi, yi in zip(x, y)], [-sa * xi + ca * yi for xi, yi in zip(x, y)])
+    return [round(c, 6) for c in x], [round(c, 6) for c in y], [round(c, 6) for c in z]
 
 
 def _unit(v):
@@ -510,8 +603,16 @@ def job_block(scene) -> list:
         if not lt["on"] or lt["power"] <= 0.0:
             continue
         lt["energy"] = blender_watts(lt)
-        if lt["ies"] and (lt["type"] == "sun" or not os.path.isfile(lt["ies"])):
+        lt["basis"] = [list(a) for a in light_basis(lt["dir"], lt["spin"])]
+        prof = read_ies(lt["ies"]) if lt["ies"] and lt["type"] in IES_TYPES else None
+        if prof is None or prof["mean_cd"] <= 0.0:
             lt["ies"] = ""
+        else:
+            # The profile spreads the light itself: a spot's lumens are not
+            # gathered into its cone then.
+            if lt["type"] == "spot" and lt["unit"] == "lm":
+                lt["energy"] = lt["power"] / LM_PER_W
+            lt["ies_scale"] = 1.0 / (CYCLES_IES_PER_CD * prof["mean_cd"])
         lt["source"] = entry["source"]
         out.append(lt)
     return out
@@ -541,3 +642,50 @@ def with_lights(ext, lights) -> dict | None:
     else:
         ext.pop(KEY, None)
     return ext or None
+
+
+# ---- what the viewport draws ---------------------------------------------------------------
+
+def gizmo_lines(light: dict) -> list:
+    """World polylines that show a light (world coordinates): a spot's cone,
+    an area's outline and the way it faces, a sun's incoming rays. Each item is
+    ``(points, closed)``. A point light is only its marker."""
+    p = light["pos"]
+    x, y, z = light_basis(light["dir"], light.get("spin", 0.0))
+    d = [-c for c in z]                                   # where it shines
+
+    def at(u, v, w=0.0):
+        return [p[k] + u * x[k] + v * y[k] + w * d[k] for k in range(3)]
+
+    kind = light["type"]
+    out = []
+    if kind == "spot":
+        half = math.radians(min(170.0, light.get("spot_angle", 60.0))) / 2.0
+        length = 0.8 if half < math.radians(60) else 0.8 * math.cos(half) / math.cos(math.radians(60))
+        r = length * math.tan(half)
+        ring = [at(r * math.cos(2 * math.pi * i / 24), r * math.sin(2 * math.pi * i / 24), length)
+                for i in range(24)]
+        out.append((ring, True))
+        for i in (0, 6, 12, 18):
+            out.append(([list(p), ring[i]], False))
+    elif kind == "area":
+        sx, sy = light.get("size", 0.6) / 2.0, light.get("size_y", light.get("size", 0.6)) / 2.0
+        if light.get("shape") in ("disk", "ellipse"):
+            if light.get("shape") == "disk":
+                sy = sx
+            ring = [at(sx * math.cos(2 * math.pi * i / 32), sy * math.sin(2 * math.pi * i / 32))
+                    for i in range(32)]
+        else:
+            if light.get("shape") == "square":
+                sy = sx
+            ring = [at(-sx, -sy), at(sx, -sy), at(sx, sy), at(-sx, sy)]
+        out.append((ring, True))
+        reach = max(0.3, min(1.0, 2.0 * max(sx, sy)))
+        tip = at(0.0, 0.0, reach)
+        out.append(([list(p), tip], False))
+        out.append(([at(0.06, 0.0, reach - 0.08), tip, at(-0.06, 0.0, reach - 0.08)], False))
+    elif kind == "sun":
+        for u, v in ((0.0, 0.0), (0.25, 0.0), (-0.25, 0.0), (0.0, 0.25), (0.0, -0.25)):
+            out.append(([at(u, v, -1.5), at(u, v, 0.0)], False))
+        out.append(([at(0.08, 0.0, -0.12), list(p), at(-0.08, 0.0, -0.12)], False))
+    return out

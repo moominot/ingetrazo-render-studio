@@ -74,4 +74,15 @@ ok(d.view.textCursor().selectedText().lower() == "vignette", "search finds a wor
 if PNG:
     d.find.setText(""); d.goto("materials"); qa.processEvents(); d.grab().save(os.path.join(PNG, "rs_help_materials.png"))
     d.goto("panel"); qa.processEvents(); d.view.verticalScrollBar().setValue(0); d.grab().save(os.path.join(PNG, "rs_help_panel.png"))
+# the Lights tab
+from render_studio import lights as LT
+ok('<a name="lights"></a>' in page and all(f"<b>{k}</b>" in page for k in ("Point light", "Spot", "Area light", "Sun")),
+   "the help has a Lights section with the four kinds")
+words = {"candle": "candle", "bulb": "bulbs", "bulb_big": "bulbs", "lantern": "bulbs", "downlight": "downlight",
+         "track": "track spot", "street": "street lamp", "flood": "floodlight", "panel": "LED panel",
+         "tube": "fluorescent tube", "strip": "LED strip", "window": "window fill", "disk": "ceiling disc",
+         "sun": "second sun", "moon": "moonlight"}
+ok(set(words) == {p[0] for p in LT.PRESETS} and all(w in page for w in words.values()), "the ready-made lights are named in the help")
+ok("IES profile" in page and "Cycles" in page and str(int(LT.LM_PER_W)) in page, "the help explains IES profiles and the lumens")
+ok("Every copy of the component" in page and "Make it a Render Studio light" in page, "the help explains lights on objects and the Render tab's")
 print("FAILED" if fails else "ALL OK"); sys.exit(1 if fails else 0)
