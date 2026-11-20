@@ -6,7 +6,8 @@ It speaks the protocol of IngeTrazo's own «Sync with the view» (the render
 script's ``serve`` mode): Blender builds the scene once, says ``INGETRAZO
 ready``, and renders one image per JSON line it reads on its input, saying
 ``INGETRAZO done <file>``; ``{"reload": job}`` builds another job's scene in
-the same Blender. The studio script serves the same way after it has applied
+the same Blender, ``{"update": job}`` does too but changes only the materials that
+changed when that is all that did (the model is not imported again). The studio script serves the same way after it has applied
 the look, so the live image has the look, the sky, the 360° background and
 the material settings of the final render, as a light EEVEE draft (the
 panel's Engine and Quality are for Render).

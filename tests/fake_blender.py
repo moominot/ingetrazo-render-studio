@@ -1,5 +1,5 @@
 """A stand-in for `blender -b --python studio_scene.py -- job.json` in serve mode:
-same protocol (INGETRAZO ready / done; {"reload": job} builds another job's scene in the
+same protocol (INGETRAZO ready / done; {"reload": job} and {"update": job} build another job's scene in the
 same process), writes a plain PNG per request. For tests only."""
 import json, os, struct, sys, zlib
 log = os.environ.get("FAKE_BLENDER_LOG")
@@ -26,6 +26,10 @@ for line in sys.stdin:
     if req.get("quit"): break
     if req.get("reload"):
         job = load(req["reload"], "reload")
+        print("INGETRAZO ready", flush=True)
+        continue
+    if req.get("update"):
+        job = load(req["update"], "update")
         print("INGETRAZO ready", flush=True)
         continue
     n += 1
