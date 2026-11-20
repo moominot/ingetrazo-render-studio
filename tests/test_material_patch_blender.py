@@ -15,7 +15,7 @@ sys.path[:0] = [SRC, REPO]
 from pathlib import Path
 from PySide6.QtWidgets import QApplication
 qa = QApplication.instance() or QApplication([])
-from PySide6.QtGui import QColor, QImage, QVector3D
+from PySide6.QtGui import QColor, QImage, QPainter, QVector3D
 from core.camera import OrbitCamera
 from core.materials import Material
 from core.scene import Scene
@@ -33,6 +33,8 @@ scene = Scene()
 def quad(pts, color, mat=None):
     f = scene.mesh.add_face([QVector3D(*p) for p in pts]); f.attrs["color"] = color
     if mat: f.attrs["mat"] = mat
+HALVES = out / "halves.png"
+_img = QImage(32, 32, QImage.Format_RGB32); _img.fill(QColor(30, 30, 160)); _p = QPainter(_img); _p.fillRect(16, 0, 16, 32, QColor(230, 200, 40)); _p.end(); _img.save(str(HALVES))
 NAMES = {"Wall": (0.8, 0.8, 0.72), "Steel": (0.55, 0.57, 0.6), "Pool": (0.1, 0.35, 0.6), "Lamp": (1.0, 0.9, 0.5),
          "Door": (0.45, 0.28, 0.15)}
 for n, c in NAMES.items():
@@ -43,6 +45,8 @@ quad([(-1.4, 2, 0), (1.4, 2, 0), (1.4, 2, 3), (-1.4, 2, 3)], NAMES["Steel"], "St
 quad([(1.6, 2, 0), (5, 2, 0), (5, 2, 3), (1.6, 2, 3)], NAMES["Door"], "Door")
 quad([(-4, -2.5, 0.02), (4, -2.5, 0.02), (4, 0.5, 0.02), (-4, 0.5, 0.02)], NAMES["Pool"], "Pool")
 quad([(-0.4, 1.99, 2.2), (0.4, 1.99, 2.2), (0.4, 1.99, 2.8), (-0.4, 1.99, 2.8)], NAMES["Lamp"], "Lamp")
+quad([(1.0, -2.4, 0.03), (4.0, -2.4, 0.03), (4.0, 0.4, 0.03), (1.0, 0.4, 0.03)], (0.5, 0.5, 0.5), "Tile")
+scene.mesh.faces[-1].attrs["texture"] = {"path": str(HALVES), "sw": 3.0, "sh": 3.0, "rot": 0.0}
 cam = OrbitCamera(); cam.target = QVector3D(0, 1, 1.4); cam.distance = 13
 cam.yaw = math.radians(-90); cam.pitch = math.radians(14)
 
@@ -125,6 +129,9 @@ try:
          dict(BASE, Wall=WALL2, Steel=STEEL, Door=spec(roughness=0.2, coat=0.6, metallic=0.4)), True),
         ("an opacity map on the door (black = transparent)", dict(BASE, Wall=WALL2, Steel=STEEL, Door=OPAQ), True),
         ("the wall's settings removed (back to what the importer and the finishes made)", dict(Steel=STEEL, Door=OPAQ), True),
+        ("picture adjustments on a tile: hue, rotation, a tint", dict(Steel=STEEL, Tile={"type": "generic", "roughness": 0.5, "image": {"hue": 90, "rotation": 90, "tint": [1.0, 0.8, 0.6], "tint_strength": 0.5}}), True),
+        ("a flat colour instead of the tile's picture", dict(Steel=STEEL, Tile={"type": "generic", "roughness": 0.5, "image": {"flat": [0.1, 0.6, 0.2], "brightness": 0.2}}), True),
+        ("the tile's adjustments removed", dict(Steel=STEEL, Tile={"type": "generic", "roughness": 0.5}), True),
         ("a lamp that glows (moves the light: the scene is built again)",
          dict(Steel=STEEL, Lamp={"type": "glow", "glow": 8.0, "roughness": 0.5}), False),
     ]

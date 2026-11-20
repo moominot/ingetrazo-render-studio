@@ -842,6 +842,87 @@ def _water_ripples(mat, bsdf, relief, size):
     links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
 
 
+def _image_adjust(mat, bsdf, adj):
+    """The editor's picture adjustments, in the render and the preview only (the 3D view keeps the
+    original picture). ``adj``: ``hue`` (degrees), ``saturation`` (1 = as it is), ``brightness`` and
+    ``contrast`` (−1..1), ``rotation`` (degrees, of the picture on the surface), ``tint`` (a colour)
+    with ``tint_strength`` (0..1), ``flat`` (a colour that replaces the picture).
+
+    The picture's colour goes through hue/saturation, brightness/contrast and the tint, in that
+    order, on its way to the Base Color. A material without a picture goes through the same nodes
+    with its colour (hue, brightness, tint work on it too)."""
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    base = bsdf.inputs["Base Color"]
+    flat = adj.get("flat")
+    if flat:
+        for link in list(base.links):
+            links.remove(link)
+        base.default_value = (float(flat[0]), float(flat[1]), float(flat[2]), 1.0)
+    rot = float(adj.get("rotation") or 0.0)
+    if rot and not flat:
+        _sock, pic = _colour_source(nodes, bsdf)
+        if pic is not None:
+            vec = next(iter(pic.inputs["Vector"].links), None)
+            if vec is not None:
+                src = vec.from_socket
+            else:
+                src = nodes.new("ShaderNodeTexCoord").outputs["UV"]
+            mp = nodes.new("ShaderNodeMapping")
+            mp.vector_type = "POINT"
+            th = math.radians(rot)
+            c, s = math.cos(th), math.sin(th)
+            mp.inputs["Rotation"].default_value = (0.0, 0.0, th)
+            # about the middle of the picture: location = centre − R·centre
+            mp.inputs["Location"].default_value = (0.5 - 0.5 * c + 0.5 * s, 0.5 - 0.5 * s - 0.5 * c, 0.0)
+            links.new(src, mp.inputs["Vector"])
+            links.new(mp.outputs["Vector"], pic.inputs["Vector"])
+    hue = float(adj.get("hue") or 0.0)
+    sat = float(adj.get("saturation", 1.0))
+    bright = float(adj.get("brightness") or 0.0)
+    contrast = float(adj.get("contrast") or 0.0)
+    tint = adj.get("tint")
+    strength = max(0.0, min(1.0, float(adj.get("tint_strength", 0.5 if tint else 0.0))))
+    steps = []
+    if hue or abs(sat - 1.0) > 1e-6:
+        steps.append("hsv")
+    if bright or contrast:
+        steps.append("bc")
+    if tint and strength > 0.0:
+        steps.append("tint")
+    if not steps:
+        return False
+    link = next(iter(base.links), None)
+    carried = link.from_socket if link is not None else None
+    color0 = tuple(base.default_value)
+    for kind in steps:
+        if kind == "hsv":
+            node = nodes.new("ShaderNodeHueSaturation")
+            node.inputs["Hue"].default_value = 0.5 + hue / 360.0
+            node.inputs["Saturation"].default_value = max(0.0, sat)
+            inp, out = node.inputs["Color"], node.outputs["Color"]
+        elif kind == "bc":
+            node = nodes.new("ShaderNodeBrightContrast")
+            node.inputs["Bright"].default_value = bright
+            node.inputs["Contrast"].default_value = contrast
+            inp, out = node.inputs["Color"], node.outputs["Color"]
+        else:
+            node = nodes.new("ShaderNodeMix")
+            node.data_type = "RGBA"
+            node.blend_type = "MULTIPLY"
+            node.clamp_result = True
+            _socket(node, "Factor_Float", 0).default_value = strength
+            _socket(node, "B_Color", 7).default_value = (float(tint[0]), float(tint[1]), float(tint[2]), 1.0)
+            inp = _socket(node, "A_Color", 6)
+            out = next(s for s in node.outputs if s.identifier == "Result_Color")
+        if carried is not None:
+            links.new(carried, inp)
+        else:
+            inp.default_value = color0
+        carried = out
+    links.new(carried, base)
+    return True
+
+
 def apply_material_specs(specs, with_sets=(), only=None):
     """After IngeTrazo's finishes: the editor's numbers — and maps — on each
     material. With a map, the setting's slider scales it. ``with_sets``: the
@@ -858,6 +939,8 @@ def apply_material_specs(specs, with_sets=(), only=None):
             continue
         kind = spec.get("type", "generic")
         maps = spec.get("maps") or {}
+        if spec.get("image") and kind != "grass":
+            _image_adjust(mat, bsdf, spec["image"])      # first: the maps below follow the picture's coordinates
         for key, names in (("roughness", ("Roughness",)), ("metallic", ("Metallic",))):
             if key not in spec or (key == "metallic" and kind != "generic"):
                 continue

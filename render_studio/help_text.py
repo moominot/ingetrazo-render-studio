@@ -268,6 +268,15 @@ prado give Tall grass) and lights (llum, luz, LED, neon, làmpada…), in severa
 editor says so; change any setting and they become the material's own (●). The model's transparency is not changed:
 for see-through water or glass, move <b>Transparency</b>.</p>
 <table cellspacing='0' cellpadding='3' width='100%'>
+<tr><td valign='top'><b>Picture adjustments</b></td><td>Fold out the section under the picture buttons: <b>Hue</b> (degrees round the colour wheel), <b>Saturation</b>,
+<b>Brightness</b>, <b>Contrast</b>, <b>Rotation</b> of the picture on the surface (degrees, about its middle), a colour <b>Tint</b> laid over
+the picture with a strength, or a <b>Flat colour</b> instead of the picture. Only what you change is kept. The render and the preview show
+them (a change is made in a fraction of a second in the preview); the 3D view keeps the original picture. A material without a picture
+takes the hue, saturation, brightness, contrast and tint on its colour. <b>Reset the picture</b> goes back.</td></tr>
+<tr><td valign='top'><b>Pick, paint, new, duplicate</b></td><td>Under the list: <b>Pick from the view</b> is the eyedropper (click a face or an object in the 3D view and its
+material is chosen here); <b>Paint with it</b> is the paint bucket (the Paint tool with this material: click a face or an object to paint it);
+<b>New…</b> makes a material (a name, a colour or a picture and its tile width) and paints the selection with it if you ask; <b>Duplicate</b>
+makes a copy of the chosen material, its render settings included, as <i>Name (2)</i>. Making and copying are one undo step.</td></tr>
 <tr><td valign='top'><b>Opacity map</b></td><td>Under <b>Transparency</b>: an image that says where the material is see-through, for a
 cut-out such as leaves, a fence or a lace. <b>White is opaque, black is transparent</b>, greys in between; <b>Invert</b> swaps
 them. With a picture on the material the map follows the picture's layout, so a map made for that picture lines up; without

@@ -15,13 +15,14 @@ from pathlib import Path
 from PySide6.QtCore import QSettings, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog,
-                               QFormLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
+                               QFormLayout, QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
                                QPushButton, QScrollArea, QSlider, QToolButton, QVBoxLayout, QWidget)
 
 from . import cube_preview
 from . import opacity as opacity_mod
 from . import materials as M
 from . import pbr, studio_data
+from .image_adjust import ImageAdjust
 
 _FIELDS = (  # key, label, lo, hi, tip
     ("roughness", "Roughness", 0.0, 1.0, "0 a mirror-like polish, 1 fully matte."),
@@ -271,6 +272,32 @@ class MaterialEditor(QDialog):
         self.list.setMinimumWidth(180)
         self.list.setMaximumWidth(280)
         left.addWidget(self.list, 1)
+        tools = QGridLayout()
+        self.pipette_btn = QPushButton("Pick from the view")
+        self.pipette_btn.setCheckable(True)
+        self.pipette_btn.setToolTip("The eyedropper: click a face or an object in the 3D view and its material is "
+                                    "chosen here. (It is IngeTrazo's own sampler: the Paint tool gets the same "
+                                    "material.)")
+        self.pipette_btn.toggled.connect(self._pipette_toggled)
+        self.paint_btn = QPushButton("Paint with it")
+        self.paint_btn.setToolTip("The paint bucket: pick the Paint tool with this material, then click a face or an "
+                                  "object in the 3D view to paint it.")
+        self.paint_btn.clicked.connect(self.paint_with_it)
+        self.new_btn = QPushButton("New…")
+        self.new_btn.setToolTip("Make a material (a colour or a picture) and paint the selection with it.")
+        self.new_btn.clicked.connect(self.new_material)
+        self.dup_btn = QPushButton("Duplicate")
+        self.dup_btn.setToolTip("A copy of this material, settings included, under a new name.")
+        self.dup_btn.clicked.connect(self.duplicate_current)
+        tools.addWidget(self.pipette_btn, 0, 0)
+        tools.addWidget(self.paint_btn, 0, 1)
+        tools.addWidget(self.new_btn, 1, 0)
+        tools.addWidget(self.dup_btn, 1, 1)
+        left.addLayout(tools)
+        self._pick_timer = QTimer(self)
+        self._pick_timer.setInterval(150)
+        self._pick_timer.timeout.connect(self._poll_pick)
+        self._pick_ticks = 0
         pick = QPushButton("From the selection")
         pick.setToolTip("Show the material of the selected face or group.")
         pick.clicked.connect(self.pick_selection)
@@ -322,6 +349,10 @@ class MaterialEditor(QDialog):
         form.addRow(picrow)
         self.form = form
         self._rows = {"picture": picrow}        # control → its form row (hidden when it does nothing)
+        self.image_adj = ImageAdjust()
+        self.image_adj.changed.connect(self._changed)
+        form.addRow(self.image_adj)
+        self._rows["image"] = self.image_adj
         self.set_label = QLabel("")
         self.set_label.setWordWrap(True)
         self.set_label.setStyleSheet("color: gray")
@@ -597,6 +628,113 @@ class MaterialEditor(QDialog):
         self.title.setToolTip(message)
         self.hint.setText(message)
 
+    # -- the eyedropper, the paint bucket, new and copied materials -----------------------------
+    def _document_window(self):
+        return getattr(self.app, "window", None)
+
+    def _pipette_toggled(self, on):
+        """The eyedropper is IngeTrazo's own: its toolbar button arms the Paint tool's sampler and the next
+        click on a face or an object samples its material, which is then chosen here."""
+        win = self._document_window()
+        act = getattr(win, "_act_eyedropper", None)
+        if not on:
+            if act is not None and act.isChecked():
+                act.setChecked(False)               # cancelled from here
+            self._pick_timer.stop()
+            return
+        if act is None:
+            self.pipette_btn.blockSignals(True)
+            self.pipette_btn.setChecked(False)
+            self.pipette_btn.blockSignals(False)
+            self.hint.setText("This IngeTrazo has no eyedropper to borrow.")
+            return
+        self._pick_ticks = 0
+        act.setChecked(True)                        # arms the sampler and picks the Paint tool
+        self._pick_timer.start()
+        self.hint.setText("Click a face or an object in the 3D view to choose its material here.")
+
+    def pick_from_view(self):
+        """Arm the eyedropper (see :meth:`_pipette_toggled`)."""
+        self.pipette_btn.setChecked(True)
+
+    def _poll_pick(self):
+        try:
+            from tools.paint import PaintTool
+        except Exception:  # noqa: BLE001 - an IngeTrazo without the Paint tool
+            self._pick_timer.stop()
+            return
+        self._pick_ticks += 1
+        if PaintTool.sample_armed:
+            if self._pick_ticks > 400:               # a minute with no click: let go
+                self.pipette_btn.setChecked(False)
+            return
+        self._pick_timer.stop()
+        self.pipette_btn.blockSignals(True)
+        self.pipette_btn.setChecked(False)
+        self.pipette_btn.blockSignals(False)
+        mat = PaintTool.current_material
+        if PaintTool.current_is_default or mat is None or not getattr(mat, "name", None):
+            self.hint.setText("That surface wears no named material (it is the default one).")
+            return
+        if not self.select(mat.name):
+            self.refresh(force=True)
+            self.select(mat.name)
+        self.hint.setText(f"Chosen: {mat.name}.")
+        self.raise_()
+        self.activateWindow()
+
+    def paint_with_it(self):
+        """The paint bucket: this material becomes the Paint tool's, and the tool is picked."""
+        from . import material_tools
+        name = self.current_name()
+        if name is None:
+            return
+        if material_tools.arm_paint_bucket(self.app, name):
+            self.hint.setText(f"Click a face or an object in the 3D view to paint it with {name}.")
+        else:
+            self.hint.setText("This material is not in the document's materials yet (paint a face with it first) "
+                              "or the Paint tool is not available.")
+
+    def _selected_count(self):
+        from . import material_tools
+        return material_tools.selection_count(self.app.scene)
+
+    def _made(self, name, painted, what):
+        self.refresh(force=True)
+        self.select(name)
+        extra = f" and painted {painted} on the selection" if painted else ""
+        self.hint.setText(f"{what} {name}{extra}.")
+
+    def new_material(self):
+        """A material from scratch (a colour or a picture), painted on the selection if asked."""
+        from . import material_tools
+        from .new_material import NewMaterialDialog
+        scene = self.app.scene
+        start = str(QSettings().value(_SETTINGS + "picture_dir", "") or "")
+        dlg = NewMaterialDialog(self, material_tools.unique_name(scene, "Material", self.specs()),
+                                self._selected_count(), start)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        v = dlg.values()
+        if dlg.picture:
+            QSettings().setValue(_SETTINGS + "picture_dir", str(Path(dlg.picture).parent))
+        name, painted = material_tools.create_material(
+            self.app, v["name"], color=v.get("color"), texture=v.get("texture"), apply=v["apply"])
+        self._made(name, painted, "Made")
+
+    def duplicate_current(self):
+        """A copy of the chosen material, settings included, under a name of its own."""
+        from . import material_tools
+        name = self.current_name()
+        if name is None:
+            return
+        new, _n = material_tools.duplicate_material(self.app, name, apply=False)
+        if new is None:
+            self.hint.setText(f"{name} is not in the document's materials yet, so it cannot be copied "
+                              "(paint a face with it first).")
+            return
+        self._made(new, 0, f"Copied {name} as")
+
     def pick_selection(self):
         name = M.selection_material(self.app.scene)
         if not name or not self.select(name):
@@ -628,7 +766,9 @@ class MaterialEditor(QDialog):
         self._flush()
         name = item.data(Qt.UserRole) if item is not None else None
         enabled = name is not None
-        for w in (self.preset, self.kind, self.reset_btn, self.map_size,
+        for w in (self.paint_btn, self.dup_btn):
+            w.setEnabled(name is not None)
+        for w in (self.preset, self.kind, self.reset_btn, self.map_size, self.image_adj,
                   *self.sliders.values(), *self.maps.values()):
             w.setEnabled(enabled)
         self.title.setText(name or "No material is used in the model.")
@@ -658,6 +798,7 @@ class MaterialEditor(QDialog):
         self._set_slider("grass_density", spec.get("grass_density") or M.auto_grass_density(
             spec.get("grass_height", M.DEFAULT_GRASS_HEIGHT)))
         self._set_slider("transparency", 1.0 - opacity_mod.material_opacity(self.app.scene, name))
+        self.image_adj.load(spec.get("image"), bool(picture))
         size = next((m.get("size") for m in maps.values() if m and m.get("size")), 1.0)
         self.map_size.setValue(float(size))
         self._loading = False
@@ -802,6 +943,9 @@ class MaterialEditor(QDialog):
                 maps[key] = m
         if maps:
             spec["maps"] = maps
+        img = self.image_adj.spec() if spec["type"] != "grass" else None
+        if img:
+            spec["image"] = img
         if from_preset:
             spec["preset"] = from_preset
             extra = M.PRESETS[from_preset][1]

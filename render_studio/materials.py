@@ -98,7 +98,8 @@ def shown_controls(kind: str, *, picture: bool = False, set_relief: bool = False
       nothing (the set's map is used as it is), so only its map row shows.
     * Glow: glowing only. Ripple size: water. Grass height and density: grass.
     * Transparency and its map (white opaque, black transparent): not grass (the blades cover the
-      face).
+      face). Picture adjustments: the same.
+
     * Map image size: a map file on a material without a picture (with one,
       maps follow the picture's size). Change picture: a material with one.
     """
@@ -116,7 +117,7 @@ def shown_controls(kind: str, *, picture: bool = False, set_relief: bool = False
     if kind == "grass":
         shown |= {"grass_height", "grass_density"}
     else:
-        shown |= {"transparency", "map:opacity"}
+        shown |= {"transparency", "map:opacity", "image"}
     if file_maps and not picture:
         shown.add("map_size")
     if picture:
