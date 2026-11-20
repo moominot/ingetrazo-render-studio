@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QFormLayout, Q
                                QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSpinBox, QTabWidget,
                                QToolButton, QVBoxLayout, QWidget)
 
-from . import lights as studio_lights, materials as mats, output, pbr, presets, proxies, section, settings_store, widgets
+from . import lights as studio_lights, materials as mats, output, pbr, presets, proxies, section, settings_store, studio_data, widgets
 from .live import LiveSession
 from .preview import ImageWindow  # noqa: F401 - re-exported: panel.ImageWindow
 from .widgets import SliderRow
@@ -799,7 +799,7 @@ class StudioPanel(QWidget):
             return
         data["settings"] = new
         self._known = new
-        self.app.set_document_data(data)
+        studio_data.write(self.app, data)
 
     # -- settings ---------------------------------------------------------------
     def _preset_changed(self, _i):
@@ -873,7 +873,9 @@ class StudioPanel(QWidget):
         if self.editor is None:
             self.editor = MaterialEditor(self.app, _lang(), self)
         else:
-            self.editor.refresh()
+            from .material_editor import clear_swatches
+            clear_swatches()                 # a picture that changed on disk shows now
+            self.editor.refresh(force=True)
         self.editor.show()
         self.editor.raise_()
         self.editor.activateWindow()

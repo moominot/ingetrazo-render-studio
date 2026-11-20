@@ -220,6 +220,14 @@ def _paint_name(group):
 _USED_CACHE = {"ref": None, "version": None, "out": None}
 
 
+def model_version(scene):
+    """The document's version without Render Studio's own writes (the materials' settings, the
+    look, the lights: they bump it but change no face's paint, and not the model file either; see
+    ``studio_data``). None where the scene has no version."""
+    v = getattr(scene, "content_version", None)
+    return None if v is None else v - getattr(scene, "_rs_not_model", 0)
+
+
 def used_materials(scene) -> dict:
     """name → number of places painted with it: faces over the whole model
     (loose geometry, groups and components, nested) and groups or components
@@ -231,7 +239,7 @@ def used_materials(scene) -> dict:
     it): it reads every face's paint, over 588 000 faces about a second and
     a half each time the panels ask (2026-11-20)."""
     import weakref
-    version = getattr(scene, "content_version", None)
+    version = model_version(scene)
     cache = _USED_CACHE
     if (version is not None and cache["out"] is not None
             and cache["version"] == version
