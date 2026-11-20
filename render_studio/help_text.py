@@ -266,7 +266,7 @@ it is starts as that preset, in the editor <i>and</i> in the render: water (aigu
 glass (vidre, vidrio, glass, cristal…), grass (gespa, césped, grass, herba, lawn…; «herba alta», «tall grass», prat or
 prado give Tall grass) and lights (llum, luz, LED, neon, làmpada…), in several languages. The list marks them ◦ and the
 editor says so; change any setting and they become the material's own (●). The model's transparency is not changed:
-for see-through water or glass, move <b>Transparency</b>.</p>
+for see-through water or glass, move <b>Transparency</b>. In Blender's EEVEE (every look but Interior) glass is made see-through by alpha, because EEVEE can only refract the sky, not the scene behind the pane: Transparency is how much, and it keeps its reflections; Cycles (the Interior look) refracts for real.</p>
 <table cellspacing='0' cellpadding='3' width='100%'>
 <tr><td valign='top'><b>Picture adjustments</b></td><td>Fold out the section under the picture buttons: <b>Hue</b> (degrees round the colour wheel), <b>Saturation</b>,
 <b>Brightness</b>, <b>Contrast</b>, <b>Rotation</b> of the picture on the surface (degrees, about its middle), a colour <b>Tint</b> laid over

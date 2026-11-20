@@ -2030,9 +2030,59 @@ def restore_material(name):
     return new
 
 
+def _note_glass_alpha(only=None):
+    """Before IngeTrazo's finishes: a glass material's alpha as the importer made it (the opacity the
+    model gave it), which the glass finish overwrites with 1."""
+    for mat in _live_materials(only):
+        if mat.get("ingetrazo_finish") != "glass" or not mat.node_tree:
+            continue
+        bsdf = next((n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+        if bsdf is not None and "Alpha" in bsdf.inputs:
+            mat["studio_alpha0"] = float(bsdf.inputs["Alpha"].default_value)
+
+
+def glass_see_through(specs, only=None):
+    """Glass in EEVEE (the preview and the draft render): IngeTrazo's glass finish refracts (Transmission),
+    but EEVEE can only refract the sky there, not the scene behind the pane, so the glass came out as a mirror
+    that showed no wall, no interior. The glass is made see-through by alpha instead, keeping its reflections:
+    how much is the editor's Transparency, else the opacity the model gave the material, else 85 %. Cycles
+    (the Interior look) refracts for real and is left alone."""
+    n = 0
+    for mat in _live_materials(only):
+        if mat.get("ingetrazo_finish") != "glass" or not mat.node_tree:
+            continue
+        bsdf = next((x for x in mat.node_tree.nodes if x.type == "BSDF_PRINCIPLED"), None)
+        if bsdf is None or "Alpha" not in bsdf.inputs or bsdf.inputs["Alpha"].links:
+            continue                                   # a picture's own cut-out stays as it is
+        spec = _spec_for(mat, specs) or {}
+        transparency = spec.get("transparency")
+        if transparency is None:
+            a0 = float(mat.get("studio_alpha0", 1.0))
+            transparency = (1.0 - a0) if a0 < 0.999 else 0.85
+        alpha = max(0.02, min(1.0, 1.0 - float(transparency)))
+        for names in (("Transmission Weight", "Transmission"),):
+            for key in names:
+                if key in bsdf.inputs:
+                    bsdf.inputs[key].default_value = 0.0
+                    break
+        bsdf.inputs["Alpha"].default_value = alpha
+        for attr, val in (("surface_render_method", "DITHERED"), ("blend_method", "HASHED"),
+                          ("use_transparent_shadow", True)):
+            if hasattr(mat, attr):
+                try:
+                    setattr(mat, attr, val)
+                except (TypeError, ValueError):
+                    pass
+        mat["studio_glass_alpha"] = alpha
+        n += 1
+    if n:
+        say("glass", f"{n} materials see-through by alpha")
+
+
 def finishes_for(only):
     """IngeTrazo's finishes (its function works on every material) for ``only`` alone: the others
     hold their finish out of sight while it runs."""
+    _note_glass_alpha(only)
     held = {}
     for m in _live_materials():
         if m.name not in only and "ingetrazo_finish" in m.keys():
@@ -2118,6 +2168,8 @@ def update(job):
     mine = {k: v for k, v in sets.items() if k in names}
     if mine:
         apply_texture_sets(mine, specs)
+    if job.get("engine") != "cycles":
+        glass_see_through(specs, names)
     if st.get("albedo_cap", 0.8):
         cap_albedo(float(st.get("albedo_cap", 0.8)), names)
     _STATE["specs"] = json.loads(json.dumps(specs))
@@ -2145,12 +2197,15 @@ def build(job):
     specs = st.get("materials") or {}
     if specs:
         mark_material_types(specs)
+    _note_glass_alpha()
     core["apply_finishes"]()
     sets = match_texture_sets(st.get("pbr") or {})
     if specs:
         apply_material_specs(specs, sets)
     if sets and not st.get("white_model"):
         apply_texture_sets(sets, specs)
+    if job.get("engine") != "cycles" and not st.get("white_model"):
+        glass_see_through(specs)
     if specs and st.get("grass", True):
         build_grass(specs, LIVE_GRASS if st.get("live") else 1.0)
     if st.get("albedo_cap", 0.8):
