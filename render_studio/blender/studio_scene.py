@@ -1675,6 +1675,44 @@ LIVE_EEVEE = (("use_raytracing", False), ("use_fast_gi", False), ("shadow_resolu
               ("use_volumetric_shadows", False))
 
 
+# ---- proxies -------------------------------------------------------------------------------
+
+def place_proxies(scene, entries):
+    """The full models of the drawing's proxies (render_studio/proxies.py): each
+    original's .glb imported ONCE into a collection kept out of the scene, then
+    placed with a collection instance per placement (``matrices``: 4×4 rows, Z up,
+    metres). Its materials are in bpy.data like the model's, so the finishes,
+    material settings and texture sets reach them too. Returns how many instances."""
+    from mathutils import Matrix
+    if not entries:
+        return 0
+    holder = bpy.data.collections.new("Render Studio proxies")
+    scene.collection.children.link(holder)
+    placed = 0
+    for i, e in enumerate(entries):
+        name = str(e.get("name") or f"proxy {i + 1}")
+        before = set(bpy.data.objects)
+        try:
+            bpy.ops.import_scene.gltf(filepath=e["glb"])
+        except Exception as exc:  # noqa: BLE001 - the others still come
+            say("proxy import failed", name, exc)
+            continue
+        col = bpy.data.collections.new("proxy " + name)    # not linked: only instanced
+        for obj in [o for o in bpy.data.objects if o not in before]:
+            for c in list(obj.users_collection):
+                c.objects.unlink(obj)
+            col.objects.link(obj)
+        for k, rows in enumerate(e.get("matrices") or []):
+            inst = bpy.data.objects.new(f"{name} {k + 1}", None)
+            inst.instance_type = "COLLECTION"
+            inst.instance_collection = col
+            inst.matrix_world = Matrix(rows)
+            holder.objects.link(inst)
+            placed += 1
+    say("proxies", len(entries), "models,", placed, "placements")
+    return placed
+
+
 def build(job):
     """The whole scene of ``job`` from scratch: model, materials, sky, lights,
     engine, look and exposure. Returns (scene, figures). Called again, in the
@@ -1683,6 +1721,7 @@ def build(job):
     bpy.ops.wm.read_factory_settings(use_empty=True)
     scene = bpy.context.scene
     core["import_model"](job["glb"])
+    place_proxies(scene, st.get("proxies") or [])
     if st.get("fix_normals", False):
         fix_normals()
     specs = st.get("materials") or {}

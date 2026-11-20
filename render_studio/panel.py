@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QFormLayout, Q
                                QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSpinBox, QTabWidget,
                                QToolButton, QVBoxLayout, QWidget)
 
-from . import lights as studio_lights, materials as mats, output, pbr, presets, settings_store, widgets
+from . import lights as studio_lights, materials as mats, output, pbr, presets, proxies, settings_store, widgets
 from .live import LiveSession
 from .preview import ImageWindow  # noqa: F401 - re-exported: panel.ImageWindow
 from .widgets import SliderRow
@@ -111,13 +111,16 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
                      engine: str, quality: int, width: int, height: int, ground: bool = True,
                      hdri: dict | None = None, materials: dict | None = None,
                      serve: bool = False, live: bool = False, reuse_model: bool = False,
-                     output: dict | None = None):
+                     output: dict | None = None, doc_path=None):
     """Export the model (IngeTrazo's own job writer) and add the look (and
     the 360° background, if any). ``serve``: Blender builds the scene and then
     waits for cameras on its input (the live view). ``live``: a draft scene
     (lighter EEVEE, sparser grass). ``reuse_model``: keep the model file
     already in ``work`` instead of exporting it again (only the settings
-    changed). Returns (job path, studio script path)."""
+    changed). ``doc_path``: the drawing's file, where proxies keep their
+    originals relative to it (proxies.py: each proxy is rendered as its full
+    model, placed by Blender as an instance). Returns (job path, studio
+    script path)."""
     from core import render_blender as rb
     block, ambience = presets.studio(preset_key)
     block = apply_hdri(block, hdri)
@@ -144,11 +147,27 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
     except Exception:  # noqa: BLE001 - never stops a render: the Render tab's lights, as before
         _log.exception("lights not read")
         tab_lights = document_lights(scene)
-    with _model_kept(work if reuse_model else None):
+    try:
+        # Proxies: their full models go to Blender apart, as instances; the stand-ins stay
+        # out of the model file. One whose original is missing renders as it is.
+        placed, missing = proxies.job_block(scene, doc_path)
+    except Exception:  # noqa: BLE001 - never stops a render: the stand-ins, as drawn
+        _log.exception("proxies not read")
+        placed, missing = [], []
+    if placed:
+        block["proxies"] = placed
+    if missing:
+        block["proxies_missing"] = sorted({g.name for g in missing})
+    out_of_file = [g for g in proxies.shown_proxies(scene) if g not in missing] if placed else []
+    # The ground is sized and set at the model's foot with the proxies in it.
+    ground_block = rb.ground_dict(scene) if (ground and out_of_file) else None
+    with _model_kept(work if reuse_model else None), proxies.left_out(out_of_file):
         job = rb.write_job(scene, camera, work, engine=engine, quality=quality, width=width,
                            height=height, ground=ground, ambience=ambience,
                            lights=tab_lights, serve=serve)
     data = json.loads(job.read_text(encoding="utf-8"))
+    if out_of_file and ground:
+        data["ground"] = ground_block
     if output is not None and not live:
         # The final file: the PNG Blender always writes (the preview window reads it) is it
         # for PNG and JPEG; the deeper formats get a file of their own beside it.
@@ -508,7 +527,14 @@ class StudioPanel(QWidget):
             self.slider_values(), engine=self.live_engine(), quality=0, width=width,
             height=height, hdri=self.hdri_settings(),
             materials=self.material_specs() if materials is None else materials, serve=True,
-            live=True, reuse_model=reuse_model)
+            live=True, reuse_model=reuse_model, doc_path=self.doc_path())
+
+    def doc_path(self):
+        """The drawing's file (None until it is saved): proxies keep their originals
+        relative to it."""
+        win = getattr(self.app, "window", None)
+        p = getattr(win, "_current_path", None)
+        return str(p) if p else None
 
     # -- the preview window and its live view -------------------------------------------
     def preview(self) -> ImageWindow:
@@ -850,7 +876,7 @@ class StudioPanel(QWidget):
                 self.preset.currentData(), self.slider_values(),
                 engine=self.engine.currentData(), quality=self.quality.currentIndex(),
                 width=width, height=height, hdri=self.hdri_settings(),
-                materials=self.material_specs(), output=out)
+                materials=self.material_specs(), output=out, doc_path=self.doc_path())
         except Exception as exc:  # noqa: BLE001 - say it, never crash the app
             _log.exception("render job failed")
             self._set_status(f"Could not prepare the render: {exc}")
@@ -870,13 +896,17 @@ class StudioPanel(QWidget):
         self._save_to, self._cancelled = save_to, False
         data = json.loads(job.read_text(encoding="utf-8"))
         self.output = Path(data["output"])
+        missing = (data.get("studio") or {}).get("proxies_missing") or []
         extra = (data.get("studio") or {}).get("output", {}).get("path")
         self.rendered = {"format": out["format"], "file": Path(extra) if extra else self.output,
                          "jpeg_quality": out["jpeg_quality"]}
         if self.window is not None:
             self.window.set_mode("rendering")
         self._set_progress(0.0)
-        self._set_status("Blender is preparing the scene…")
+        self._set_status("Blender is preparing the scene…" + (
+            f" ({len(missing)} prox{'y' if len(missing) == 1 else 'ies'} without its full model "
+            f"file, rendered as drawn: {', '.join(missing[:3])}{'…' if len(missing) > 3 else ''})"
+            if missing else ""))
         self.proc.start(argv[0], argv[1:])
 
     def render_and_save(self):
