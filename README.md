@@ -254,8 +254,8 @@ so the 3D view's shadows, the Render tab and Render Studio show the same sun. Ea
 
 - **Latitude, longitude**, typed or chosen on a map (**Map…**): it becomes the model's location (the map and
   the terrain follow it too). **North**: where true north lies; the shadows turn, the model does not.
-- **Date**, with the equinoxes and solstices as the site lives them (summer is December in the south);
-  **Hour** on a slider, with **Sunrise + 1 h**, **Noon** (solar noon) and **Sunset − 1 h**; the **time zone**
+- **Date**, with **Spring**, **Summer**, **Autumn** and **Winter** (the equinoxes and solstices as the site lives them: summer is December in the south);
+  **Hour** on a slider, with **Morning** (sunrise + 1 h), **Noon** (solar noon) and **Evening** (sunset − 1 h); the **time zone**
   (from the longitude, or a real one); **Shadows in the 3D view**.
 - **The sun then**: its height, where it comes from, how long the shadows are; and what the look does with it
   (Golden hour lowers it to 7°, Overcast and Night have none, a 360° background that lights the scene brings

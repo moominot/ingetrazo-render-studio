@@ -18,7 +18,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QSettings, Signal
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel,
-                               QLineEdit, QPushButton, QSpinBox, QToolButton, QVBoxLayout, QWidget)
+                               QLineEdit, QPushButton, QSizePolicy, QSpinBox, QToolButton, QVBoxLayout, QWidget)
 
 from . import output as O
 
@@ -31,6 +31,14 @@ def _bold(text: str) -> QLabel:
     f.setBold(True)
     lab.setFont(f)
     return lab
+
+
+def _shrinkable(combo: QComboBox) -> QComboBox:
+    """A list box that may be narrower than its longest entry (the tray is narrow;
+    the open list still shows the entries whole)."""
+    combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+    combo.setMinimumContentsLength(8)
+    return combo
 
 
 class OutputTab(QWidget):
@@ -62,6 +70,7 @@ class OutputTab(QWidget):
         self.size.setToolTip("The picture's size. «Same shape as the 3D view»: the width below, the height "
                              "follows the view.")
         self.size.currentIndexChanged.connect(self._size_chosen)
+        _shrinkable(self.size)
         form.addRow("Size", self.size)
         self.width = QSpinBox()
         self.width.setRange(320, O.MAX_PX)
@@ -75,6 +84,9 @@ class OutputTab(QWidget):
         self.height.setSuffix(" px")
         self.height.setValue(O.DEFAULT["height"])
         self.height.setToolTip("The picture's height in pixels")
+        for w in (self.width, self.height):
+            w.setMinimumWidth(78)
+            w.setSizePolicy(QSizePolicy.Ignored, w.sizePolicy().verticalPolicy())
         self.width.valueChanged.connect(self._width_edited)
         self.height.valueChanged.connect(self._height_edited)
         wrow = QHBoxLayout()
@@ -119,6 +131,7 @@ class OutputTab(QWidget):
                                "OpenEXR keep more of the light for editing elsewhere; they are saved as "
                                "Blender wrote them.")
         self.format.currentIndexChanged.connect(self._format_chosen)
+        _shrinkable(self.format)
         form2.addRow("Format", self.format)
         self.jpeg_quality = QSpinBox()
         self.jpeg_quality.setRange(10, 100)
@@ -140,7 +153,7 @@ class OutputTab(QWidget):
         lay.addWidget(_bold("Save every render"))
         form3 = QFormLayout()
         form3.setRowWrapPolicy(QFormLayout.WrapLongRows)
-        self.autosave = QCheckBox("Also save each final render in a folder")
+        self.autosave = QCheckBox("Save each render in a folder")
         self.autosave.setChecked(str(st.value(_SETTINGS + "autosave", "false")).lower() in ("true", "1"))
         self.autosave.toggled.connect(self._remember_autosave)
         form3.addRow(self.autosave)

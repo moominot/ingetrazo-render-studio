@@ -26,7 +26,7 @@ from PySide6.QtCore import QSettings, Qt, QTimer
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QColorDialog, QComboBox,
                                QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout, QHBoxLayout,
-                               QLabel, QLineEdit, QPushButton, QSlider, QSpinBox, QToolButton,
+                               QLabel, QLineEdit, QPushButton, QSizePolicy, QSlider, QSpinBox, QToolButton,
                                QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from . import light_ops as ops, light_view, lights as L
@@ -37,6 +37,14 @@ SECTION = {"free": "Lights", "object": "On objects", "tab": "From IngeTrazo's Re
 IES_FILTER = "IES profiles (*.ies *.IES)"
 
 
+def _narrow(w, least: int = 48):
+    """A number box as narrow as the tray needs: Qt sizes it for its widest value
+    (a range of ±1 000 000 asks for a lot), and a row of them would overflow."""
+    w.setMinimumWidth(least)
+    w.setSizePolicy(QSizePolicy.Ignored, w.sizePolicy().verticalPolicy())
+    return w
+
+
 def _spin(lo, hi, decimals, step, suffix="", tip=""):
     s = QDoubleSpinBox()
     s.setRange(lo, hi)
@@ -45,7 +53,7 @@ def _spin(lo, hi, decimals, step, suffix="", tip=""):
     s.setSuffix(suffix)
     s.setKeyboardTracking(False)        # one change when the typing ends, not one per digit
     s.setToolTip(tip)
-    return s
+    return _narrow(s)
 
 
 def _kelvin_groove() -> str:
@@ -128,6 +136,8 @@ class LightsTab(QWidget):
         for key, kind, label, _v in L.PRESETS:
             self.preset.addItem(f"{label}", key)
         self.preset.activated.connect(self._preset_chosen)
+        self.preset.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.preset.setMinimumContentsLength(8)
         prow.addWidget(self.preset, 1)
         lay.addLayout(prow)
         self.on_object = QCheckBox("On the object clicked")
@@ -183,14 +193,18 @@ class LightsTab(QWidget):
         self.power_note.setStyleSheet("color: gray; font-size: 11px")
         ef.addRow("", self.power_note)
 
-        krow = QHBoxLayout()
+        # Two lines, so the row never asks for more width than the tray has: the
+        # temperature bar across, then the kelvins, the tone's name and «…».
+        krow = QVBoxLayout()
         krow.setContentsMargins(0, 0, 0, 0)
+        krow.setSpacing(2)
         self.kelvin = QSlider(Qt.Horizontal)
         self.kelvin.setRange(L.MIN_KELVIN, L.MAX_KELVIN)
         self.kelvin.setSingleStep(100)
         self.kelvin.setPageStep(500)
         self.kelvin.setStyleSheet(_kelvin_groove())
-        self.kelvin.setMinimumWidth(50)
+        self.kelvin.setMinimumWidth(40)
+        self.kelvin.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
         self.kelvin_spin = QSpinBox()
         self.kelvin_spin.setRange(L.MIN_KELVIN, L.MAX_KELVIN)
         self.kelvin_spin.setSingleStep(100)
@@ -200,20 +214,26 @@ class LightsTab(QWidget):
         self.kelvin_spin.valueChanged.connect(self.kelvin.setValue)
         self.kelvin_spin.valueChanged.connect(self._kelvin_named)
         self.kelvin_spin.valueChanged.connect(self._changed)
-        krow.addWidget(self.kelvin, 1)
-        krow.addWidget(self.kelvin_spin)
+        krow.addWidget(self.kelvin)
+        line = QHBoxLayout()
+        line.setContentsMargins(0, 0, 0, 0)
+        line.addWidget(self.kelvin_spin)
+        self.kelvin_label = QLabel("")
+        self.kelvin_label.setStyleSheet("color: gray; font-size: 11px")
+        self.kelvin_label.setWordWrap(True)
+        self.kelvin_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        line.addStretch(1)
         self.colour_btn = QToolButton()
         self.colour_btn.setText("…")
         self.colour_btn.setToolTip("A colour of your own instead of a temperature")
         self.colour_btn.clicked.connect(self._pick_colour)
-        krow.addWidget(self.colour_btn)
+        line.addWidget(self.colour_btn)
+        krow.addLayout(line)
+        krow.addWidget(self.kelvin_label)
         self.kelvin_row = QWidget()
         self.kelvin_row.setLayout(krow)
         ef.addRow("Colour", self.kelvin_row)
-        self.kelvin_label = QLabel("")
-        self.kelvin_label.setStyleSheet("color: gray; font-size: 11px")
         self.custom = None                  # [r, g, b] when a colour of its own was chosen
-        ef.addRow("", self.kelvin_label)
 
         self.radius = _spin(0.0, 10.0, 3, 0.01, " m", "The bulb's size: bigger gives softer shadows.")
         self.radius.valueChanged.connect(self._changed)

@@ -191,5 +191,12 @@ ok(kept and Path(kept).is_file() and Path(kept).parent == auto and Path(kept).su
 out.autosave.setChecked(False)
 ok(panel._autosave() is None, "…only when asked")
 
+# ---- a narrow tray --------------------------------------------------------------------------
+for name, t in (("Lights", panel.lights_tab), ("Sun", panel.sun_tab), ("Output", panel.output_tab)):
+    for i, e in enumerate(L.all_lights(scene)[:1] if name == "Lights" else [None]):
+        if e is not None:
+            t.select(e["key"])
+    ok(t.minimumSizeHint().width() <= 230, f"the {name} tab fits a narrow tray ({t.minimumSizeHint().width()} px at least)")
+
 print("FAILED" if fails else "ALL PASSED", len(fails))
 sys.exit(1 if fails else 0)

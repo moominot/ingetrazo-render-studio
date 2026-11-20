@@ -12,7 +12,7 @@ import math
 
 from PySide6.QtCore import QDate, Qt, QTime, QTimer
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDateEdit, QDoubleSpinBox, QFormLayout, QGridLayout,
-                               QHBoxLayout, QLabel, QPushButton, QSlider, QTimeEdit, QToolButton,
+                               QHBoxLayout, QLabel, QPushButton, QSizePolicy, QSlider, QTimeEdit, QToolButton,
                                QVBoxLayout, QWidget)
 
 from . import sun_site as S
@@ -24,6 +24,15 @@ def _bold(text: str) -> QLabel:
     f.setBold(True)
     lab.setFont(f)
     return lab
+
+
+def _wide_button(text: str) -> QToolButton:
+    """A button that fills its share of a row but, unlike a push button, has no
+    80-pixel minimum: three of them fit a narrow tray."""
+    b = QToolButton()
+    b.setText(text)
+    b.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+    return b
 
 
 def _note() -> QLabel:
@@ -71,13 +80,17 @@ class SunTab(QWidget):
         self.lon.setSuffix("°")
         self.lon.setToolTip("Longitude: east positive, west negative")
         for w in (self.lat, self.lon):
+            w.setMinimumWidth(72)                      # not as wide as ±180.0000 asks: the tray is narrow
+            w.setButtonSymbols(QDoubleSpinBox.NoButtons)   # typed, not stepped
+            w.setSizePolicy(QSizePolicy.Ignored, w.sizePolicy().verticalPolicy())
             w.setKeyboardTracking(False)
             w.valueChanged.connect(self._location_edited)
         lrow = QHBoxLayout()
         lrow.setContentsMargins(0, 0, 0, 0)
         lrow.addWidget(self.lat)
         lrow.addWidget(self.lon)
-        self.map_btn = QPushButton("Map…")
+        self.map_btn = QToolButton()
+        self.map_btn.setText("Map…")
         self.map_btn.setToolTip("Choose the place on a map")
         self.map_btn.clicked.connect(self._pick_on_map)
         lrow.addWidget(self.map_btn)
@@ -108,10 +121,12 @@ class SunTab(QWidget):
         srow = QGridLayout()
         srow.setContentsMargins(0, 0, 0, 0)
         self.season_btns = {}
-        for i, (key, label) in enumerate((("spring", "Spring equinox"), ("summer", "Summer solstice"),
-                                          ("autumn", "Autumn equinox"), ("winter", "Winter solstice"))):
-            b = QPushButton(label)
-            b.setToolTip("As the site lives it: summer is June in the north, December in the south")
+        for i, (key, label, tip) in enumerate((("spring", "Spring", "The spring equinox"),
+                                               ("summer", "Summer", "The summer solstice"),
+                                               ("autumn", "Autumn", "The autumn equinox"),
+                                               ("winter", "Winter", "The winter solstice"))):
+            b = _wide_button(label)
+            b.setToolTip(tip + ", as the site lives it: summer is June in the north, December in the south")
             b.clicked.connect(lambda _c=False, k=key: self._season(k))
             self.season_btns[key] = b
             srow.addWidget(b, i // 2, i % 2)
@@ -121,6 +136,8 @@ class SunTab(QWidget):
         trow = QHBoxLayout()
         trow.setContentsMargins(0, 0, 0, 0)
         self.time_slider = QSlider(Qt.Horizontal)
+        self.time_slider.setMinimumWidth(40)
+        self.time_slider.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
         self.time_slider.setRange(0, 1439)
         self.time_slider.setSingleStep(5)
         self.time_slider.setPageStep(60)
@@ -137,8 +154,11 @@ class SunTab(QWidget):
         form2.addRow("", self.daylight)
         qrow = QHBoxLayout()
         qrow.setContentsMargins(0, 0, 0, 0)
-        for label, which in (("Sunrise + 1 h", "morning"), ("Noon", "noon"), ("Sunset − 1 h", "evening")):
-            b = QPushButton(label)
+        for label, which, tip in (("Morning", "morning", "An hour after sunrise"),
+                                  ("Noon", "noon", "Solar noon: the sun at its highest"),
+                                  ("Evening", "evening", "An hour before sunset")):
+            b = _wide_button(label)
+            b.setToolTip(tip)
             b.clicked.connect(lambda _c=False, w=which: self._quick(w))
             qrow.addWidget(b)
         qbox = QWidget()
@@ -150,6 +170,8 @@ class SunTab(QWidget):
             self.zone.addItem(f"UTC{h:+d}", h)
         self.zone.setToolTip("The clock the hour is read on. «From the longitude» is solar time; choose the "
                              "real zone (summer time included) to match a watch.")
+        self.zone.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.zone.setMinimumContentsLength(8)
         self.zone.currentIndexChanged.connect(lambda _i: self._edit(utc_offset=self.zone.currentData()))
         form2.addRow("Time zone", self.zone)
         self.shadows = QCheckBox("Shadows in the 3D view")

@@ -162,10 +162,10 @@ becomes the model's location: the map and the terrain follow it too. Without one
 default place.</td></tr>
 <tr><td valign='top'><b>North</b></td><td>Where true north lies, clockwise from the green axis. The shadows turn;
 the model does not move.</td></tr>
-<tr><td valign='top'><b>Date</b></td><td>Day and month; the four buttons give the equinoxes and solstices as the site
-lives them (summer is June in the north, December in the south).</td></tr>
-<tr><td valign='top'><b>Hour</b></td><td>The slider and the box; <b>Sunrise + 1 h</b>, <b>Noon</b> and <b>Sunset − 1 h</b>
-jump there. Daylight shows the hours the sun is up that day.</td></tr>
+<tr><td valign='top'><b>Date</b></td><td>Day and month; <b>Spring</b>, <b>Summer</b>, <b>Autumn</b> and <b>Winter</b> give the equinoxes and solstices as
+the site lives them (summer is June in the north, December in the south).</td></tr>
+<tr><td valign='top'><b>Hour</b></td><td>The slider and the box; <b>Morning</b> (an hour after sunrise), <b>Noon</b> (solar
+noon) and <b>Evening</b> (an hour before sunset) jump there. Daylight shows the hours the sun is up that day.</td></tr>
 <tr><td valign='top'><b>Time zone</b></td><td>The clock the hour is read on: from the longitude (solar time), or a real
 zone (summer time included) to match a watch.</td></tr>
 <tr><td valign='top'><b>Shadows in the 3D view</b></td><td>IngeTrazo's own sun shadows in the model, with this date
