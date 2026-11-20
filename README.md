@@ -115,6 +115,60 @@ The settings are saved in the document, one undo step per change. **Back
 to automatic** returns the material to IngeTrazo's own finish. Map files
 are linked by their path, not embedded in the document.
 
+### Grass
+
+A material of type **Grass** grows blades of grass on every face that wears it, **in the render only**
+(the model stays flat). **Grass height** sets how tall they are (1–60 cm); the **Lawn** (6 cm) and
+**Tall grass** (30 cm) presets start from there. In Blender they are tufts of a few bent blades
+scattered by geometry nodes over the faces of that material (instanced: a lawn costs little memory),
+upright, turned and sized at random; their colour is the material's picture read at each tuft's UVs,
+else its colour, darker at the root. Short grass gets 260 tufts per m², taller grass fewer and bigger;
+past 250 000 tufts in one render the whole lawn is thinned (the log says by how much). The job carries
+it in the material's settings: `{"type": "grass", "grass_height": 0.08}`.
+
+### Full texture sets (normal, roughness, AO, displacement, metalness, opacity)
+
+IngeTrazo gives a face only its colour picture. When that picture has companion maps beside it,
+the render builds the full material from them by itself (Principled BSDF), read with the picture's
+own UVs (same tile size and rotation). They are found, in this order:
+
+1. A manifest next to the picture, `<picture stem>.pbr.json` (the asset panel writes it for its
+   Poly Haven and ambientCG downloads):
+
+   ```
+   {"version": 1, "color": "wood_floor_diff_1k.jpg",
+    "normal_gl": "...", "normal_dx": "...", "roughness": "...", "ao": "...",
+    "displacement": "...", "metalness": "...", "opacity": "...",
+    "arm": "...",                 # AO / roughness / metalness packed in R / G / B
+    "size_m": [w, h], "source": "polyhaven|ambientcg", "id": "<asset id>"}
+   ```
+
+   Every key but `version` and `color` is optional. Files are relative to the manifest's folder
+   and must stay inside it: an absolute path, a `..` or a missing file is dropped (the rest of the
+   manifest still counts). Another `version`, no `color` or bad JSON: the manifest is ignored.
+2. No manifest: the libraries' own file names, in the picture's folder (any of .png/.jpg/.exr/.tif):
+   **Poly Haven** `<id>_diff_<res>` → `<id>_nor_gl_<res>`, `_nor_dx_`, `_rough_`, `_ao_`,
+   `_disp_`, `_metal_`, `_arm_`; **ambientCG** `<id>_<res>-JPG_Color` (or `-PNG_`) → `_NormalGL`,
+   `_NormalDX`, `_Roughness`, `_AmbientOcclusion`, `_Displacement`, `_Metalness`, `_Opacity`.
+3. Nothing found: the picture alone, exactly as before.
+
+A tinted picture looks for the maps of its original. The material editor shows the set: a line lists the
+maps found, and the first choice of Roughness, Metal and Relief becomes «Texture set: …» with a preview
+of that map; choosing another one there replaces it. In the render:
+- **Normal**: the OpenGL map; else the DirectX one with its green flipped. It replaces the
+  *automatic* relief guessed from the picture; a relief source chosen in the editor stays, on top.
+  Without a normal map the **displacement** map is the relief (a bump, 1 cm black to white).
+  True displacement is not used: it would need the model subdivided.
+- **Roughness**: the map × (the editor's Roughness / 0.5); a roughness map chosen in the editor wins.
+- **Metalness**: the map, with the editor's Metal as its floor; a metal map chosen in the editor wins.
+- **Ambient occlusion** multiplies the colour (75 %); **opacity** drives the alpha.
+- `arm` fills in whichever of AO / roughness / metalness has no map of its own.
+- Glass and water take only the normal map; the white model ignores the sets.
+
+The job carries them as `studio.pbr = {picture file name: {"normal": abs path, "normal_flip_green":
+bool, "roughness": …}}` (`render_studio/pbr.py`, no Qt, no Blender); `studio_scene.py` matches
+them to the imported materials by the picture's name.
+
 ![Material editor](docs/material_editor.png)
 
 ![Materials](docs/materials.png)
@@ -158,12 +212,27 @@ the image as PNG or JPEG.
 
 ## Live view
 
-**Live view** (a box in the panel) keeps Blender open with the scene and the look loaded, and a
-draft image follows the 3D view: move the camera and stop, and it updates. Changing the model,
-the look, a slider, the 360° background or a material setting loads the scene again. It speaks
-the protocol of IngeTrazo's own «Sync with the view» (Blender in `serve` mode), so the draft has
-the look, sky and materials of the final render, at draft quality. **Render** closes the live
-Blender first and leaves the live view off, so the draft does not cover the final image.
+**Live view** (a box in the panel) keeps one Blender open with the scene and the look loaded, and
+an image follows your work. Two switches under it, remembered between sessions:
+
+- **Follow the camera**: while the 3D view moves, small frames (320 px, 1 sample) come one after
+  another as fast as Blender renders them, each showing the camera as it is when Blender is free;
+  250 ms after it stops a quick image (480 px, 1 sample) comes, then the draft (960 px, 8 samples).
+  Off: the live image keeps its camera.
+- **Follow changes**: an edit of the model, its textures or the materials' render settings rebuilds
+  the scene in the same Blender (`{"reload": job}` on its input); the model is exported again only
+  when it changed. A change that comes while the previous one is still being built waits for it.
+  Off: the live scene keeps the model and materials it has; the look and sliders still apply.
+
+The live Blender always uses EEVEE with its costliest effects off (ray tracing, fast GI, fine
+shadows) and grass at a third of its density: the panel's **Engine** and **Quality** are for
+**Render**. Measured on a test machine (Blender 5.3): first start about 3 s, a camera stop to the
+quick image about 0.3 s, a change of look, material or model about 0.7–1 s, and 3–4 frames a second
+while the camera moves. That last figure is EEVEE's fixed cost per image (about a quarter of a second
+whatever its size; saving it and the compositor barely count): a smoother motion would need an
+interactive viewport, which a Blender running in the background does not have. It speaks the protocol
+of IngeTrazo's own «Sync with the view» (Blender in `serve` mode), extended with `reload`. **Render**
+closes the live Blender first and leaves the live view off, so the draft does not cover the final image.
 
 ## Settings in the document
 
@@ -217,12 +286,26 @@ Render tab).
 - `tests/test_water_editor_offline.py` checks the water controls of the editor.
 - `tests/test_relief_bpy.py` renders a brick wall and a pool with a REAL Blender (the `bpy` module, `pip install bpy`) with and without relief and checks the height map and the difference; skipped when `bpy` is missing.
 - `tests/test_cube_preview_offline.py` checks the cube preview (picture, tile, colour, polish, metal, relief, glass, glow) and its wiring in the editor.
+- `tests/test_live_blender_offline.py` runs the live view with a real Blender (house on a lawn) and times the
+  quick image, the draft, frames while orbiting, a material edit, edits in a row, a change of look (same Blender,
+  model kept) and of the model.
 - `tests/test_live_offline.py` runs the live view against a stand-in for Blender (`tests/fake_blender.py`, same protocol): first draft, camera moves, model/look changes, a final render, switching off.
 - `tests/test_doc_settings_offline.py` checks the settings kept in the document.
 - `tests/test_materials_list_offline.py` checks the material list (faces, groups painted whole, nested, registry).
 - `tests/test_texture_swap_offline.py` changes a material's picture on loose faces, nested
   components and painted objects, and checks placement, proportions, tint, undo and save/reopen.
 - `tests/test_help_offline.py` checks the help against the code.
+- `tests/test_grass_sets_editor_offline.py` checks the Grass type in the editor (height slider, presets, cube
+  preview) and how the editor shows a picture's texture set.
+- `tests/test_grass_blender.py` renders a lawn with a real Blender (EEVEE and Cycles): the blades grow on the lawn
+  only, take its picture's colour where they stand, follow the height slider and leave the model's mesh alone.
+- `tests/test_pbr_offline.py` (plain Python) finds texture sets by manifest and by the two libraries' names,
+  refuses manifest entries that leave the picture's folder, and collects the model's pictures.
+- `tests/test_pbr_job_offline.py` writes a job with the panel's own code and IngeTrazo's own GLB (a set on a
+  loose face and one on a tinted, painted group); given `blender.exe` it renders it and checks Blender found both.
+- `tests/test_pbr_blender.py` runs in Blender (`blender -b --factory-startup --python tests/test_pbr_blender.py --
+  <repo> <render_scene.py> <out dir>`): two small sets (Poly Haven and ambientCG style) rendered with and without
+  them in EEVEE and Cycles, the nodes checked, and a DirectX normal map shown to render like the OpenGL one.
 - `tests/test_offline.py` writes a job with the panel's own code and
   renders it with Blender. It then adjusts and saves the image in the image
   window, without IngeTrazo running.

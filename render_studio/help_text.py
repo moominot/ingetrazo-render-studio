@@ -29,6 +29,7 @@ PRESET_NOTES = {
     "metal_brushed": "metal, half polished", "chrome": "metal, almost a mirror",
     "glass": "clear and transparent", "glass_frosted": "transparent but diffuse",
     "water": "reflective and transparent surface", "light": "a panel that shines by itself",
+    "lawn": "short mown grass, 6 cm", "meadow": "long, uncut grass, 30 cm",
 }
 
 
@@ -82,11 +83,19 @@ it, up to 2. Not available while a 360° background lights the scene.</td></tr>
 <tr><td valign='top'><b>Saturation</b></td><td>Intensity of the colours: 0 is black and white, 1.6 is vivid.</td></tr>
 <tr><td valign='top'><b>Vignette</b></td><td>Darkens the corners of the picture to draw the eye to the centre.</td></tr>
 <tr><td valign='top'><b>Materials…</b></td><td>Opens the material editor (see below).</td></tr>
-<tr><td valign='top'><b>Live view</b></td><td>Keeps Blender open with your scene and look loaded: a <b>draft</b> image
-(small, few samples) follows the 3D view. Move the camera and stop: after a moment the image updates. Change the
-model, the look, a slider, the 360° background or a material setting and the scene is loaded into Blender again
-(it takes a few seconds). Press <b>Render</b> for the final image: the live Blender is closed first and the live view stays
-off afterwards, so the draft does not draw over your picture; tick the box again to bring it back.</td></tr>
+<tr><td valign='top'><b>Live view</b></td><td>Keeps Blender open with your scene and look loaded, and an image
+follows your work. It always uses EEVEE with its slowest effects off and lighter grass, whatever the <b>Engine</b> and
+<b>Quality</b> say (those are for Render), so an interior meant for Cycles looks only roughly right here. The first start
+takes a few seconds; after that everything happens in the same Blender.
+<br><b>Follow the camera</b>: while you orbit or walk, small rough frames keep coming (three or four a second, as fast as
+Blender renders them); stop, and a <b>quick</b> image comes, then a cleaner <b>draft</b>. Off: the image keeps the camera
+it had, so you can look elsewhere in the 3D view while watching one view change.
+<br><b>Follow changes</b>: an edit of the model, of a texture or of a material's render settings shows by itself, in about
+a second (the scene is rebuilt in the same Blender; the model is exported again only when it changed). Off: the live image
+keeps the model and materials it had while you work; the look and the panel's sliders still apply. Tick it again to bring
+your edits in.
+<br>Press <b>Render</b> for the final image: the live Blender is closed first and the live view stays off afterwards, so the
+draft does not draw over your picture; tick the box again to bring it back.</td></tr>
 <tr><td valign='top'><b>Render</b></td><td>Starts the render. It is disabled while one is running. The line below the
 bar says what is happening, or why it could not start (for example, Blender was not found).</td></tr>
 </table>
@@ -151,9 +160,9 @@ image's shape (the tile width stays); off, the tile size stays and a different s
 a picture already; paint it with a texture first if it has only a colour. The image is copied into IngeTrazo's texture
 cache and travels with the document when you save.</td></tr>
 <tr><td valign='top'><b>Start from</b></td><td>A ready-made starting point; then adjust it. See the list below.</td></tr>
-<tr><td valign='top'><b>Type</b></td><td><b>Generic</b> (opaque), <b>Glass</b> (transparent), <b>Water</b> (transparent, with ripples), or
+<tr><td valign='top'><b>Type</b></td><td><b>Generic</b> (opaque), <b>Glass</b> (transparent), <b>Water</b> (transparent, with ripples),
 <b>Glowing</b> (it shines by itself and lights what is around it; the exposure meter ignores it so it does not darken the
-picture).</td></tr>
+picture), or <b>Grass</b> (blades of grass grow on it in the render).</td></tr>
 <tr><td valign='top'><b>Transparency</b></td><td>How much light the material lets through: 0 is opaque, up to 95 %. It changes IngeTrazo's own material
 <b>in the model</b> (every face and object that wears it, one undo step, so the 3D view shows it too) and so the render sees it: water and
 other materials become see-through (the floor shows below), tinted by the material's colour or picture. For <b>Glass</b> it is how much the
@@ -171,6 +180,12 @@ it changes gently (wood grain): for that, raise the map's <b>Contrast</b>, or us
 usual «easy water» recipe of Blender, laid out in metres so a ripple has the same size everywhere. Fine ripples look like grain from far away,
 broad ones read as water; the sun then glints on them.</td></tr>
 <tr><td valign='top'><b>Glow</b></td><td>0 to 50: how brightly it shines (type Glowing): screens, light panels.</td></tr>
+<tr><td valign='top'><b>Grass height</b></td><td>Grass only: how tall the blades are, 1 to 60 cm (a mown lawn is 4 to 8 cm).
+The blades exist <b>only in the render</b>: the model stays flat and light to work with. They grow on every face that wears
+the material, upright whatever the slope, in small tufts turned and sized at random. Their colour is the material's
+<b>picture</b> where each tuft stands (a lawn picture gives the lawn's patches), or its colour, darker at the root; the
+face under them fills the gaps. Taller grass grows in fewer, bigger tufts. A very large lawn is thinned a little so the
+render stays quick (the status line says so). The cube preview shows the height.</td></tr>
 <tr><td valign='top'><b>Map image size</b></td><td>How big one image of a map file is on the model, in metres. Used when
 the material has no picture of its own; with a picture, the maps follow its size and placement.</td></tr>
 <tr><td valign='top'><b>Back to automatic</b></td><td>Forgets these settings: IngeTrazo's own finish for the material.</td></tr>
@@ -187,6 +202,35 @@ the material has no picture of its own; with a picture, the maps follow its size
 <li>The small <b>preview</b> shows what the render will read. A material without a picture ignores a Picture map.</li>
 </ul>
 <p>Map files are linked by their <b>path</b>, not embedded in the document: keep them where they are.</p>
+
+<a name="texture_sets"></a>
+<h4>Full texture sets</h4>
+<p>Material libraries give more than a picture: a <b>normal</b> map, <b>roughness</b>, <b>ambient occlusion</b>,
+<b>displacement</b>, <b>metalness</b>, <b>opacity</b>. When the material's picture has them beside it, the render uses
+them by itself, placed exactly as the picture (same tile size and rotation); there is nothing to set. They are found:</p>
+<ol>
+<li>from a small description file next to the picture, <b>&lt;picture name&gt;.pbr.json</b> (written by the asset panel
+when it downloads a set; the files it lists must be in the picture's folder);</li>
+<li>else by the libraries' own file names: <b>Poly Haven</b> (<i>wood_diff_1k.jpg</i> with <i>wood_nor_gl_1k</i>,
+<i>wood_rough_1k</i>, <i>wood_ao_1k</i>, <i>wood_disp_1k</i>, <i>wood_metal_1k</i>, <i>wood_arm_1k</i>) and
+<b>ambientCG</b> (<i>Wood049_1K-JPG_Color.jpg</i> with <i>_NormalGL</i>, <i>_Roughness</i>, <i>_AmbientOcclusion</i>,
+<i>_Displacement</i>, <i>_Metalness</i>, <i>_Opacity</i>).</li>
+</ol>
+<p>A picture with none renders as before. With a set:</p>
+<ul>
+<li>The <b>normal map</b> replaces the <b>automatic</b> relief guessed from the picture; a relief source you chose
+(grain, picture, height or normal map file) still applies, on top. A normal map drawn the other common way (its green channel inverted) is turned the right way by itself.
+Without a normal map, the <b>displacement</b> map gives the relief (1 cm from black to white).</li>
+<li><b>Roughness</b>: the set's map, scaled by the slider (0.5 leaves it as it is; lower polishes it, higher roughens it).
+A roughness map you chose here wins.</li>
+<li><b>Metal</b>: the set's map; the slider raises its lowest value. A metal map you chose here wins.</li>
+<li><b>Ambient occlusion</b> darkens the colour in the grooves; <b>opacity</b> cuts holes where it is black.</li>
+<li><b>Glass</b> and <b>Water</b> take only the normal map. <b>White model</b> ignores the sets.</li>
+<li>The cube preview shows the picture only; the sets show in the render.</li>
+</ul>
+<p>The editor shows the set: a line under the picture lists the maps found, and the first choice under <b>Roughness</b>,
+<b>Metal</b> and <b>Relief</b> reads <b>Texture set: …</b> with a small preview of that map (for a packed map, the channel used).
+Pick another map there to replace it.</p>
 
 <h4>Starting points</h4>
 {_material_presets()}

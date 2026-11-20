@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QFileDialog, QForm
                                QLabel, QProgressBar, QPushButton, QScrollArea, QSizePolicy,
                                QSlider, QSpinBox, QToolButton, QVBoxLayout, QWidget)
 
-from . import materials as mats, post, presets, settings_store
+from . import materials as mats, pbr, post, presets, settings_store
 from .live import LiveSession
 
 _log = logging.getLogger(__name__)
@@ -81,20 +81,32 @@ def apply_hdri(block: dict, hdri: dict | None) -> dict:
 def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, *,
                      engine: str, quality: int, width: int, height: int, ground: bool = True,
                      hdri: dict | None = None, materials: dict | None = None,
-                     serve: bool = False):
+                     serve: bool = False, live: bool = False, reuse_model: bool = False):
     """Export the model (IngeTrazo's own job writer) and add the look (and
     the 360° background, if any). ``serve``: Blender builds the scene and then
-    waits for cameras on its input (the live view). Returns (job path, studio
-    script path)."""
+    waits for cameras on its input (the live view). ``live``: a draft scene
+    (lighter EEVEE, sparser grass). ``reuse_model``: keep the model file
+    already in ``work`` instead of exporting it again (only the settings
+    changed). Returns (job path, studio script path)."""
     from core import render_blender as rb
     block, ambience = presets.studio(preset_key)
     block = apply_hdri(block, hdri)
     block = presets.apply_sliders(block, sliders)
     if materials:
         block["materials"] = mats.job_block(materials)
-    job = rb.write_job(scene, camera, work, engine=engine, quality=quality, width=width,
-                       height=height, ground=ground, ambience=ambience,
-                       lights=document_lights(scene), serve=serve)
+    try:
+        sets = pbr.job_block(scene)       # each picture's companion maps (normal, roughness…)
+    except Exception:  # noqa: BLE001 - never stops a render: the pictures alone, as before
+        _log.exception("texture sets not read")
+        sets = {}
+    if sets:
+        block["pbr"] = sets
+    if live:
+        block["live"] = True
+    with _model_kept(work if reuse_model else None):
+        job = rb.write_job(scene, camera, work, engine=engine, quality=quality, width=width,
+                           height=height, ground=ground, ambience=ambience,
+                           lights=document_lights(scene), serve=serve)
     data = json.loads(job.read_text(encoding="utf-8"))
     data["studio"] = block
     job.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -103,6 +115,30 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
     script = work / "studio_scene.py"
     shutil.copyfile(HERE / "blender" / "studio_scene.py", script)
     return job, script
+
+
+class _model_kept:
+    """While IngeTrazo's job writer runs: its model export is skipped when
+    ``work`` already holds the model file (the live view, when only a setting
+    changed; exporting a big model is the slow part of a reload)."""
+
+    def __init__(self, work):
+        self.glb = Path(work) / "model.glb" if work is not None else None
+        self.saved = None
+
+    def __enter__(self):
+        if self.glb is None or not self.glb.is_file():
+            return self
+        import formats.gltf as gltf
+        self.saved = gltf.save_glb
+        gltf.save_glb = lambda scene, path, *a, **k: None
+        return self
+
+    def __exit__(self, *exc):
+        if self.saved is not None:
+            import formats.gltf as gltf
+            gltf.save_glb = self.saved
+        return False
 
 
 def _slider(lo, hi, value, steps=200):
@@ -325,10 +361,27 @@ class StudioPanel(QWidget):
         self._live = None
         self._live_resume = False
         self.live_box = QCheckBox("Live view")
-        self.live_box.setToolTip("Keeps Blender open: a draft image follows the 3D view and updates when "
-                                 "you stop moving the camera or change the model or the look.")
+        self.live_box.setToolTip("Keeps Blender open: when you stop moving the camera a quick image comes, "
+                                 "then a cleaner draft. Always a light EEVEE draft; Engine and Quality are for Render.")
         self.live_box.toggled.connect(self._live_toggled)
         outer.addWidget(self.live_box)
+        follow = QHBoxLayout()
+        follow.setContentsMargins(18, 0, 0, 0)
+        self.follow_camera_box = QCheckBox("Follow the camera")
+        self.follow_camera_box.setToolTip("On: frames come while you move the 3D view, then a cleaner image when "
+                                          "you stop. Off: the live image keeps its camera.")
+        self.follow_changes_box = QCheckBox("Follow changes")
+        self.follow_changes_box.setToolTip("On: edits of the model, its textures and the materials show in the "
+                                           "live image. Off: it keeps the model and materials it has (the look "
+                                           "and sliders still apply).")
+        st_live = QSettings()
+        for box, key in ((self.follow_camera_box, "live_follow_camera"),
+                         (self.follow_changes_box, "live_follow_changes")):
+            box.setChecked(str(st_live.value(_SETTINGS + key, "true")).lower() in ("true", "1"))
+            box.toggled.connect(lambda on, k=key: self._follow_toggled(k, on))
+            follow.addWidget(box)
+        follow.addStretch(1)
+        outer.addLayout(follow)
         self.render_btn = QPushButton("Render")
         self.render_btn.clicked.connect(self.render)
         outer.addWidget(self.render_btn)
@@ -346,24 +399,41 @@ class StudioPanel(QWidget):
         from core import render_blender as rb
         return rb.find_blender(str(QSettings().value(rb.SETTINGS_KEY, "") or "") or None)
 
+    def live_model_key(self):
+        """What the live scene's MODEL file depends on: the document and its content."""
+        scene = self.app.scene
+        return (id(scene), getattr(scene, "content_version", 0))
+
     def live_key(self):
-        """What the live scene depends on besides the camera: the model, the
-        look and every setting, the materials' render settings, the proportions."""
+        """What the live scene depends on besides the camera, in three parts:
+        (the model, the materials' render settings, the look with every
+        setting and the proportions)."""
         try:
             doc = json.dumps(self.settings_dict(), sort_keys=True)
             mats_ = json.dumps(self.material_specs(), sort_keys=True, default=str)
         except Exception:  # noqa: BLE001
             doc = mats_ = ""
-        scene = self.app.scene
-        return (id(scene), getattr(scene, "content_version", 0), doc, mats_, round(self._aspect(), 3))
+        return (self.live_model_key(), mats_, (doc, round(self._aspect(), 3)))
 
-    def live_job(self, work: Path, width: int, height: int):
-        """The job of the live Blender: the current look and settings, draft
-        quality, in serve mode."""
+    def live_job(self, work: Path, width: int, height: int, reuse_model: bool = False,
+                 materials: dict | None = None):
+        """The job of the live Blender: the current look and settings, a draft
+        in serve mode — always EEVEE, lightened (the Engine and Quality chosen
+        are for Render). ``reuse_model``: the model file in ``work`` is still
+        good (only a setting changed, or the live view keeps its model).
+        ``materials``: the render settings to use (default: the document's)."""
         return write_studio_job(
             self.app.scene, self.app.viewport.camera, work, self.preset.currentData(),
-            self.slider_values(), engine=self.engine.currentData(), quality=0, width=width,
-            height=height, hdri=self.hdri_settings(), materials=self.material_specs(), serve=True)
+            self.slider_values(), engine="eevee", quality=0, width=width,
+            height=height, hdri=self.hdri_settings(),
+            materials=self.material_specs() if materials is None else materials, serve=True,
+            live=True, reuse_model=reuse_model)
+
+    def _follow_toggled(self, key: str, on: bool):
+        QSettings().setValue(_SETTINGS + key, bool(on))
+        if self._live is not None:
+            self._live.set_follow_camera(self.follow_camera_box.isChecked())
+            self._live.set_follow_changes(self.follow_changes_box.isChecked())
 
     def _live_toggled(self, on: bool):
         if on:
@@ -377,6 +447,8 @@ class StudioPanel(QWidget):
                 self.live_box.setChecked(False)
                 self.live_box.blockSignals(False)
                 return
+            self._live.set_follow_camera(self.follow_camera_box.isChecked())
+            self._live.set_follow_changes(self.follow_changes_box.isChecked())
             self._live.start()
         elif self._live is not None:
             self._live.stop()

@@ -531,8 +531,8 @@ def _colour_source(nodes, bsdf):
         if node.name in seen:
             continue
         seen.add(node.name)
-        if node.type == "TEX_IMAGE" and node.image is not None:
-            return link.from_socket, node
+        if node.type == "TEX_IMAGE" and node.image is not None and not node.label.startswith(PBR_LABEL):
+            return link.from_socket, node                  # (not a texture set's AO map)
         for inp in node.inputs:
             todo += [l.from_node for l in inp.links]
     return link.from_socket, None
@@ -819,9 +819,12 @@ def _water_ripples(mat, bsdf, relief, size):
     links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
 
 
-def apply_material_specs(specs):
+def apply_material_specs(specs, with_sets=()):
     """After IngeTrazo's finishes: the editor's numbers — and maps — on each
-    material. With a map, the setting's slider scales it."""
+    material. With a map, the setting's slider scales it. ``with_sets``: the
+    materials whose picture has a texture set (:func:`apply_texture_sets`):
+    their own normal and displacement maps replace the AUTOMATIC relief (a
+    relief source chosen in the editor still applies, on top)."""
     done = 0
     for mat in bpy.data.materials:
         spec = _spec_for(mat, specs)
@@ -841,7 +844,7 @@ def apply_material_specs(specs):
                 val = _map_value(mat, bsdf, m)
                 if val is not None:
                     mat.node_tree.links.new(_scaled(mat, val, spec[key]), bsdf.inputs[names[0]])
-        if kind in ("generic", "glow"):
+        if kind in ("generic", "glow", "grass"):
             core["_set"](bsdf, ("Transmission Weight", "Transmission"), 0.0)
         elif kind == "glass" and "transparency" in spec:
             # Glass refracts instead of blending: the slider is how much it lets through.
@@ -855,7 +858,11 @@ def apply_material_specs(specs):
         if kind == "water" and "ripple_size" in spec:
             _water_ripples(mat, bsdf, float(spec.get("bump", 0.0)), float(spec["ripple_size"]))
         elif float(spec.get("bump", 0.0)) > 0.0:
-            _add_bump(mat, bsdf, float(spec["bump"]), maps.get("bump"))
+            m = maps.get("bump") or {}
+            if mat.name in with_sets and not m.get("source"):
+                say("relief", mat.name, "from its texture set, not guessed from the picture")
+            else:
+                _add_bump(mat, bsdf, float(spec["bump"]), m)
         if kind == "glow" and float(spec.get("glow", 0.0)) > 0.0:
             sock, _img = _colour_source(mat.node_tree.nodes, bsdf)
             if sock is not None and "Emission Color" in bsdf.inputs:
@@ -874,6 +881,510 @@ def apply_material_specs(specs):
         done += 1
     if done:
         say("materials", done, "set in the material editor")
+
+
+# ---- grass ------------------------------------------------------------------------------
+#
+# A material of type «grass» grows blades on every face that wears it, in the render
+# only: tufts of a few bent blades scattered over the faces (geometry nodes, instanced,
+# so a lawn costs little memory), standing up whatever the face's slope, as tall as the
+# editor's «Grass height». Their colour is the material's own: its picture read where
+# each tuft stands (a lawn picture gives a lawn's patches), else its colour, darker at
+# the root and a little lighter at the tip, each tuft a little different. The face
+# under them keeps its own look and fills the gaps.
+
+#: Tufts per square metre for short grass (each of GRASS_BLADES blades); taller grass
+#: is sparser (fewer, bigger tufts) down to GRASS_DENSITY_MIN.
+GRASS_DENSITY = 260.0
+GRASS_DENSITY_MIN = 60.0
+GRASS_BLADES = 9
+#: The most tufts in one render: past it the whole lawn gets sparser (memory and time).
+GRASS_MAX_TUFTS = 250_000
+GRASS_TUFT_RADIUS = 0.35            # × the height
+GRASS_BLADE_WIDTH = 0.045           # × the height, at the root
+
+
+def grass_density(height):
+    """Tufts per m² for grass ``height`` metres tall."""
+    h = max(0.005, float(height))
+    return max(GRASS_DENSITY_MIN, min(GRASS_DENSITY, GRASS_DENSITY * 0.10 / h))
+
+
+def _grass_tuft_mesh(name, seed=0):
+    """One tuft, 1 m tall (scaled per instance): GRASS_BLADES tapered, bent blades
+    around the origin, with ``grass_h`` (0 root … 1 tip) on its points."""
+    import random
+    rng = random.Random(seed)
+    verts, faces, hs = [], [], []
+    segs = 4
+    for _b in range(GRASS_BLADES):
+        a = rng.uniform(0, 2 * math.pi)
+        r = GRASS_TUFT_RADIUS * math.sqrt(rng.random())
+        ox, oy = r * math.cos(a), r * math.sin(a)
+        yaw = rng.uniform(0, 2 * math.pi)
+        tall = rng.uniform(0.65, 1.0)
+        bend = rng.uniform(0.15, 0.45) * tall
+        dx, dy = math.cos(yaw), math.sin(yaw)                 # the way it bends
+        wx, wy = -dy, dx                                      # across the blade
+        w0 = GRASS_BLADE_WIDTH * rng.uniform(0.7, 1.2)
+        base = len(verts)
+        for i in range(segs + 1):
+            t = i / segs
+            z = tall * (t - 0.25 * bend * t * t)
+            off = bend * t * t
+            w = w0 * (1.0 - t) ** 0.8 * 0.5
+            cx, cy = ox + dx * off, oy + dy * off
+            if i < segs:
+                verts += [(cx - wx * w, cy - wy * w, z), (cx + wx * w, cy + wy * w, z)]
+                hs += [t, t]
+            else:
+                verts.append((cx, cy, z))
+                hs.append(1.0)
+        for i in range(segs - 1):
+            k = base + 2 * i
+            faces.append((k, k + 1, k + 3, k + 2))
+        k = base + 2 * (segs - 1)
+        faces.append((k, k + 1, k + 2))
+    me = bpy.data.meshes.new(name)
+    me.from_pydata(verts, [], faces)
+    attr = me.attributes.new("grass_h", "FLOAT", "POINT")
+    attr.data.foreach_set("value", hs)
+    for poly in me.polygons:
+        poly.use_smooth = True
+    me.update()
+    return me
+
+
+def _grass_material(mat, uv_name):
+    """The blades' material: ``mat``'s picture read at each tuft's place (the UVs
+    the tuft carries from the face), else its colour; root to tip, tuft to tuft."""
+    nodes_src = mat.node_tree.nodes
+    bsdf_src = next((n for n in nodes_src if n.type == "BSDF_PRINCIPLED"), None)
+    _sock, pic = _colour_source(nodes_src, bsdf_src) if bsdf_src is not None else (None, None)
+    gm = bpy.data.materials.new("studio grass " + mat.name)
+    if gm.node_tree is None:                     # Blender before 5: nodes are switched on
+        gm.use_nodes = True
+    nt = gm.node_tree
+    nodes, links = nt.nodes, nt.links
+    out = next(n for n in nodes if n.type == "OUTPUT_MATERIAL")
+    bsdf = next(n for n in nodes if n.type == "BSDF_PRINCIPLED")
+    if pic is not None:
+        uv = nodes.new("ShaderNodeAttribute")
+        uv.attribute_type = "INSTANCER"
+        uv.attribute_name = uv_name
+        tex = nodes.new("ShaderNodeTexImage")
+        tex.image = pic.image
+        tex.extension = getattr(pic, "extension", "REPEAT")
+        links.new(uv.outputs["Vector"], tex.inputs["Vector"])
+        colour = tex.outputs["Color"]
+    else:
+        rgb = nodes.new("ShaderNodeRGB")
+        rgb.outputs[0].default_value = tuple(bsdf_src.inputs["Base Color"].default_value) if bsdf_src else (0.2, 0.4, 0.1, 1)
+        colour = rgb.outputs[0]
+    # each tuft a little lighter or darker; the root in shade, the tip in the light
+    info = nodes.new("ShaderNodeObjectInfo")
+    vary = nodes.new("ShaderNodeMapRange")
+    vary.inputs["To Min"].default_value, vary.inputs["To Max"].default_value = 0.75, 1.15
+    links.new(info.outputs["Random"], vary.inputs["Value"])
+    h = nodes.new("ShaderNodeAttribute")
+    h.attribute_type = "GEOMETRY"
+    h.attribute_name = "grass_h"
+    root = nodes.new("ShaderNodeMapRange")
+    root.inputs["To Min"].default_value, root.inputs["To Max"].default_value = 0.45, 1.05
+    links.new(h.outputs["Fac"], root.inputs["Value"])
+    k = nodes.new("ShaderNodeMath"); k.operation = "MULTIPLY"
+    links.new(vary.outputs["Result"], k.inputs[0]); links.new(root.outputs["Result"], k.inputs[1])
+    mix = nodes.new("ShaderNodeMix")
+    mix.data_type = "RGBA"; mix.blend_type = "MULTIPLY"; mix.clamp_result = True
+    _socket(mix, "Factor_Float", 0).default_value = 1.0
+    links.new(colour, _socket(mix, "A_Color", 6))
+    links.new(k.outputs[0], _socket(mix, "B_Color", 7))
+    tint = next(s for s in mix.outputs if s.identifier == "Result_Color")
+    links.new(tint, bsdf.inputs["Base Color"])
+    core["_set"](bsdf, ("Roughness",), 0.55)
+    core["_set"](bsdf, ("Specular IOR Level", "Specular"), 0.35)
+    # light through the blades
+    trans = nodes.new("ShaderNodeBsdfTranslucent")
+    links.new(tint, trans.inputs["Color"])
+    both = nodes.new("ShaderNodeMixShader")
+    both.inputs["Fac"].default_value = 0.3
+    links.new(bsdf.outputs["BSDF"], both.inputs[1])
+    links.new(trans.outputs["BSDF"], both.inputs[2])
+    links.new(both.outputs["Shader"], out.inputs["Surface"])
+    return gm
+
+
+def _grass_area(obj, mat_indices):
+    """World-space area of ``obj``'s faces wearing those material slots (m²)."""
+    mw = obj.matrix_world
+    area = 0.0
+    me = obj.data
+    for poly in me.polygons:
+        if poly.material_index in mat_indices:
+            pts = [mw @ me.vertices[i].co for i in poly.vertices]
+            for i in range(1, len(pts) - 1):
+                area += 0.5 * (pts[i] - pts[0]).cross(pts[i + 1] - pts[0]).length
+    return area
+
+
+def _grass_node_group(name, branches):
+    """Geometry nodes: the mesh, plus for each (material, tuft object, density,
+    height, seed) tufts scattered on the faces wearing it, upright, turned and sized
+    at random."""
+    ng = bpy.data.node_groups.new(name, "GeometryNodeTree")
+    ng.interface.new_socket("Geometry", in_out="INPUT", socket_type="NodeSocketGeometry")
+    ng.interface.new_socket("Geometry", in_out="OUTPUT", socket_type="NodeSocketGeometry")
+    nodes, links = ng.nodes, ng.links
+    gin = nodes.new("NodeGroupInput")
+    gout = nodes.new("NodeGroupOutput")
+    join = nodes.new("GeometryNodeJoinGeometry")
+    links.new(gin.outputs[0], join.inputs[0])
+    for mat, tuft, density, height, seed in branches:
+        sel = nodes.new("GeometryNodeMaterialSelection")
+        sel.inputs["Material"].default_value = mat
+        dist = nodes.new("GeometryNodeDistributePointsOnFaces")
+        dist.distribute_method = "RANDOM"
+        links.new(gin.outputs[0], dist.inputs["Mesh"])
+        links.new(sel.outputs["Selection"], dist.inputs["Selection"])
+        dist.inputs["Density"].default_value = float(density)
+        dist.inputs["Seed"].default_value = int(seed)
+        src = nodes.new("GeometryNodeObjectInfo")
+        src.inputs["Object"].default_value = tuft
+        inst = nodes.new("GeometryNodeInstanceOnPoints")
+        links.new(dist.outputs["Points"], inst.inputs["Points"])
+        links.new(src.outputs["Geometry"], inst.inputs["Instance"])
+        turn = nodes.new("FunctionNodeRandomValue")
+        turn.data_type = "FLOAT"
+        turn.inputs["Min"].default_value = 0.0
+        turn.inputs["Max"].default_value = 2 * math.pi
+        turn.inputs["Seed"].default_value = int(seed) + 1
+        rot = nodes.new("ShaderNodeCombineXYZ")
+        links.new(turn.outputs["Value"], rot.inputs["Z"])
+        links.new(rot.outputs["Vector"], inst.inputs["Rotation"])
+        size = nodes.new("FunctionNodeRandomValue")
+        size.data_type = "FLOAT"
+        size.inputs["Min"].default_value = 0.75 * float(height)
+        size.inputs["Max"].default_value = 1.15 * float(height)
+        size.inputs["Seed"].default_value = int(seed) + 2
+        links.new(size.outputs["Value"], inst.inputs["Scale"])
+        links.new(inst.outputs["Instances"], join.inputs[0])
+    links.new(join.outputs[0], gout.inputs[0])
+    return ng
+
+
+def build_grass(specs, factor=1.0):
+    """Grow the grass of every material of type «grass» (see above), ``factor``
+    times as dense (the live view's draft is sparser). Returns the number of
+    tufts asked for."""
+    kinds = {}
+    for mat in bpy.data.materials:
+        spec = _spec_for(mat, specs)
+        if spec and spec.get("type") == "grass" and mat.node_tree:
+            kinds[mat.name] = float(spec.get("grass_height", 0.08))
+    if not kinds:
+        return 0
+    hidden = bpy.data.collections.new("studio grass tufts")
+    bpy.context.scene.collection.children.link(hidden)
+    hidden.hide_render = True
+    hidden.hide_viewport = True
+    plan, total = [], 0.0
+    for obj in [o for o in bpy.context.scene.objects if o.type == "MESH"]:
+        slots = {i: s.material for i, s in enumerate(obj.material_slots)
+                 if s.material is not None and s.material.name in kinds}
+        if not slots:
+            continue
+        for i, mat in slots.items():
+            area = _grass_area(obj, {i})
+            if area <= 0.0:
+                continue
+            d = grass_density(kinds[mat.name]) * max(0.01, float(factor))
+            plan.append((obj, mat, d, area))
+            total += d * area
+    if not plan:
+        return 0
+    thin = min(1.0, GRASS_MAX_TUFTS / max(total, 1.0))
+    tufts = {}
+    per_obj = {}
+    for n, (obj, mat, d, area) in enumerate(plan):
+        if mat.name not in tufts:
+            uv = obj.data.uv_layers.active.name if obj.data.uv_layers.active else "UVMap"
+            me = _grass_tuft_mesh("studio grass " + mat.name, seed=len(tufts))
+            me.materials.append(_grass_material(mat, uv))
+            tob = bpy.data.objects.new("studio grass " + mat.name, me)
+            hidden.objects.link(tob)
+            tufts[mat.name] = tob
+        per_obj.setdefault(obj.name, (obj, []))[1].append(
+            (mat, tufts[mat.name], d * thin, kinds[mat.name], 17 * n + 3))
+    for obj, branches in per_obj.values():
+        mod = obj.modifiers.new("Studio grass", "NODES")
+        mod.node_group = _grass_node_group("studio grass " + obj.name, branches)
+    count = int(total * thin)
+    say("grass", ", ".join(f"{m} {h * 100:.0f} cm" for m, h in kinds.items()),
+        f"- {count} tufts" + (f" (thinned to {thin:.0%})" if thin < 1.0 else ""))
+    return count
+
+
+# ---- full texture sets ------------------------------------------------------------------
+#
+# The job's ``"pbr"`` block (render_studio/pbr.py): for each colour picture of the
+# model, by file name, its companion maps as absolute paths. They are read with
+# the picture's own coordinates (its UVs, so its tile size and rotation).
+
+#: The label of every node a texture set adds (the picture finder skips them).
+PBR_LABEL = "Texture set: "
+#: How much the ambient occlusion map darkens the colour (0 none … 1 fully): the
+#: render's own light bounce already shades the model's real corners.
+PBR_AO_STRENGTH = 0.75
+#: A displacement map as relief (when the set has no normal map): metres from black to white.
+PBR_DISPLACEMENT_DISTANCE = 0.01
+#: The editor's Roughness that leaves a roughness map as it is; above or below it scales the map.
+PBR_ROUGHNESS_NEUTRAL = 0.5
+
+
+def _texture_set_for(img, sets):
+    """The texture set of a picture (a Blender image) by its file name: the
+    importer may add «.001», drop the extension or cut a long name."""
+    import re
+    if img is None or not sets:
+        return None
+    names = [img.name, re.sub(r"\.\d{3}$", "", img.name)]
+    try:
+        names.append(os.path.basename(bpy.path.abspath(img.filepath or "")))
+    except Exception:  # noqa: BLE001 - a packed image may have no path at all
+        pass
+    stems = {os.path.splitext(k)[0].lower(): v for k, v in sets.items()}
+    lower = {k.lower(): v for k, v in sets.items()}
+    for n in names:
+        if not n:
+            continue
+        hit = sets.get(n) or lower.get(n.lower()) or stems.get(n.lower()) \
+            or stems.get(os.path.splitext(n)[0].lower())
+        if hit:
+            return hit
+    for n in names[:2]:                  # Blender's 63-byte names
+        if len(n.encode("utf-8")) >= 63:
+            for k, v in lower.items():
+                if k.startswith(n.lower()):
+                    return v
+    return None
+
+
+def match_texture_sets(sets):
+    """{material name: its texture set} for the model's materials whose
+    picture has one."""
+    out = {}
+    if not sets:
+        return out
+    for mat in bpy.data.materials:
+        if not mat.node_tree:
+            continue
+        bsdf = next((n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+        if bsdf is None:
+            continue
+        _sock, pic = _colour_source(mat.node_tree.nodes, bsdf)
+        hit = _texture_set_for(pic.image if pic is not None else None, sets)
+        if hit:
+            out[mat.name] = hit
+    return out
+
+
+def _set_image(mat, pic, path, what):
+    """An image node reading the map at ``path`` exactly where the picture
+    ``pic`` is read (same coordinates, tiling, interpolation), as data."""
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    try:
+        img = bpy.data.images.load(str(path), check_existing=True)
+    except (RuntimeError, OSError) as exc:
+        say("texture set map unreadable", path, exc)
+        return None
+    try:
+        img.colorspace_settings.name = "Non-Color"
+    except (TypeError, ValueError):
+        pass
+    node = nodes.new("ShaderNodeTexImage")
+    node.image = img
+    node.label = PBR_LABEL + what
+    for attr in ("interpolation", "extension", "projection", "projection_blend"):
+        if hasattr(pic, attr):
+            try:
+                setattr(node, attr, getattr(pic, attr))
+            except (TypeError, ValueError):
+                pass
+    node.location = (pic.location.x - 300, pic.location.y - 300)
+    vec = next(iter(pic.inputs["Vector"].links), None)
+    if vec is not None:
+        links.new(vec.from_socket, node.inputs["Vector"])
+    return node
+
+
+def _socket(node, identifier, fallback):
+    return next((s for s in node.inputs if s.identifier == identifier), None) or node.inputs[fallback]
+
+
+def _channels(mat, colour_socket):
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    sep = nodes.new("ShaderNodeSeparateColor")
+    links.new(colour_socket, sep.inputs["Color"])
+    return sep.outputs["Red"], sep.outputs["Green"], sep.outputs["Blue"]
+
+
+def _normal_chain_end(bsdf):
+    """Where a texture set's normal goes: the BSDF's Normal, or the Normal of
+    the last relief (bump) already on it, so that relief sits on top. None
+    when a normal map chosen in the editor is already there (it wins)."""
+    link = next(iter(bsdf.inputs["Normal"].links), None)
+    if link is None:
+        return bsdf.inputs["Normal"]
+    node = link.from_node
+    while node.type == "BUMP":
+        nxt = next(iter(node.inputs["Normal"].links), None)
+        if nxt is None:
+            return node.inputs["Normal"]
+        node = nxt.from_node
+    return None
+
+
+def _uv_map_of(pic):
+    vec = next(iter(pic.inputs["Vector"].links), None)
+    node = vec.from_node if vec is not None else None
+    while node is not None and node.type != "UVMAP":
+        nxt = next((l for s in node.inputs for l in s.links), None)
+        node = nxt.from_node if nxt is not None else None
+    return getattr(node, "uv_map", "") if node is not None else ""
+
+
+def apply_texture_sets(matched, specs):
+    """Each material's texture set on its Principled BSDF, after the editor's
+    settings: normal (OpenGL; a DirectX one with its green flipped),
+    roughness, metalness, ambient occlusion (darkening the colour), opacity,
+    and displacement as relief when there is no normal map. The editor's
+    explicit choices stay: a roughness or metal map picked there wins, its
+    Roughness slider scales the set's roughness (0.5 leaves it as it is), its
+    Metal slider is a floor under the set's metalness; glass and water take
+    only the normal map."""
+    done = []
+    for mat in bpy.data.materials:
+        ts = matched.get(mat.name)
+        if not ts or not mat.node_tree:
+            continue
+        nodes, links = mat.node_tree.nodes, mat.node_tree.links
+        bsdf = next((n for n in nodes if n.type == "BSDF_PRINCIPLED"), None)
+        if bsdf is None:
+            continue
+        colour, pic = _colour_source(nodes, bsdf)
+        if pic is None:
+            continue
+        spec = _spec_for(mat, specs) or {}
+        kind = spec.get("type") or ("glass" if mat.get("ingetrazo_finish") == "glass"
+                                    else "water" if mat.get("ingetrazo_finish") == "water" else "generic")
+        chosen = spec.get("maps") or {}
+        used = []
+        # normal map (or displacement as relief)
+        end = _normal_chain_end(bsdf)
+        if ts.get("normal") and end is not None:
+            node = _set_image(mat, pic, ts["normal"], "normal")
+            if node is not None:
+                col = node.outputs["Color"]
+                if ts.get("normal_flip_green"):
+                    r, g, b = _channels(mat, col)
+                    inv = nodes.new("ShaderNodeMath"); inv.operation = "SUBTRACT"
+                    inv.inputs[0].default_value = 1.0
+                    links.new(g, inv.inputs[1])
+                    comb = nodes.new("ShaderNodeCombineColor")
+                    links.new(r, comb.inputs["Red"]); links.new(inv.outputs[0], comb.inputs["Green"])
+                    links.new(b, comb.inputs["Blue"])
+                    col = comb.outputs["Color"]
+                nmap = nodes.new("ShaderNodeNormalMap")
+                nmap.space = "TANGENT"
+                uv = _uv_map_of(pic)
+                if uv:
+                    nmap.uv_map = uv
+                nmap.inputs["Strength"].default_value = 1.0
+                links.new(col, nmap.inputs["Color"])
+                links.new(nmap.outputs["Normal"], end)
+                used.append("normal (green flipped)" if ts.get("normal_flip_green") else "normal")
+        elif ts.get("displacement") and end is not None and kind not in ("glass", "water"):
+            node = _set_image(mat, pic, ts["displacement"], "displacement")
+            if node is not None:
+                bump = nodes.new("ShaderNodeBump")
+                bump.inputs["Strength"].default_value = 1.0
+                bump.inputs["Distance"].default_value = PBR_DISPLACEMENT_DISTANCE
+                links.new(node.outputs["Color"], bump.inputs["Height"])
+                links.new(bump.outputs["Normal"], end)
+                used.append("displacement as relief")
+        if kind in ("glass", "water"):
+            if used:
+                done.append(f"{mat.name}: {', '.join(used)}")
+            continue
+        # the packed AO / roughness / metal, for what has no map of its own
+        arm = None
+        if ts.get("arm") and not all(ts.get(k) for k in ("ao", "roughness", "metalness")):
+            node = _set_image(mat, pic, ts["arm"], "AO/roughness/metal")
+            if node is not None:
+                arm = _channels(mat, node.outputs["Color"])
+
+        def value(key, channel, what):
+            if ts.get(key):
+                node = _set_image(mat, pic, ts[key], what)
+                if node is not None:
+                    return node.outputs["Color"]
+            return arm[channel] if arm is not None else None
+
+        if not (chosen.get("roughness") or {}).get("source"):
+            rough = value("roughness", 1, "roughness")
+            if rough is not None:
+                k = float(spec.get("roughness", PBR_ROUGHNESS_NEUTRAL)) / PBR_ROUGHNESS_NEUTRAL
+                if abs(k - 1.0) > 1e-6:
+                    mul = nodes.new("ShaderNodeMath"); mul.operation = "MULTIPLY"; mul.use_clamp = True
+                    links.new(rough, mul.inputs[0]); mul.inputs[1].default_value = k
+                    rough = mul.outputs[0]
+                links.new(rough, bsdf.inputs["Roughness"])
+                used.append("roughness")
+        if not (chosen.get("metallic") or {}).get("source"):
+            metal = value("metalness", 2, "metalness")
+            if metal is not None:
+                floor = float(spec.get("metallic", 0.0)) if kind == "generic" else 0.0
+                if floor > 0.0:
+                    mx = nodes.new("ShaderNodeMath"); mx.operation = "MAXIMUM"
+                    links.new(metal, mx.inputs[0]); mx.inputs[1].default_value = floor
+                    metal = mx.outputs[0]
+                links.new(metal, bsdf.inputs["Metallic"])
+                used.append("metalness")
+        ao = value("ao", 0, "ambient occlusion")
+        if ao is not None and colour is not None:
+            mix = nodes.new("ShaderNodeMix")
+            mix.data_type = "RGBA"
+            mix.blend_type = "MULTIPLY"
+            mix.clamp_result = True
+            _socket(mix, "Factor_Float", 0).default_value = PBR_AO_STRENGTH
+            links.new(colour, _socket(mix, "A_Color", 6))
+            links.new(ao, _socket(mix, "B_Color", 7))
+            out = next(s for s in mix.outputs if s.identifier == "Result_Color")
+            links.new(out, bsdf.inputs["Base Color"])
+            used.append("ambient occlusion")
+        if ts.get("opacity"):
+            node = _set_image(mat, pic, ts["opacity"], "opacity")
+            if node is not None:
+                alpha = node.outputs["Color"]
+                old = next(iter(bsdf.inputs["Alpha"].links), None)
+                if old is not None:                      # the picture's own cut-out too
+                    mul = nodes.new("ShaderNodeMath"); mul.operation = "MULTIPLY"
+                    links.new(old.from_socket, mul.inputs[0]); links.new(alpha, mul.inputs[1])
+                    alpha = mul.outputs[0]
+                links.new(alpha, bsdf.inputs["Alpha"])
+                for attr, val in (("surface_render_method", "DITHERED"), ("blend_method", "HASHED")):
+                    if hasattr(mat, attr):
+                        try:
+                            setattr(mat, attr, val)
+                        except (TypeError, ValueError):
+                            pass
+                used.append("opacity")
+        if used:
+            mat["studio_texture_set"] = ", ".join(used)
+            done.append(f"{mat.name}: {', '.join(used)}")
+    for line in done:
+        say("texture set", line)
+    return done
 
 
 # ---- the white model -----------------------------------------------------------------
@@ -1066,8 +1577,17 @@ def measure_exposure(scene, target=0.2, bias=0.0, fraction=25, samples=8, white=
 
 # ---- the render ------------------------------------------------------------------------
 
-def main():
-    job = core["load_job"]()
+#: The live view: grass this much sparser (it is a draft), EEVEE without its costliest effects.
+LIVE_GRASS = 0.35
+LIVE_EEVEE = (("use_raytracing", False), ("use_fast_gi", False), ("shadow_resolution_scale", 0.5),
+              ("use_shadow_jitter_viewport", False), ("shadow_ray_count", 1), ("shadow_step_count", 4),
+              ("use_volumetric_shadows", False))
+
+
+def build(job):
+    """The whole scene of ``job`` from scratch: model, materials, sky, lights,
+    engine, look and exposure. Returns (scene, figures). Called again, in the
+    same Blender, when the live view sends a new job (no restart)."""
     st = job.get("studio") or {}
     bpy.ops.wm.read_factory_settings(use_empty=True)
     scene = bpy.context.scene
@@ -1078,8 +1598,13 @@ def main():
     if specs:
         mark_material_types(specs)
     core["apply_finishes"]()
+    sets = match_texture_sets(st.get("pbr") or {})
     if specs:
-        apply_material_specs(specs)
+        apply_material_specs(specs, sets)
+    if sets and not st.get("white_model"):
+        apply_texture_sets(sets, specs)
+    if specs and st.get("grass", True):
+        build_grass(specs, LIVE_GRASS if st.get("live") else 1.0)
     if st.get("albedo_cap", 0.8):
         cap_albedo(float(st.get("albedo_cap", 0.8)))
     if st.get("white_model"):
@@ -1164,6 +1689,14 @@ def main():
                     setattr(ev, attr, value)
                 except (TypeError, ValueError):
                     pass
+    if st.get("live") and job.get("engine") != "cycles":
+        ev = scene.eevee
+        for attr, value in LIVE_EEVEE:                 # a quick draft, not the final picture
+            if hasattr(ev, attr):
+                try:
+                    setattr(ev, attr, value)
+                except (TypeError, ValueError):
+                    pass
     for attr, value in (st.get("eevee_overrides") or {}).items():   # for tuning
         target = scene.eevee
         for part in attr.split(".")[:-1]:
@@ -1198,11 +1731,58 @@ def main():
             last["text"] = text
             say("stats", text.replace("\n", " "))
 
-    if hasattr(bpy.app.handlers, "render_stats"):
+    if hasattr(bpy.app.handlers, "render_stats"):        # (a new file clears it: added each build)
         bpy.app.handlers.render_stats.append(_stats)
+    return scene, figures
+
+
+def serve(scene, figures):
+    """IngeTrazo's «sync with the view» protocol, and more: each JSON line is a
+    camera to render (``camera``, ``output``, ``width``, ``height``, ``samples``),
+    ``{"reload": "<job.json>"}`` builds that job's scene in THIS Blender (no new
+    start: a changed setting costs only the scene's build), ``{"quit": true}``
+    ends. «ready» after each build, «done <file>» after each image."""
+    say("ready")
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            req = json.loads(line)
+        except ValueError:
+            say("error", "bad request")
+            continue
+        if req.get("quit"):
+            break
+        if req.get("reload"):
+            try:
+                with open(req["reload"], encoding="utf-8") as fh:
+                    job = json.load(fh)
+                scene, figures = build(job)
+            except Exception as exc:  # noqa: BLE001 - say it; the app starts a new Blender
+                say("error", "reload failed", exc)
+                raise
+            say("ready")
+            continue
+        w, h = int(req["width"]), int(req["height"])
+        r = scene.render
+        core["set_camera"](scene, req["camera"], w, h)
+        core["face_figures"](figures, req["camera"])
+        core["set_samples"](scene, int(req.get("samples", 16)))
+        r.resolution_x, r.resolution_y = w, h
+        r.filepath = req["output"]
+        say("rendering", w, "x", h)
+        bpy.ops.render.render(write_still=True)
+        say("done", req["output"])
+
+
+def main():
+    job = core["load_job"]()
+    scene, figures = build(job)
     if job.get("serve"):
-        core["serve"](scene, figures)
+        serve(scene, figures)
         return
+    w, h = int(job["width"]), int(job["height"])
     say("rendering", w, "x", h)
     bpy.ops.render.render(write_still=True)
     if job.get("blend"):

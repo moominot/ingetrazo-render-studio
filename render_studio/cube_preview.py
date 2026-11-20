@@ -13,7 +13,7 @@ import math
 from pathlib import Path
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import (QBrush, QColor, QImage, QLinearGradient, QPainter, QPen,
+from PySide6.QtGui import (QBrush, QColor, QImage, QLinearGradient, QPainter, QPainterPath, QPen,
                            QPixmap, QPolygonF, QRadialGradient, QTransform)
 
 # Light from the upper left: how much each visible face receives.
@@ -68,7 +68,7 @@ def render(params: dict, size: int = 180) -> QPixmap:
     """The preview as a ``size``-px square pixmap (transparent around the cube).
 
     ``params``: ``color`` (r, g, b in 0-1) or None; ``texture`` (image path),
-    ``tile`` ((sw, sh) metres); ``kind`` generic/glass/water/glow; ``roughness``,
+    ``tile`` ((sw, sh) metres); ``kind`` generic/glass/water/glow/grass; ``roughness``,
     ``metallic``, ``bump`` (0-1) and ``glow`` (0-50)."""
     kind = params.get("kind", "generic")
     rough = max(0.0, min(1.0, float(params.get("roughness", 0.5))))
@@ -195,6 +195,9 @@ def render(params: dict, size: int = 180) -> QPixmap:
             p.drawPolygon(poly)
             p.restore()
 
+    if kind == "grass":
+        _grass(p, faces, size, float(params.get("grass_height", 0.08)), base, texture)
+
     # the edges
     p.setBrush(Qt.NoBrush)
     p.setPen(QPen(QColor(0, 0, 0, 70 if not clear else 110), max(1.0, size / 150)))
@@ -202,6 +205,40 @@ def render(params: dict, size: int = 180) -> QPixmap:
         p.drawPolygon(QPolygonF(list(faces[name])))
     p.end()
     return px
+
+
+def _grass(p: QPainter, faces, size: int, height: float, base: QColor, texture) -> None:
+    """Blades on the top face, ``height`` metres tall (the cube is 1 m), in the
+    material's colour (its picture's average when it has one), back to front."""
+    import random
+    if texture is not None and not texture.isNull():
+        avg = texture.scaled(1, 1, Qt.IgnoreAspectRatio, Qt.SmoothTransformation).pixelColor(0, 0)
+    else:
+        avg = QColor(base)
+    rng = random.Random(7)
+    t0, t1, t2, t3 = faces["top"]                       # back, right, front, left corners
+    metre = (faces["left"][2].y() - faces["left"][1].y())    # the cube's vertical edge: 1 m
+    length = max(3.0, metre * max(0.0, height))
+    pts = []
+    for _ in range(int(260 + 900 * min(1.0, 0.12 / max(height, 0.01)))):
+        u, v = rng.random(), rng.random()
+        x = t0.x() + (t1.x() - t0.x()) * u + (t3.x() - t0.x()) * v
+        y = t0.y() + (t1.y() - t0.y()) * u + (t3.y() - t0.y()) * v
+        pts.append((y, x))
+    pts.sort()
+    p.save()
+    p.setBrush(Qt.NoBrush)
+    for y, x in pts:
+        k = 0.55 + 0.6 * rng.random()
+        c = QColor.fromRgbF(min(1.0, avg.redF() * k), min(1.0, avg.greenF() * k), min(1.0, avg.blueF() * k))
+        p.setPen(QPen(c, max(1.0, size / 160.0), Qt.SolidLine, Qt.RoundCap))
+        h = length * (0.6 + 0.4 * rng.random())
+        lean = (rng.random() - 0.5) * h * 0.7
+        tip = QPointF(x + lean, y - h)
+        path = QPainterPath(QPointF(x, y))
+        path.quadTo(QPointF(x + lean * 0.2, y - h * 0.6), tip)
+        p.drawPath(path)
+    p.restore()
 
 
 def _tile_to_face(tf: QTransform, sw: float, sh: float, texture: QImage) -> QTransform:
