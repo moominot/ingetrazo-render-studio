@@ -268,6 +268,10 @@ prado give Tall grass) and lights (llum, luz, LED, neon, làmpada…), in severa
 editor says so; change any setting and they become the material's own (●). The model's transparency is not changed:
 for see-through water or glass, move <b>Transparency</b>.</p>
 <table cellspacing='0' cellpadding='3' width='100%'>
+<tr><td valign='top'><b>Opacity map</b></td><td>Under <b>Transparency</b>: an image that says where the material is see-through, for a
+cut-out such as leaves, a fence or a lace. <b>White is opaque, black is transparent</b>, greys in between; <b>Invert</b> swaps
+them. With a picture on the material the map follows the picture's layout, so a map made for that picture lines up; without
+one it is tiled at the <i>map size</i>. The render and the preview use it; the 3D view shows only the Transparency slider.</td></tr>
 <tr><td valign='top'><b>Cube preview</b></td><td>At the top, a quick preview of the material on a one-metre cube. It follows
 the picture (and its tile size), the colour, the <b>type</b> (glass and water are see-through, glowing ones get a halo) and
 the <b>Roughness</b>, <b>Metal</b>, <b>Relief</b> and <b>Glow</b> sliders, instantly and without Blender. It is only an idea of the

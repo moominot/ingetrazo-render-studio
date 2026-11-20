@@ -97,7 +97,8 @@ def shown_controls(kind: str, *, picture: bool = False, set_relief: bool = False
       texture set that gives the relief and no map chosen, the slider does
       nothing (the set's map is used as it is), so only its map row shows.
     * Glow: glowing only. Ripple size: water. Grass height and density: grass.
-    * Transparency: not grass (the blades cover the face).
+    * Transparency and its map (white opaque, black transparent): not grass (the blades cover the
+      face).
     * Map image size: a map file on a material without a picture (with one,
       maps follow the picture's size). Change picture: a material with one.
     """
@@ -115,7 +116,7 @@ def shown_controls(kind: str, *, picture: bool = False, set_relief: bool = False
     if kind == "grass":
         shown |= {"grass_height", "grass_density"}
     else:
-        shown.add("transparency")
+        shown |= {"transparency", "map:opacity"}
     if file_maps and not picture:
         shown.add("map_size")
     if picture:
@@ -217,12 +218,44 @@ def _paint_name(group):
     return paint.get("mat") if isinstance(paint, dict) and paint.get("mat") else None
 
 
+_USED_CACHE = {"ref": None, "version": None, "out": None}
+
+
+def model_version(scene):
+    """The document's version without Render Studio's own writes (the materials' settings, the
+    look, the lights: they bump it but change no face's paint, and not the model file either; see
+    ``studio_data``). None where the scene has no version."""
+    v = getattr(scene, "content_version", None)
+    return None if v is None else v - getattr(scene, "_rs_not_model", 0)
+
+
 def used_materials(scene) -> dict:
     """name → number of places painted with it: faces over the whole model
     (loose geometry, groups and components, nested) and groups or components
     painted whole. Every material of the document's registry is listed too,
     with 0 when nothing wears it yet, so the list is never empty while the
-    model has named materials."""
+    model has named materials.
+
+    Remembered for the model's ``content_version`` (selecting does not change
+    it): it reads every face's paint, over 588 000 faces about a second and
+    a half each time the panels ask (2026-11-20)."""
+    import weakref
+    version = model_version(scene)
+    cache = _USED_CACHE
+    if (version is not None and cache["out"] is not None
+            and cache["version"] == version
+            and cache["ref"] is not None and cache["ref"]() is scene):
+        return dict(cache["out"])
+    out = _used_materials(scene)
+    if version is not None:
+        try:
+            cache.update(ref=weakref.ref(scene), version=version, out=out)
+        except TypeError:
+            cache.update(ref=None, version=None, out=None)
+    return dict(out)
+
+
+def _used_materials(scene) -> dict:
     counts: dict = {}
     seen: set = set()
 

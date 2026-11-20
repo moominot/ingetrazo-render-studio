@@ -107,7 +107,7 @@ app = App(); scene = app.scene
 quad(scene.mesh, [(-3, -3, 0), (3, -3, 0), (3, 3, 0), (-3, 3, 0)])
 proto = Mesh(); quad(proto, [(0, 0, 0), (0.4, 0, 0), (0.4, 0.4, 0), (0, 0.4, 0)])
 lamp = Group(proto, name="Floor lamp"); lamp.xform = QMatrix4x4(); lamp.xform.translate(1, 1, 0)
-scene.groups.append(lamp)
+scene.groups.append(lamp); scene.version += 1  # direct edits: all_lights follows the version
 hist = app.viewport.history
 
 k1 = ops.add_free(app, L.new_light("point", pos=(0, 0, 2.5)))
@@ -120,11 +120,11 @@ loc = L.group_lights(lamp)[0]
 ok(close(loc["pos"], (0.2, 0.2, 1.6)), f"a light on an object is kept in its axes ({loc['pos']})")
 e = ops.entry(scene, k2)
 ok(e and close(e["world"]["pos"], (1.2, 1.2, 1.6)), "…and shown in the world where it was put")
-lamp.xform.translate(2, 0, 0)
+lamp.xform.translate(2, 0, 0); scene.version += 1   # direct edit: the caches follow the version
 ok(close(ops.entry(scene, k2)["world"]["pos"], (3.2, 1.2, 1.6)), "moving the object moves its light")
-r = QMatrix4x4(); r.rotate(90, 0, 0, 1); lamp.xform = lamp.xform * r
+r = QMatrix4x4(); r.rotate(90, 0, 0, 1); lamp.xform = lamp.xform * r; scene.version += 1
 ok(close(ops.entry(scene, k2)["world"]["pos"], (2.8, 1.2, 1.6)), "turning it turns the light about it")
-twin = copy_group(lamp, QVector3D(0, 5, 0)); scene.groups.append(twin)
+twin = copy_group(lamp, QVector3D(0, 5, 0)); scene.groups.append(twin); scene.version += 1
 kt = ("object", (twin.uid,), loc["id"])
 ok(ops.entry(scene, kt) is not None and close(ops.entry(scene, kt)["world"]["pos"], (2.8, 6.2, 1.6)),
    "a copy of the component carries its own light")
@@ -144,7 +144,7 @@ hist.undo()
 ok(ops.entry(scene, k2)["light"]["power"] == 1500, "undo puts the object's light back")
 
 # hidden objects give no light; lights switched off are not rendered
-twin.hidden = True
+twin.hidden = True; scene.version += 1
 ok(ops.entry(scene, kt) is None, "a hidden object's light is not there")
 twin.hidden = False
 ops.update(app, k1, dict(ops.entry(scene, k1)["world"], on=False))
@@ -164,6 +164,7 @@ ok(ka[0] == "object" and not L.free_lights(scene.plugin_data) and close(ops.entr
 # the Render tab's lights: read, edited where that tab can follow, converted
 scene.plugin_data["render_blender"] = {"ambience": "night", "lights": [
     {"kind": "spot", "pos": [0, 0, 3], "dir": [0, 0, -1], "power": 1500, "angle": 50, "kelvin": 3000, "on": True}]}
+scene.version += 1
 tab = [e for e in L.all_lights(scene) if e["source"] == "tab"]
 ok(len(tab) == 1 and tab[0]["light"]["type"] == "spot" and tab[0]["light"]["unit"] == "W"
    and tab[0]["light"]["power"] == 1500, "the Render tab's spot is read in Blender watts")
@@ -184,10 +185,11 @@ ok([panel.tabs.tabText(i) for i in range(panel.tabs.count())] == ["Settings", "L
 lt_tab = panel.lights_tab
 heads = [lt_tab.tree.topLevelItem(i).text(0) for i in range(lt_tab.tree.topLevelItemCount())]
 ok(heads == ["On objects", "From IngeTrazo's Render tab"], f"the list shows the sections that have lights ({heads})")
+lt_tab.refresh()   # nobody sees this tab offscreen, so it did not rebuild its list on the edits above
 lt_tab.select(ka); ok(lt_tab.selected_key() == ka, "choosing a light in the list")
 ok(lt_tab.spot_angle.isHidden() and not lt_tab.radius.isHidden() and lt_tab.aim_row.isHidden(),
    "a point light shows its bulb size, no beam and no aim")
-lt_tab.kind.setCurrentIndex(lt_tab.kind.findData("area")); lt_tab._flush()
+lt_tab.kind.setCurrentIndex(lt_tab.kind.findData("area")); lt_tab._flush(); lt_tab.refresh()   # (hidden tab: catch up as showEvent would)
 e = ops.entry(scene, lt_tab.selected_key())
 ok(e["light"]["type"] == "area" and not lt_tab.shape.isHidden() and not lt_tab.aim_row.isHidden(),
    "its kind changed to area: shape and aim shown")
@@ -233,6 +235,23 @@ ok(all(set(l) >= {"type", "pos", "dir", "energy", "color", "basis"} for l in st_
 key_a = panel.live_key()
 ops.update(app, ka, dict(ops.entry(scene, ka)["world"], power=1, on=True))
 ok(panel.live_key()[2] != key_a[2], "the live view sees a light's change")
+
+# ---- all_lights is remembered for the model's version (it walks every placement)
+calls = []
+_real = L._all_lights
+L._all_lights = lambda s: (calls.append(1), _real(s))[1]
+scene.version += 1                      # whatever was remembered is out of date
+try:
+    first = L.all_lights(scene); again = L.all_lights(scene)
+    ok(len(calls) == 1 and first == again and first is not again, "all_lights: the second ask is answered from memory (a copy of the list)")
+    scene.selection.clear(); scene.bump_view() if hasattr(scene, "bump_view") else None
+    L.all_lights(scene)
+    ok(len(calls) == 1, "a selection change (view-only bump) does not walk the model again")
+    scene.version += 1
+    L.all_lights(scene)
+    ok(len(calls) == 2, "a change of the document does")
+finally:
+    L._all_lights = _real
 
 print("FAILED" if fails else "ALL PASSED", len(fails))
 sys.exit(1 if fails else 0)

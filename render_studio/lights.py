@@ -577,11 +577,38 @@ def render_tab_lights(scene) -> list:
     return [c for c in (from_render_tab(lt, i) for i, lt in enumerate(lts)) if c is not None]
 
 
+_ALL_CACHE = {"ref": None, "version": None, "out": None}
+
+
 def all_lights(scene) -> list:
     """Every light, in the world: ``[{"key", "source", "light", "world", "group"}]``.
 
     ``key``: ``("free", id)``, ``("object", path, id)`` or ``("tab", index)`` —
-    what the editor and the viewport name a light by."""
+    what the editor and the viewport name a light by.
+
+    Remembered for the model's ``content_version`` (the selection and the
+    camera do not change it): the walk below visits every placement of the
+    model, and the lights overlay asks for it on every frame and the Lights
+    tab on every change. On a model of 8 700 placements it took 1.4 s each
+    time (2026-11-20). The entries are shared between callers; the list is
+    a copy."""
+    import weakref
+    version = getattr(scene, "content_version", None)
+    cache = _ALL_CACHE
+    if (version is not None and cache["out"] is not None
+            and cache["version"] == version
+            and cache["ref"] is not None and cache["ref"]() is scene):
+        return list(cache["out"])
+    out = _all_lights(scene)
+    if version is not None:
+        try:
+            cache.update(ref=weakref.ref(scene), version=version, out=out)
+        except TypeError:                 # a scene that cannot be weak-referenced
+            cache.update(ref=None, version=None, out=None)
+    return list(out)
+
+
+def _all_lights(scene) -> list:
     out = []
     for lt in free_lights(getattr(scene, "plugin_data", None)):
         out.append({"key": ("free", lt["id"]), "source": "free", "light": lt, "world": lt, "group": None})

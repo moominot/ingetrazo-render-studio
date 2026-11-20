@@ -25,6 +25,7 @@ import json
 import math
 import os
 import sys
+import time
 
 import bpy
 from mathutils import Vector
@@ -381,13 +382,13 @@ def fix_normals():
     say("normals", f"custom normals cleared on {n} meshes")
 
 
-def cap_albedo(cap=0.8):
+def cap_albedo(cap=0.8, only=None):
     """No material reflects more than ``cap`` of the light: IngeTrazo's
     default «paper white» is 0.96, whiter than paper, and under a path tracer
     a white wall that bright glows like the sky (real white paint is about
     0.8). Colours are scaled down whole, so their hue stays."""
     n = 0
-    for mat in bpy.data.materials:
+    for mat in _live_materials(only):
         if not mat.node_tree or mat.name.startswith("IngeTrazo ground"):
             continue
         bsdf = next((x for x in mat.node_tree.nodes if x.type == "BSDF_PRINCIPLED"), None)
@@ -504,11 +505,11 @@ def _spec_for(mat, specs):
     return specs.get(base2)
 
 
-def mark_material_types(specs):
+def mark_material_types(specs, only=None):
     """Before IngeTrazo's finishes run: glass and water become those
     finishes (its full Blender recipes); generic and glow drop a guessed
     glass/water finish."""
-    for mat in bpy.data.materials:
+    for mat in _live_materials(only):
         spec = _spec_for(mat, specs)
         if not spec:
             continue
@@ -601,6 +602,28 @@ def _map_value(mat, bsdf, m):
         links.new(out, rng.inputs["Value"])
         out = rng.outputs["Result"]
     return out
+
+
+def _apply_opacity_map(mat, bsdf, alpha):
+    """Put a 0..1 value (white opaque, black transparent) on the material's Alpha, times what
+    it already has (the picture's own cut-out, or the opacity the model gave the material), and
+    let the renderer blend it: a cut-out is dithered, so it casts a shadow through its holes."""
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    socket = bsdf.inputs["Alpha"]
+    old = next(iter(socket.links), None)
+    mul = nodes.new("ShaderNodeMath"); mul.operation = "MULTIPLY"
+    if old is not None:
+        links.new(old.from_socket, mul.inputs[0])
+    else:
+        mul.inputs[0].default_value = float(socket.default_value)
+    links.new(alpha, mul.inputs[1])
+    links.new(mul.outputs[0], socket)
+    for attr, val in (("surface_render_method", "DITHERED"), ("blend_method", "HASHED")):
+        if hasattr(mat, attr):
+            try:
+                setattr(mat, attr, val)
+            except (TypeError, ValueError):
+                pass
 
 
 def _scaled(mat, socket, factor):
@@ -819,14 +842,14 @@ def _water_ripples(mat, bsdf, relief, size):
     links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
 
 
-def apply_material_specs(specs, with_sets=()):
+def apply_material_specs(specs, with_sets=(), only=None):
     """After IngeTrazo's finishes: the editor's numbers — and maps — on each
     material. With a map, the setting's slider scales it. ``with_sets``: the
     materials whose picture has a texture set (:func:`apply_texture_sets`):
     their own normal and displacement maps replace the AUTOMATIC relief (a
     relief source chosen in the editor still applies, on top)."""
     done = 0
-    for mat in bpy.data.materials:
+    for mat in _live_materials(only):
         spec = _spec_for(mat, specs)
         if not spec or not mat.node_tree:
             continue
@@ -844,6 +867,12 @@ def apply_material_specs(specs, with_sets=()):
                 val = _map_value(mat, bsdf, m)
                 if val is not None:
                     mat.node_tree.links.new(_scaled(mat, val, spec[key]), bsdf.inputs[names[0]])
+        m = maps.get("opacity") or {}
+        if m.get("source") and kind != "grass":
+            val = _map_value(mat, bsdf, m)          # where it is see-through: black is transparent
+            if val is not None:
+                _apply_opacity_map(mat, bsdf, val)
+                mat["studio_opacity_map"] = True
         if kind in ("generic", "glow", "grass"):
             core["_set"](bsdf, ("Transmission Weight", "Transmission"), 0.0)
         elif kind == "glass" and "transparency" in spec:
@@ -1077,7 +1106,7 @@ def build_grass(specs, factor=1.0):
     ``grass_density`` (tufts per m²; the height's automatic one when it has none),
     ``factor`` times as dense. Returns the number of tufts asked for."""
     kinds, dens = {}, {}
-    for mat in bpy.data.materials:
+    for mat in _live_materials():
         spec = _spec_for(mat, specs)
         if spec and spec.get("type") == "grass" and mat.node_tree:
             kinds[mat.name] = float(spec.get("grass_height", 0.08))
@@ -1179,7 +1208,7 @@ def match_texture_sets(sets):
     out = {}
     if not sets:
         return out
-    for mat in bpy.data.materials:
+    for mat in _live_materials():
         if not mat.node_tree:
             continue
         bsdf = next((n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
@@ -1267,7 +1296,7 @@ def apply_texture_sets(matched, specs):
     Metal slider is a floor under the set's metalness; glass and water take
     only the normal map."""
     done = []
-    for mat in bpy.data.materials:
+    for mat in _live_materials():
         ts = matched.get(mat.name)
         if not ts or not mat.node_tree:
             continue
@@ -1397,7 +1426,7 @@ def white_model(skip_ground=True):
     """Every material white and matte; glass and water stay see-through
     (Enscape's white mode)."""
     n = 0
-    for mat in bpy.data.materials:
+    for mat in _live_materials():
         if skip_ground and mat.name.startswith("IngeTrazo ground"):
             continue
         if not mat.node_tree:
@@ -1523,7 +1552,7 @@ def measure_exposure(scene, target=0.2, bias=0.0, fraction=25, samples=8, white=
     # Glowing materials (light panels, screens) are metered as off: they
     # are meant to shine, not to darken the whole picture.
     glows = []
-    for mat in bpy.data.materials:
+    for mat in _live_materials():
         if mat.get("studio_glow") and mat.node_tree:
             bsdf = next((n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
             lvl = mat.node_tree.nodes.get("studio_glow_level")
@@ -1689,7 +1718,7 @@ def _cap_material(section):
     if name:
         mat = bpy.data.materials.get(name)
         if mat is None:
-            mat = next((m for m in bpy.data.materials if m.name.startswith(name + ".")), None)
+            mat = next((m for m in _live_materials() if m.name.startswith(name + ".")), None)
         if mat is not None:
             return mat
         say("section material not in the model", name, "- its colour only")
@@ -1852,15 +1881,180 @@ def place_proxies(scene, entries, section=None):
     return placed
 
 
+# ---- changing materials without a new scene ------------------------------------------------------
+#
+# The live view asks for a new scene whenever anything changes, and building one again costs the
+# model's import (3.9 s on a model of 588 000 faces) and the exposure meter (2 s): about 9 s for a
+# slider of the material editor. A change that only touches some materials is made in place: those
+# materials go back to what the importer made (a copy kept when the scene was built) and the steps
+# that set them run again for them alone. Anything else (the look, the sky, the lights, a
+# section, grass, a change that moves the light) builds the scene again, as before.
+
+PRISTINE_KEY = "studio_pristine"
+_STATE = {"pristine": {}, "sig": None, "specs": None, "pbr": None, "figures": None}
+
+
+def _live_materials(only=None):
+    """The scene's materials, not the kept copies; ``only``: just those names."""
+    return [m for m in bpy.data.materials
+            if not m.get(PRISTINE_KEY) and (only is None or m.name in only)]
+
+
+def keep_pristine():
+    """A copy of every material as the importer made it. The copy carries none of the material's
+    custom properties (IngeTrazo's finish among them: its steps would work on the copy), they
+    wait in one text."""
+    _STATE["pristine"] = {}
+    for mat in list(_live_materials()):
+        pc = mat.copy()
+        props = {}
+        for k in list(pc.keys()):
+            v = pc[k]
+            if hasattr(v, "to_dict"):
+                v = v.to_dict()
+            elif hasattr(v, "to_list"):
+                v = v.to_list()
+            try:
+                json.dumps(v)
+            except TypeError:
+                continue
+            props[k] = v
+            del pc[k]
+        pc[PRISTINE_KEY] = True
+        pc["studio_props"] = json.dumps(props)
+        pc.use_fake_user = True
+        _STATE["pristine"][mat.name] = pc
+
+
+def restore_material(name):
+    """The material ``name`` as the importer made it, in place of what the steps made of it (every
+    object that wears it follows). Returns it, or None when no copy is kept."""
+    pc = _STATE["pristine"].get(name)
+    cur = bpy.data.materials.get(name)
+    if pc is None or cur is None:
+        return None
+    new = pc.copy()
+    for k in list(new.keys()):
+        del new[k]
+    new.use_fake_user = False
+    for k, v in json.loads(pc.get("studio_props", "{}")).items():
+        new[k] = v
+    cur.user_remap(new)
+    bpy.data.materials.remove(cur)
+    new.name = name
+    for img in [i for i in bpy.data.images if i.name.startswith("studio relief " + name)]:
+        bpy.data.images.remove(img)                    # the relief the last pass baked from its picture
+    return new
+
+
+def finishes_for(only):
+    """IngeTrazo's finishes (its function works on every material) for ``only`` alone: the others
+    hold their finish out of sight while it runs."""
+    held = {}
+    for m in _live_materials():
+        if m.name not in only and "ingetrazo_finish" in m.keys():
+            held[m.name] = m["ingetrazo_finish"]
+            del m["ingetrazo_finish"]
+    try:
+        core["apply_finishes"]()
+    finally:
+        for n, v in held.items():
+            m = bpy.data.materials.get(n)
+            if m is not None:
+                m["ingetrazo_finish"] = v
+
+
+def _rest_signature(job):
+    """What a scene depends on besides its materials, the camera and the picture's size."""
+    j = {k: v for k, v in job.items() if k not in ("camera", "output", "width", "height", "samples", "studio")}
+    s = {k: v for k, v in (job.get("studio") or {}).items() if k not in ("materials", "pbr")}
+    return json.dumps([j, s], sort_keys=True, default=str)
+
+
+def _same(a, b):
+    return json.dumps(a, sort_keys=True, default=str) == json.dumps(b, sort_keys=True, default=str)
+
+
+def _light_affecting(a, b):
+    """Whether a change of one material's settings moves the light of the scene (it glows, lets light
+    through, or stops doing either): the exposure is measured again, which needs a scene built anew."""
+    a, b = a or {}, b or {}
+    kinds = ("glow", "glass", "water")
+    ka, kb = a.get("type", "generic"), b.get("type", "generic")
+    if ka != kb and (ka in kinds or kb in kinds):
+        return True
+    if kb == "glow" and (a.get("glow") != b.get("glow")
+                         or not _same((a.get("maps") or {}).get("glow"), (b.get("maps") or {}).get("glow"))):
+        return True
+    return kb in ("glass", "water") and a.get("transparency") != b.get("transparency")
+
+
+def _patch_names(job):
+    """The names of the materials to change in place for ``job``, or None when the scene has to be
+    built again: the scene was not built with copies to restore, something besides the materials
+    changed, a section or a white model is on, a grass material is involved, or the change moves
+    the light."""
+    st = job.get("studio") or {}
+    if _STATE["sig"] is None or not _STATE["pristine"] or st.get("section") or st.get("white_model"):
+        return None
+    if _STATE["sig"] != _rest_signature(job):
+        return None
+    old_s, new_s = _STATE["specs"] or {}, st.get("materials") or {}
+    old_p, new_p = _STATE["pbr"] or {}, st.get("pbr") or {}
+    names = set()
+    for m in _live_materials():
+        a, b = _spec_for(m, old_s), _spec_for(m, new_s)
+        if _same(a, b) and _same(_spec_for(m, old_p), _spec_for(m, new_p)):
+            continue
+        if m.name not in _STATE["pristine"]:
+            return None
+        if (a or {}).get("type") == "grass" or (b or {}).get("type") == "grass" or _light_affecting(a, b):
+            return None
+        names.add(m.name)
+    return names
+
+
+def update(job):
+    """The scene of ``job`` from the one that is built: when only some materials changed, those are
+    made again in place (a slider costs a few hundred milliseconds, not the whole scene); otherwise
+    the scene is built from scratch. Returns (scene, figures) as :func:`build` does."""
+    names = _patch_names(job)
+    if names is None:
+        return build(job)
+    t0 = time.perf_counter()
+    st = job.get("studio") or {}
+    for name in names:
+        restore_material(name)
+    specs = st.get("materials") or {}
+    if specs:
+        mark_material_types(specs, names)
+    finishes_for(names)
+    sets = match_texture_sets(st.get("pbr") or {})
+    if specs:
+        apply_material_specs(specs, sets, names)
+    mine = {k: v for k, v in sets.items() if k in names}
+    if mine:
+        apply_texture_sets(mine, specs)
+    if st.get("albedo_cap", 0.8):
+        cap_albedo(float(st.get("albedo_cap", 0.8)), names)
+    _STATE["specs"] = json.loads(json.dumps(specs))
+    _STATE["pbr"] = json.loads(json.dumps(st.get("pbr") or {}))
+    say("patch", f"{len(names)} materials in place, {time.perf_counter() - t0:.2f} s")
+    return bpy.context.scene, _STATE["figures"]
+
+
 def build(job):
     """The whole scene of ``job`` from scratch: model, materials, sky, lights,
     engine, look and exposure. Returns (scene, figures). Called again, in the
     same Blender, when the live view sends a new job (no restart)."""
     st = job.get("studio") or {}
+    _STATE.update(pristine={}, sig=None, specs=None, pbr=None, figures=None)
     bpy.ops.wm.read_factory_settings(use_empty=True)
     scene = bpy.context.scene
     core["import_model"](job["glb"])
     place_proxies(scene, st.get("proxies") or [], st.get("section"))
+    if not st.get("section") and not st.get("white_model"):
+        keep_pristine()                  # to change a material later without building the scene again
     if st.get("section"):
         clip_section(st["section"])
     if st.get("fix_normals", False):
@@ -2020,6 +2214,8 @@ def build(job):
 
     if hasattr(bpy.app.handlers, "render_stats"):        # (a new file clears it: added each build)
         bpy.app.handlers.render_stats.append(_stats)
+    _STATE.update(sig=_rest_signature(job), specs=json.loads(json.dumps(st.get("materials") or {})),
+                  pbr=json.loads(json.dumps(st.get("pbr") or {})), figures=figures)
     return scene, figures
 
 
@@ -2027,8 +2223,9 @@ def serve(scene, figures):
     """IngeTrazo's «sync with the view» protocol, and more: each JSON line is a
     camera to render (``camera``, ``output``, ``width``, ``height``, ``samples``),
     ``{"reload": "<job.json>"}`` builds that job's scene in THIS Blender (no new
-    start: a changed setting costs only the scene's build), ``{"quit": true}``
-    ends. «ready» after each build, «done <file>» after each image."""
+    start: a changed setting costs only the scene's build), ``{"update": "<job.json>"}``
+    the same but changing only the materials that changed when that is all that did (see
+    :func:`update`), ``{"quit": true}`` ends. «ready» after each build, «done <file>» after each image."""
     say("ready")
     for line in sys.stdin:
         line = line.strip()
@@ -2048,6 +2245,16 @@ def serve(scene, figures):
                 scene, figures = build(job)
             except Exception as exc:  # noqa: BLE001 - say it; the app starts a new Blender
                 say("error", "reload failed", exc)
+                raise
+            say("ready")
+            continue
+        if req.get("update"):
+            try:
+                with open(req["update"], encoding="utf-8") as fh:
+                    job = json.load(fh)
+                scene, figures = update(job)
+            except Exception as exc:  # noqa: BLE001 - say it; the app starts a new Blender
+                say("error", "update failed", exc)
                 raise
             say("ready")
             continue

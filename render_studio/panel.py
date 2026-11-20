@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import time
 from pathlib import Path
@@ -23,7 +24,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QFormLayout, Q
                                QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSpinBox, QTabWidget,
                                QToolButton, QVBoxLayout, QWidget)
 
-from . import lights as studio_lights, materials as mats, output, pbr, presets, proxies, section, settings_store, widgets
+from . import lights as studio_lights, materials as mats, output, pbr, presets, proxies, section, settings_store, studio_data, widgets
 from .live import LiveSession
 from .preview import ImageWindow  # noqa: F401 - re-exported: panel.ImageWindow
 from .widgets import SliderRow
@@ -168,7 +169,7 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
     out_of_file = [g for g in proxies.shown_proxies(scene) if g not in missing] if placed else []
     # The ground is sized and set at the model's foot with the proxies in it.
     ground_block = rb.ground_dict(scene) if (ground and out_of_file) else None
-    with _model_kept(work if reuse_model else None), proxies.left_out(out_of_file):
+    with _model_kept(work if reuse_model else None), proxies.left_out(out_of_file), _shared_copies(scene):
         job = rb.write_job(scene, camera, work, engine=engine, quality=quality, width=width,
                            height=height, ground=ground, ambience=ambience,
                            lights=tab_lights, serve=serve)
@@ -191,6 +192,59 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
     script = work / "studio_scene.py"
     shutil.copyfile(HERE / "blender" / "studio_scene.py", script)
     return job, script
+
+
+#: Above this many faces, counting every copy of every component, the model file is written with
+#: its copies SHARED (one mesh per component, nodes that place it) instead of one flat list of
+#: world triangles. IngeTrazo writes the flat one for Blender (it carries the camera, to turn the
+#: face-me figures), and on a 588 000-face model of 8 700 placements that is 4.3 million
+#: triangles of Python objects: over 21 GB and more than 7 minutes without finishing; shared, the
+#: same model is 87 MB, 33 s and 4 GB. Blender turns the figures itself either way, and the
+#: section cut already copies a mesh shared by several objects.
+INSTANCED_FROM_FACES = int(os.environ.get("RENDER_STUDIO_INSTANCED_FROM", "150000"))
+
+
+def expanded_faces(scene) -> int:
+    """The model's faces counting every copy of every component (what the flat export writes);
+    counted from the shared meshes, without touching a face."""
+    from core.group import iter_placements
+    n = len(getattr(getattr(scene, "loose_mesh", None), "faces", None) or ())
+    for g in getattr(scene, "groups", None) or ():
+        if getattr(g, "hidden", False):
+            continue
+        n += sum(len(x.mesh.faces) for x, _m in iter_placements(g))
+    return n
+
+
+class _shared_copies:
+    """While IngeTrazo's job writer runs: a big model is exported with its copies shared (see
+    :data:`INSTANCED_FROM_FACES`), by dropping the camera from the call to ``save_glb``."""
+
+    def __init__(self, scene):
+        try:
+            self.on = expanded_faces(scene) > INSTANCED_FROM_FACES
+        except Exception:  # noqa: BLE001 - never stops a render: the flat export, as before
+            _log.exception("faces not counted")
+            self.on = False
+        self.saved = None
+
+    def __enter__(self):
+        if not self.on:
+            return self
+        import formats.gltf as gltf
+        real = self.saved = gltf.save_glb
+        _log.info("model exported with its copies shared")
+
+        def save_glb(scene, path, face_me=None, only=None):
+            return real(scene, path, None, only)
+        gltf.save_glb = save_glb
+        return self
+
+    def __exit__(self, *exc):
+        if self.saved is not None:
+            import formats.gltf as gltf
+            gltf.save_glb = self.saved
+        return False
 
 
 class _model_kept:
@@ -341,7 +395,7 @@ class StudioPanel(QWidget):
         from .sun_panel import SunTab
         self.sun_tab = SunTab(app, self)
         from .section_panel import SectionTab
-        self.section_tab = SectionTab(app)
+        self.section_tab = SectionTab(app, live=self._preview_open)
         for tab_widget, title in ((self.sun_tab, "Sun"), (self.section_tab, "Section"), (self.output_tab, "Output")):
             sc = QScrollArea()
             sc.setWidgetResizable(True)
@@ -578,6 +632,12 @@ class StudioPanel(QWidget):
             win.set_mode("preview")
             self._start_live()
 
+    def _preview_open(self) -> bool:
+        """The preview window is on screen and its live view runs."""
+        win = self.window
+        return bool(win is not None and win.isVisible()
+                    and self._live is not None and self._live.active)
+
     def preview_closed(self):
         """The window was closed: the live Blender is not needed any more. (A render under
         way goes on, and shows its picture when it is ready.)"""
@@ -592,6 +652,7 @@ class StudioPanel(QWidget):
         self._live.set_follow_camera(win.follow_camera_box.isChecked())
         self._live.set_follow_changes(win.follow_changes_box.isChecked())
         self._live.start()
+        self.section_tab.document_changed()       # it follows the model from here on
 
     def _stop_live(self):
         if self._live is not None and self._live.active:
@@ -738,7 +799,7 @@ class StudioPanel(QWidget):
             return
         data["settings"] = new
         self._known = new
-        self.app.set_document_data(data)
+        studio_data.write(self.app, data)
 
     # -- settings ---------------------------------------------------------------
     def _preset_changed(self, _i):
@@ -812,7 +873,9 @@ class StudioPanel(QWidget):
         if self.editor is None:
             self.editor = MaterialEditor(self.app, _lang(), self)
         else:
-            self.editor.refresh()
+            from .material_editor import clear_swatches
+            clear_swatches()                 # a picture that changed on disk shows now
+            self.editor.refresh(force=True)
         self.editor.show()
         self.editor.raise_()
         self.editor.activateWindow()

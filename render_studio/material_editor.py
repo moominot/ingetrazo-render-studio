@@ -9,6 +9,7 @@ the next render.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, QSize, Qt, QTimer
@@ -20,7 +21,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QF
 from . import cube_preview
 from . import opacity as opacity_mod
 from . import materials as M
-from . import pbr
+from . import pbr, studio_data
 
 _FIELDS = (  # key, label, lo, hi, tip
     ("roughness", "Roughness", 0.0, 1.0, "0 a mirror-like polish, 1 fully matte."),
@@ -38,12 +39,43 @@ _SOURCES = {
     "bump": (("", "Automatic"), ("grain", "Fine grain"), ("picture", "Picture (B/W)"),
              ("file", "Height map file…"), ("normal", "Normal map file…")),
     "glow": (("", "No map"), ("picture", "Picture (B/W)"), ("file", "Mask file…")),
+    # white = opaque, black = transparent (a cut-out: leaves, a fence, a lace)
+    "opacity": (("", "No map"), ("file", "Image file… (black = transparent)")),
+}
+_MAP_TIPS = {
+    "opacity": "A picture that says where the material is see-through: white is opaque, black is transparent, "
+               "greys in between (a cut-out: leaves, a fence, a lace). The render and the preview use it; the "
+               "3D view shows the Transparency slider's value. It follows the material's own picture's "
+               "layout when it has one.",
 }
 MAP_FILTER = "Images (*.png *.jpg *.jpeg *.tif *.tiff *.bmp *.exr *.hdr *.tga)"
 _SETTINGS = "render_studio/"
 
 
+#: The list's little pictures, kept: reading and scaling every material's picture on each refresh took
+#: half a second on a model with 168 materials, and the list is rebuilt on every change of the
+#: document. Emptied when the editor is shown (a picture changed on disk shows then).
+_SWATCHES: dict = {}
+
+
+def clear_swatches() -> None:
+    _SWATCHES.clear()
+
+
+def _swatch_key(mat) -> tuple:
+    tex = (getattr(mat, "texture", None) or {}).get("path") if mat is not None else None
+    return (str(tex or ""), tuple(float(c) for c in (getattr(mat, "color", None) or (0.8, 0.8, 0.8))[:3]))
+
+
 def _swatch(mat) -> QIcon:
+    key = _swatch_key(mat)
+    icon = _SWATCHES.get(key)
+    if icon is None:
+        icon = _SWATCHES[key] = _make_swatch(mat)
+    return icon
+
+
+def _make_swatch(mat) -> QIcon:
     pix = QPixmap(28, 28)
     tex = (getattr(mat, "texture", None) or {}).get("path")
     if tex and Path(tex).is_file():
@@ -104,8 +136,8 @@ class MapRow(QWidget):
         for value, label in _SOURCES[key]:
             self.source.addItem(label, value)
         self._first_label = _SOURCES[key][0][1]
-        self.source.setToolTip("Where the setting varies over the surface. With a map, "
-                               "the slider above scales it.")
+        self.source.setToolTip(_MAP_TIPS.get(key) or (
+            "Where the setting varies over the surface. With a map, the slider above scales it."))
         self.source.activated.connect(self._source_chosen)
         lay.addWidget(self.source, 2)
         self.invert = QCheckBox("Invert")
@@ -330,6 +362,9 @@ class MaterialEditor(QDialog):
         self._rows["transparency"] = trow
         self.sliders["transparency"] = self.transparency
         self.values["transparency"] = self.transparency_value
+        self.maps["opacity"] = MapRow("opacity", self._changed)
+        form.addRow("", self.maps["opacity"])
+        self._rows["map:opacity"] = self.maps["opacity"]
         for key, label, lo, hi, tip in _FIELDS:
             s = QSlider(Qt.Horizontal)
             s.setRange(0, 100)
@@ -441,7 +476,7 @@ class MaterialEditor(QDialog):
         else:
             mats[name] = spec
         data["materials"] = mats
-        self.app.set_document_data(data)
+        studio_data.write(self.app, data)
 
     def texture_set(self, name):
         """The companion maps of the material's picture (pbr.find_maps), or None;
@@ -478,6 +513,7 @@ class MaterialEditor(QDialog):
             self.maps["bump"].set_texture_set(ts["normal"], normal=True, what="normal map")
         else:
             self.maps["bump"].set_texture_set(ts.get("displacement", ""), what="displacement")
+        self.maps["opacity"].set_texture_set(ts.get("opacity") or "", what="opacity map")
         self.maps["glow"].set_texture_set("")
 
     def detected(self, name):
@@ -494,12 +530,23 @@ class MaterialEditor(QDialog):
         return tex if tex and Path(tex).is_file() else ""
 
     # -- the list -----------------------------------------------------------------
-    def refresh(self):
-        """Rebuild the list from the document (keeps the current material)."""
+    def refresh(self, force=False):
+        """Rebuild the list from the document (keeps the current material). Nothing is rebuilt
+        when no row would change (it runs on every change of the document, selections included);
+        ``force`` rebuilds anyway."""
         current = self.current_name()
         scene = self.app.scene
         used = M.used_materials(scene)
         specs = self.specs()
+        shown = [(name, "● " if name in specs else "◦ " if self.detected(name) else "", used[name],
+                  _swatch_key(scene.materials.get(name))) for name in sorted(used, key=str.lower)]
+        spec_sig = json.dumps(specs, sort_keys=True, default=str)
+        if not force and shown == getattr(self, "_shown_rows", None) and self.list.count() == len(shown):
+            if spec_sig != getattr(self, "_shown_specs", None):
+                self._shown_specs = spec_sig       # a setting changed (an undo, say): the pane only
+                self._show(self.list.currentItem())
+            return
+        self._shown_rows, self._shown_specs = shown, spec_sig
         self._loading = True
         self.list.clear()
         for name in sorted(used, key=str.lower):

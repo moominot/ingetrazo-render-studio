@@ -208,7 +208,30 @@ def _texture_of(attrs):
     return tex if isinstance(tex, dict) and tex.get("path") else None
 
 
+_PICS_CACHE = {"ref": None, "version": None, "out": None}
+
+
 def model_pictures(scene) -> dict:
+    """:func:`_model_pictures`, remembered for the model's version (it reads every face's paint: 0.8 s on
+    a model of 588 000 faces, on every job the live view writes). Render Studio's own writes (a material's
+    settings) do not change it: see ``materials.model_version``."""
+    import weakref
+    from .materials import model_version
+    version = model_version(scene)
+    cache = _PICS_CACHE
+    if (version is not None and cache["out"] is not None and cache["version"] == version
+            and cache["ref"] is not None and cache["ref"]() is scene):
+        return dict(cache["out"])
+    out = _model_pictures(scene)
+    if version is not None:
+        try:
+            cache.update(ref=weakref.ref(scene), version=version, out=out)
+        except TypeError:
+            cache.update(ref=None, version=None, out=None)
+    return dict(out)
+
+
+def _model_pictures(scene) -> dict:
     """The colour pictures the model wears, keyed as the render's model file
     names them (the picture file's NAME: IngeTrazo's export groups a textured
     material under it) → the picture whose companions to look for: the
