@@ -26,7 +26,7 @@ format is a public contract; ``version`` goes up if it ever changes::
                                          #     "brightness": stops, "light": true|false}
         "output": {"size": "view", "height": 1080, "dpi": 300, "format": "png",
                    "jpeg_quality": 92, "transparent": false},      # see output.py
-        "section": {"cap": true, "color": null, "light": "open"}   # see section.py
+        "section": {"cap": true, "material": null, "light": "open"}   # see section.py
       } }
 
 Pure Python: no Qt, so it can be tested and read by anything.

@@ -7,9 +7,8 @@ cut is closed with a face, its colour, and whether the removed part still blocks
 from __future__ import annotations
 
 from PySide6.QtCore import Signal
-from PySide6.QtGui import QColor
-from PySide6.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QFormLayout, QHBoxLayout, QLabel,
-                               QPushButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QLabel,
+                               QVBoxLayout, QWidget)
 
 from . import section as S
 
@@ -27,7 +26,7 @@ class SectionTab(QWidget):
     def __init__(self, app, parent=None):
         super().__init__(parent)
         self.app = app
-        self._color = None                      # None: IngeTrazo's own colour for the cut
+        self._wanted = None                     # the material chosen (kept while it is not in the list)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         self.state = _note()
@@ -39,16 +38,13 @@ class SectionTab(QWidget):
         self.cap.setToolTip("Without it the cut is open and the inside of the walls shows.")
         self.cap.toggled.connect(self._edited)
         form.addRow(self.cap)
-        row = QHBoxLayout()
-        self.own = QCheckBox("As in IngeTrazo")
-        self.own.setChecked(True)
-        self.own.setToolTip("The colour the cut is filled with in the 3D view (the Section's own fill).")
-        self.own.toggled.connect(self._edited)
-        self.pick = QPushButton("Colour…")
-        self.pick.clicked.connect(self._choose)
-        row.addWidget(self.own)
-        row.addWidget(self.pick)
-        form.addRow("Cap colour", row)
+        self.material = QComboBox()
+        self.material.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.material.setMinimumContentsLength(8)
+        self.material.setToolTip("The cap is made of this material of the drawing, so it takes its "
+                                 "picture, finish and the settings of the material editor.")
+        self.material.currentIndexChanged.connect(self._edited)
+        form.addRow("Cap material", self.material)
         self.light = QComboBox()
         self.light.addItem("Light enters the cut (open)", "open")
         self.light.addItem("The removed part still blocks light", "blocked")
@@ -63,26 +59,47 @@ class SectionTab(QWidget):
         lay.addWidget(_note("The cut is the active Section plane of the drawing; the Section tool "
                             "places and flips it. It is read again whenever the preview reloads."))
         lay.addStretch(1)
+        self._fill()
         self._paint()
 
     # -- values -----------------------------------------------------------------------
     def settings(self) -> dict:
-        return {"cap": self.cap.isChecked(), "color": None if self.own.isChecked() else list(self._color or S.FALLBACK_COLOR),
+        return {"cap": self.cap.isChecked(), "material": self.material.currentData(),
                 "light": self.light.currentData()}
 
     def apply(self, raw) -> None:
         d = S.clean(raw)
-        for w in (self.cap, self.own, self.light):
+        for w in (self.cap, self.material, self.light):
             w.blockSignals(True)
         self.cap.setChecked(d["cap"])
-        self._color = d["color"]
-        self.own.setChecked(d["color"] is None)
+        self._wanted = d["material"]
         self.light.setCurrentIndex(max(0, self.light.findData(d["light"])))
-        for w in (self.cap, self.own, self.light):
+        self._fill()
+        for w in (self.cap, self.material, self.light):
             w.blockSignals(False)
         self._paint()
 
+    def _fill(self) -> None:
+        """The document's materials in the list (the chosen one stays even if it is gone)."""
+        from . import materials as mats
+        try:
+            counts = mats.used_materials(self.app.scene)
+        except Exception:  # noqa: BLE001
+            counts = {}
+        names = sorted(counts, key=str.lower)
+        if self._wanted and self._wanted not in names:
+            names.append(self._wanted)
+        self.material.blockSignals(True)
+        self.material.clear()
+        self.material.addItem("None (plain grey)", None)
+        for n in names:
+            self.material.addItem(n if counts.get(n) else f"{n} (not in the model)", n)
+        self.material.setCurrentIndex(max(0, self.material.findData(self._wanted)))
+        self.material.blockSignals(False)
+        self._counts = counts
+
     def document_changed(self) -> None:
+        self._fill()
         self._paint()
 
     # -- ui -----------------------------------------------------------------------------
@@ -94,19 +111,13 @@ class SectionTab(QWidget):
             pass
         self.state.setText("Active section: the render is cut." if has else
                            "No active section plane: the render shows the whole model.")
-        self.own.setEnabled(self.cap.isChecked())
-        self.pick.setEnabled(self.cap.isChecked() and not self.own.isChecked())
-        c = self._color or S.FALLBACK_COLOR
-        self.pick.setStyleSheet("" if self.own.isChecked() else
-                                f"border-left: 14px solid {QColor.fromRgbF(*c).name()}")
-
-    def _choose(self) -> None:
-        c = QColor.fromRgbF(*(self._color or S.FALLBACK_COLOR))
-        c = QColorDialog.getColor(c, self, "Cap colour")
-        if c.isValid():
-            self._color = [c.redF(), c.greenF(), c.blueF()]
-            self._edited()
+        self.material.setEnabled(self.cap.isChecked())
+        name = self.material.currentData()
+        if name and not (getattr(self, "_counts", {}) or {}).get(name):
+            self.state.setText(self.state.text() + "\nThe cap material is in no face of the model: "
+                               "only its colour is used (no picture). Paint something with it to get it whole.")
 
     def _edited(self, *_a) -> None:
+        self._wanted = self.material.currentData()
         self._paint()
         self.changed.emit()

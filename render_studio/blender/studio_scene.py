@@ -1681,19 +1681,40 @@ def _srgb_to_linear(c):
     return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
 
 
-def _cap_material(color):
-    """The material of the section's cap: a matte face of ``color`` (sRGB). White model
-    leaves it alone (``rs_section_cap``)."""
-    mat = bpy.data.materials.new("Render Studio section cap")
+def _cap_material(section):
+    """The material of the section's cap: the model's own Blender material of that name
+    (so it has its picture, finish and the material editor's settings), else a matte
+    one of the material's colour (``rs_section_cap``: White model leaves it alone)."""
+    name = section.get("material")
+    if name:
+        mat = bpy.data.materials.get(name)
+        if mat is None:
+            mat = next((m for m in bpy.data.materials if m.name.startswith(name + ".")), None)
+        if mat is not None:
+            return mat
+        say("section material not in the model", name, "- its colour only")
+    color = (section.get("color") or (0.35, 0.37, 0.41))[:3]
+    rgb = [_srgb_to_linear(float(c)) for c in color]
+    mat = bpy.data.materials.new(name or "Render Studio section cap")
     mat.use_nodes = True
     mat["rs_section_cap"] = True
     bsdf = next((x for x in mat.node_tree.nodes if x.type == "BSDF_PRINCIPLED"), None)
     if bsdf is not None:
-        rgb = [_srgb_to_linear(float(c)) for c in (color or (0.35, 0.37, 0.41))[:3]]
         bsdf.inputs["Base Color"].default_value = (*rgb, 1.0)
         bsdf.inputs["Roughness"].default_value = 0.9
-    mat.diffuse_color = (*[_srgb_to_linear(float(c)) for c in (color or (0.35, 0.37, 0.41))[:3]], 1.0)
+    mat.diffuse_color = (*rgb, 1.0)
     return mat
+
+
+def _plane_uv(co, no, texture_size):
+    """A function point → (u, v): the plane's own two axes, in metres divided by the
+    picture's tile size, so a texture on the cap repeats at its real size."""
+    ref = Vector((0.0, 0.0, 1.0)) if abs(no.z) < 0.9 else Vector((1.0, 0.0, 0.0))
+    ax = no.cross(ref).normalized()
+    ay = no.cross(ax).normalized()
+    sw, sh = (texture_size or (1.0, 1.0))
+    sw, sh = (float(sw) or 1.0), (float(sh) or 1.0)
+    return lambda p: (((p - co).dot(ax)) / sw, ((p - co).dot(ay)) / sh)
 
 
 def clip_section(section):
@@ -1702,7 +1723,7 @@ def clip_section(section):
     world space on each object's own mesh (a mesh shared by several objects is
     copied first).
 
-    ``cap`` (default on): the cut is closed with a flat face of ``color``, filled from
+    ``cap`` (default on): the cut is closed with a flat face of ``material``, filled from
     the edges the cut leaves in the plane (holes stay open, as a wall's section does).
     ``light`` "blocked": a copy of each cut mesh stays whole but invisible to the
     camera, so it still casts shadow and bounces light as in the real building;
@@ -1716,7 +1737,8 @@ def clip_section(section):
     no.normalize()
     want_cap = bool(section.get("cap", True))
     blocked = section.get("light") == "blocked"
-    capmat = _cap_material(section.get("color")) if want_cap else None
+    capmat = _cap_material(section) if want_cap else None
+    uv_of = _plane_uv(co, no, section.get("texture_size"))
     n = capped = ghosts = 0
     for obj in list(bpy.data.objects):
         if obj.type != "MESH" or obj.data is None or not obj.data.vertices:
@@ -1753,9 +1775,12 @@ def clip_section(section):
                     new_faces = [g for g in res.get("geom", []) if isinstance(g, bmesh.types.BMFace)]
                 except Exception as exc:  # noqa: BLE001 - the cut stays open
                     say("section cap failed", obj.name, exc)
+        uv_layer = bm.loops.layers.uv.verify() if new_faces else None
         for f in new_faces:
             if f.normal.dot(no) < 0:
                 f.normal_flip()
+            for loop in f.loops:
+                loop[uv_layer].uv = uv_of(loop.vert.co)
         slot = None
         if new_faces:
             if not len(obj.data.materials):
