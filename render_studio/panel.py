@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import time
 from pathlib import Path
@@ -168,7 +169,7 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
     out_of_file = [g for g in proxies.shown_proxies(scene) if g not in missing] if placed else []
     # The ground is sized and set at the model's foot with the proxies in it.
     ground_block = rb.ground_dict(scene) if (ground and out_of_file) else None
-    with _model_kept(work if reuse_model else None), proxies.left_out(out_of_file):
+    with _model_kept(work if reuse_model else None), proxies.left_out(out_of_file), _shared_copies(scene):
         job = rb.write_job(scene, camera, work, engine=engine, quality=quality, width=width,
                            height=height, ground=ground, ambience=ambience,
                            lights=tab_lights, serve=serve)
@@ -191,6 +192,59 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
     script = work / "studio_scene.py"
     shutil.copyfile(HERE / "blender" / "studio_scene.py", script)
     return job, script
+
+
+#: Above this many faces, counting every copy of every component, the model file is written with
+#: its copies SHARED (one mesh per component, nodes that place it) instead of one flat list of
+#: world triangles. IngeTrazo writes the flat one for Blender (it carries the camera, to turn the
+#: face-me figures), and on a 588 000-face model of 8 700 placements that is 4.3 million
+#: triangles of Python objects: over 21 GB and more than 7 minutes without finishing; shared, the
+#: same model is 87 MB, 33 s and 4 GB. Blender turns the figures itself either way, and the
+#: section cut already copies a mesh shared by several objects.
+INSTANCED_FROM_FACES = int(os.environ.get("RENDER_STUDIO_INSTANCED_FROM", "150000"))
+
+
+def expanded_faces(scene) -> int:
+    """The model's faces counting every copy of every component (what the flat export writes);
+    counted from the shared meshes, without touching a face."""
+    from core.group import iter_placements
+    n = len(getattr(getattr(scene, "loose_mesh", None), "faces", None) or ())
+    for g in getattr(scene, "groups", None) or ():
+        if getattr(g, "hidden", False):
+            continue
+        n += sum(len(x.mesh.faces) for x, _m in iter_placements(g))
+    return n
+
+
+class _shared_copies:
+    """While IngeTrazo's job writer runs: a big model is exported with its copies shared (see
+    :data:`INSTANCED_FROM_FACES`), by dropping the camera from the call to ``save_glb``."""
+
+    def __init__(self, scene):
+        try:
+            self.on = expanded_faces(scene) > INSTANCED_FROM_FACES
+        except Exception:  # noqa: BLE001 - never stops a render: the flat export, as before
+            _log.exception("faces not counted")
+            self.on = False
+        self.saved = None
+
+    def __enter__(self):
+        if not self.on:
+            return self
+        import formats.gltf as gltf
+        real = self.saved = gltf.save_glb
+        _log.info("model exported with its copies shared")
+
+        def save_glb(scene, path, face_me=None, only=None):
+            return real(scene, path, None, only)
+        gltf.save_glb = save_glb
+        return self
+
+    def __exit__(self, *exc):
+        if self.saved is not None:
+            import formats.gltf as gltf
+            gltf.save_glb = self.saved
+        return False
 
 
 class _model_kept:
