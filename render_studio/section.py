@@ -44,8 +44,8 @@ def job_block(scene, opts: dict | None = None) -> dict | None:
         plane = scene.active_section()
     except Exception:  # noqa: BLE001 - an old IngeTrazo: no sections
         return None
-    if plane is None:
-        return None
+    if plane is None or not getattr(scene, "show_section_cuts", True):
+        return None                       # no plane, or its cut switched off (View > Section Cuts)
     o = clean(opts)
     p, n = plane.point, plane.normal
     block = {"point": [float(p.x()), float(p.y()), float(p.z())],

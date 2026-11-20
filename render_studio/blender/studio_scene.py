@@ -1766,6 +1766,11 @@ def clip_section(section):
                                clear_outer=True, clear_inner=False, dist=1e-6)
         new_faces = []
         if want_cap:
+            # A model from glTF has its vertices split per face (normals, UVs): the cut's
+            # vertices are welded so its edges close into loops the fill can follow.
+            on_plane = [v for v in bm.verts if abs((v.co - co).dot(no)) < 1e-4]
+            if on_plane:
+                bmesh.ops.remove_doubles(bm, verts=on_plane, dist=1e-4)
             edges = [e for e in bm.edges if e.is_boundary
                      and all(abs((v.co - co).dot(no)) < 1e-4 for v in e.verts)]
             if edges:
