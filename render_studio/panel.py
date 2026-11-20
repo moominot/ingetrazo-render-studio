@@ -18,8 +18,8 @@ from pathlib import Path
 
 from PySide6.QtCore import QLocale, QProcess, QProcessEnvironment, QSettings, Qt, QTimer, Signal
 from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QHBoxLayout,
-                               QLabel, QProgressBar, QPushButton, QScrollArea, QSizePolicy,
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QFileDialog, QFormLayout, QFrame,
+                               QHBoxLayout, QLabel, QLineEdit, QProgressBar, QPushButton, QScrollArea, QSizePolicy,
                                QSlider, QSpinBox, QToolButton, QVBoxLayout, QWidget)
 
 from . import materials as mats, pbr, post, presets, settings_store
@@ -64,6 +64,32 @@ def bundled_hdris() -> list:
         return []
 
 
+#: The oldest Blender the look's script works with.
+MIN_BLENDER = (4, 2)
+
+
+def blender_version_ok(command, timeout: float = 60.0):
+    """Ask ``command`` (Blender's argv prefix) for its version: (True, "") for a
+    Blender ≥ MIN_BLENDER, else (False, why, in words for the panel)."""
+    import re
+    import subprocess
+    if not command:
+        return False, "There is no program at that path."
+    try:
+        r = subprocess.run([*command, "--version"], capture_output=True, text=True, timeout=timeout,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, f"That program could not be started ({exc.__class__.__name__})."
+    m = re.search(r"Blender\s+(\d+)\.(\d+)", (r.stdout or "") + (r.stderr or ""))
+    if not m:
+        return False, "That program is not Blender."
+    version = (int(m.group(1)), int(m.group(2)))
+    if version < MIN_BLENDER:
+        return False, (f"That is Blender {version[0]}.{version[1]}; Render Studio needs "
+                       f"{MIN_BLENDER[0]}.{MIN_BLENDER[1]} or newer.")
+    return True, ""
+
+
 def apply_hdri(block: dict, hdri: dict | None) -> dict:
     """The look's block with a 360° background: ``hdri`` = {path, rotation
     (degrees), strength (multiplier), light (it lights the scene)}. When it
@@ -92,6 +118,10 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
     block, ambience = presets.studio(preset_key)
     block = apply_hdri(block, hdri)
     block = presets.apply_sliders(block, sliders)
+    try:
+        materials = mats.with_detected(scene, materials)     # «Gespa» grows grass, «Aigua» ripples
+    except Exception:  # noqa: BLE001 - never stops a render
+        _log.exception("material names not read")
     if materials:
         block["materials"] = mats.job_block(materials)
     try:
@@ -279,6 +309,8 @@ class StudioPanel(QWidget):
         lang = _lang()
         outer = QVBoxLayout(self)
         outer.setContentsMargins(6, 6, 6, 6)
+        self.need_box = self._need_blender_box()
+        outer.addWidget(self.need_box)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         host = QWidget()
@@ -362,7 +394,8 @@ class StudioPanel(QWidget):
         self._live_resume = False
         self.live_box = QCheckBox("Live view")
         self.live_box.setToolTip("Keeps Blender open: when you stop moving the camera a quick image comes, "
-                                 "then a cleaner draft. Always a light EEVEE draft; Engine and Quality are for Render.")
+                                 "then a cleaner draft. A light EEVEE draft (Cycles for the Interior look); "
+                                 "Engine and Quality are for Render.")
         self.live_box.toggled.connect(self._live_toggled)
         outer.addWidget(self.live_box)
         follow = QHBoxLayout()
@@ -393,11 +426,115 @@ class StudioPanel(QWidget):
         self.status.setWordWrap(True)
         outer.addWidget(self.status)
         self._init_document_settings()
+        self.check_blender()
 
-    # -- live view ----------------------------------------------------------------
+    # -- Blender ------------------------------------------------------------------
+    def _need_blender_box(self) -> QFrame:
+        """Shown while IngeTrazo has no Blender: what it is for, where it is
+        (a path and Browse…), and where to download it."""
+        from core import render_blender as rb
+        box = QFrame()
+        box.setFrameShape(QFrame.StyledPanel)
+        lay = QVBoxLayout(box)
+        lay.setContentsMargins(8, 6, 8, 6)
+        title = QLabel("<b>Render Studio needs Blender</b>")
+        lay.addWidget(title)
+        text = QLabel("Blender (free, version 4.2 or newer) makes the images. If it is installed, "
+                      "choose its program; if not, download it, install it and choose it here.")
+        text.setWordWrap(True)
+        lay.addWidget(text)
+        row = QHBoxLayout()
+        self.blender_path = QLineEdit()
+        self.blender_path.setPlaceholderText({"windows": "C:\\Program Files\\Blender Foundation\\…\\blender.exe",
+                                              "macos": "/Applications/Blender.app"}.get(rb.package_kind(),
+                                                                                       "/usr/bin/blender"))
+        self.blender_path.setToolTip("The Blender program. IngeTrazo's Render tab uses the same one.")
+        self.blender_path.returnPressed.connect(lambda: self.set_blender_path(self.blender_path.text()))
+        browse = QPushButton("Browse…")
+        browse.clicked.connect(self._browse_blender)
+        row.addWidget(self.blender_path, 1)
+        row.addWidget(browse)
+        lay.addLayout(row)
+        link = QLabel(f'<a href="{rb.DOWNLOAD_URL}">Download Blender from blender.org</a>')
+        link.setOpenExternalLinks(True)
+        link.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        lay.addWidget(link)
+        steps = []
+        try:
+            steps = rb.install_steps()
+        except Exception:  # noqa: BLE001 - an older IngeTrazo: the link is enough
+            pass
+        if rb.package_kind() not in ("windows", "macos"):     # Linux packages: the exact command
+            for line, cmd in steps:
+                note = QLabel(line + (f"<br><code>{cmd}</code>" if cmd else ""))
+                note.setWordWrap(True)
+                note.setTextInteractionFlags(Qt.TextSelectableByMouse)
+                lay.addWidget(note)
+        self.blender_msg = QLabel("")
+        self.blender_msg.setWordWrap(True)
+        self.blender_msg.setStyleSheet("color: #b04020")
+        self.blender_msg.setVisible(False)
+        lay.addWidget(self.blender_msg)
+        box.setVisible(False)
+        return box
+
     def blender(self):
         from core import render_blender as rb
         return rb.find_blender(str(QSettings().value(rb.SETTINGS_KEY, "") or "") or None)
+
+    def check_blender(self):
+        """Show the «needs Blender» box, and switch off Render and Live view, while
+        there is none. Returns the Blender found, or None."""
+        try:
+            found = self.blender()
+        except Exception:  # noqa: BLE001 - never breaks the panel
+            found = None
+        self.need_box.setVisible(found is None)
+        self.render_btn.setEnabled(found is not None and self.proc is None)
+        self.live_box.setEnabled(found is not None)
+        return found
+
+    def _browse_blender(self):
+        from core import render_blender as rb
+        kind = rb.package_kind()
+        start = self.blender_path.text() or {"windows": "C:/Program Files/Blender Foundation",
+                                             "macos": "/Applications"}.get(kind, "/usr/bin")
+        filt = {"windows": "Blender (blender.exe);;Programs (*.exe)",
+                "macos": "Blender (*.app);;All files (*)"}.get(kind, "All files (*)")
+        path, _f = QFileDialog.getOpenFileName(self, "Where is Blender?", start, filt)
+        if path:
+            self.set_blender_path(path)
+
+    def set_blender_path(self, path: str) -> bool:
+        """Use the Blender at ``path`` (a .app on macOS is fine): checked by
+        asking its version, then saved where IngeTrazo's Render tab keeps it."""
+        from core import render_blender as rb
+        path = rb.app_bundle_executable(str(path).strip().strip('"'))
+        self.blender_path.setText(path)
+        ok, why = blender_version_ok([*rb.find_blender(path).command]
+                                     if path and (rb.in_flatpak() or Path(path).is_file()) else None)
+        self.blender_msg.setText(why)
+        self.blender_msg.setVisible(bool(why))
+        if not ok:
+            return False
+        QSettings().setValue(rb.SETTINGS_KEY, path)
+        self._add_bundled_hdris()
+        found = self.check_blender()
+        self.status.setText(f"Blender: {found.where}" if found else "")
+        return found is not None
+
+    def _add_bundled_hdris(self):
+        """Blender's own 360° images, once a Blender is set (before «Choose a file…»)."""
+        for path in bundled_hdris():
+            if self.hdri.findData(str(path)) < 0:
+                self.hdri.insertItem(self.hdri.count() - 1, f"{path.stem.capitalize()} (Blender, 1K)", str(path))
+
+    def showEvent(self, ev):
+        super().showEvent(ev)
+        if self.need_box.isVisible():            # installed or set meanwhile (the Render tab)
+            self.check_blender()
+
+    # -- live view ----------------------------------------------------------------
 
     def live_model_key(self):
         """What the live scene's MODEL file depends on: the document and its content."""
@@ -415,16 +552,24 @@ class StudioPanel(QWidget):
             doc = mats_ = ""
         return (self.live_model_key(), mats_, (doc, round(self._aspect(), 3)))
 
+    def live_engine(self) -> str:
+        """The live view's engine: EEVEE, lightened — but Cycles for a look that
+        needs it (Interior: EEVEE can't fill a room lit through a window, so its
+        preview would not look like the render). The panel's Engine is for Render."""
+        block, _amb = presets.studio(self.preset.currentData())
+        return "cycles" if block.get("engine_hint") == "cycles" else "eevee"
+
     def live_job(self, work: Path, width: int, height: int, reuse_model: bool = False,
                  materials: dict | None = None):
         """The job of the live Blender: the current look and settings, a draft
-        in serve mode — always EEVEE, lightened (the Engine and Quality chosen
-        are for Render). ``reuse_model``: the model file in ``work`` is still
-        good (only a setting changed, or the live view keeps its model).
-        ``materials``: the render settings to use (default: the document's)."""
+        in serve mode — EEVEE lightened, or Cycles for the Interior look (the
+        Engine and Quality chosen are for Render). ``reuse_model``: the model
+        file in ``work`` is still good (only a setting changed, or the live view
+        keeps its model). ``materials``: the render settings to use (default:
+        the document's)."""
         return write_studio_job(
             self.app.scene, self.app.viewport.camera, work, self.preset.currentData(),
-            self.slider_values(), engine="eevee", quality=0, width=width,
+            self.slider_values(), engine=self.live_engine(), quality=0, width=width,
             height=height, hdri=self.hdri_settings(),
             materials=self.material_specs() if materials is None else materials, serve=True,
             live=True, reuse_model=reuse_model)
@@ -441,8 +586,8 @@ class StudioPanel(QWidget):
                 self._live = LiveSession(self)
                 self._live.image.connect(self._live_image)
                 self._live.state.connect(self.status.setText)
-            if self.blender() is None:
-                self.status.setText("Blender was not found. Set it up in IngeTrazo's Render tab first.")
+            if self.check_blender() is None:
+                self.status.setText("Blender was not found: choose it above.")
                 self.live_box.blockSignals(True)
                 self.live_box.setChecked(False)
                 self.live_box.blockSignals(False)
@@ -713,9 +858,9 @@ class StudioPanel(QWidget):
         from core import render_blender as rb
         if self.proc is not None:
             return
-        found = rb.find_blender(str(QSettings().value(rb.SETTINGS_KEY, "") or "") or None)
+        found = self.check_blender()
         if found is None:
-            self.status.setText("Blender was not found. Set it up in IngeTrazo's Render tab first.")
+            self.status.setText("Blender was not found: choose it above.")
             self.finished.emit(None)
             return
         self._remember()

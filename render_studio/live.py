@@ -47,6 +47,9 @@ QUICK_SCALE = 0.5
 QUICK_SAMPLES = 1
 #: The draft that follows it.
 DRAFT_SAMPLES = 8
+#: The Interior look's live view is Cycles (EEVEE can't fill a window-lit room): samples
+#: of the moving frames, the quick image and the draft (each denoised).
+CYCLES_SAMPLES = {"motion": 2, "quick": 4, "draft": 32}
 
 
 class LiveSession(QObject):
@@ -250,6 +253,9 @@ class LiveSession(QObject):
         self._busy = True
         k, samples = {"motion": (MOTION_SCALE, MOTION_SAMPLES), "quick": (QUICK_SCALE, QUICK_SAMPLES),
                       "draft": (1.0, DRAFT_SAMPLES)}[kind]
+        engine = self.panel.live_engine()
+        if engine == "cycles":
+            samples = CYCLES_SAMPLES[kind]
         if kind == "motion":
             self._motion_key = cam_key
             self.frames += 1
@@ -261,7 +267,7 @@ class LiveSession(QObject):
             self.state.emit("Live view: quick image…" if kind == "quick" else "Live view: refining…")
         req = json.loads(rb.sync_request(
             self.panel.app.viewport.camera, out, max(16, round(rb.SYNC_WIDTH * k)),
-            max(2, round(self._height() * k)), "eevee"))
+            max(2, round(self._height() * k)), engine))
         if not self.follow_camera and self._frozen is not None:
             req["camera"] = self._frozen
         req["samples"] = samples

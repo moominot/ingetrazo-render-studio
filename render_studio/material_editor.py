@@ -188,8 +188,14 @@ class MapRow(QWidget):
     def _update(self):
         src = self.source.currentData()
         grey = src not in ("", "normal", "grain", None)
-        self.invert.setEnabled(grey)
-        self.contrast.setEnabled(grey)
+        # Invert and contrast only act on a black-and-white map: hidden otherwise.
+        self.invert.setVisible(grey)
+        self.contrast.setVisible(grey)
+        # «Picture (B/W)» does nothing on a material without a picture: not offered.
+        i = self.source.findData("picture")
+        item = self.source.model().item(i) if i >= 0 else None
+        if item is not None:
+            item.setEnabled(bool(self.picture) or src == "picture")
         if not src and self.set_path:            # the texture set's own map
             pix = map_preview(self.set_path, normal=self.set_normal, channel=self.set_channel)
             self.preview.setPixmap(pix if pix is not None else QPixmap())
@@ -250,6 +256,14 @@ class MaterialEditor(QDialog):
         self.title = QLabel("")
         self.title.setStyleSheet("font-weight: bold")
         form.addRow(self.title)
+        self.detected_label = QLabel("")
+        self.detected_label.setWordWrap(True)
+        self.detected_label.setStyleSheet("color: #2a7a3a")
+        self.detected_label.setToolTip("Water, glass, grass and lights are recognised by their name (aigua, agua, "
+                                       "water, piscina; vidre, vidrio, glass; gespa, césped, grass, herba; llum, "
+                                       "LED, neon…) in several languages, or by their picture's file name.")
+        self.detected_label.setVisible(False)
+        form.addRow(self.detected_label)
         prev = QHBoxLayout()
         self.cube = QLabel()
         self.cube.setFixedSize(150, 150)
@@ -274,6 +288,8 @@ class MaterialEditor(QDialog):
         picrow.addWidget(self.keep_ratio)
         picrow.addStretch(1)
         form.addRow(picrow)
+        self.form = form
+        self._rows = {"picture": picrow}        # control → its form row (hidden when it does nothing)
         self.set_label = QLabel("")
         self.set_label.setWordWrap(True)
         self.set_label.setStyleSheet("color: gray")
@@ -311,6 +327,7 @@ class MaterialEditor(QDialog):
         trow.addWidget(self.transparency, 1)
         trow.addWidget(self.transparency_value)
         form.addRow("Transparency", trow)
+        self._rows["transparency"] = trow
         self.sliders["transparency"] = self.transparency
         self.values["transparency"] = self.transparency_value
         for key, label, lo, hi, tip in _FIELDS:
@@ -330,6 +347,8 @@ class MaterialEditor(QDialog):
             self.values[key] = v
             self.maps[key] = MapRow(key, self._changed)
             form.addRow("", self.maps[key])
+            self._rows[key] = row
+            self._rows["map:" + key] = self.maps[key]
         self.ripple = QSlider(Qt.Horizontal)
         self.ripple.setRange(0, 100)
         self.ripple.setProperty("lo", 0.0)
@@ -343,6 +362,7 @@ class MaterialEditor(QDialog):
         rrow.addWidget(self.ripple, 1)
         rrow.addWidget(self.ripple_value)
         form.addRow("Ripple size", rrow)
+        self._rows["ripple_size"] = rrow
         self.sliders["ripple_size"] = self.ripple
         self.values["ripple_size"] = self.ripple_value
         lo, hi = M.GRASS_HEIGHT_RANGE
@@ -359,8 +379,27 @@ class MaterialEditor(QDialog):
         grow.addWidget(self.grass, 1)
         grow.addWidget(self.grass_value)
         form.addRow("Grass height", grow)
+        self._rows["grass_height"] = grow
         self.sliders["grass_height"] = self.grass
         self.values["grass_height"] = self.grass_value
+        lo, hi = M.GRASS_DENSITY_RANGE
+        self.density = QSlider(Qt.Horizontal)
+        self.density.setRange(0, 100)
+        self.density.setProperty("lo", lo)
+        self.density.setProperty("hi", hi)
+        self.density.setToolTip("Grass: how many tufts (of a few blades each) grow on a square metre. "
+                                "A thick lawn 250–400, long grass 60–120. The live view and the render "
+                                "use the same density.")
+        self.density_value = QLabel("")
+        self.density_value.setMinimumWidth(34)
+        self.density.valueChanged.connect(lambda _x: (self._label("grass_density"), self._changed()))
+        drow = QHBoxLayout()
+        drow.addWidget(self.density, 1)
+        drow.addWidget(self.density_value)
+        form.addRow("Grass density", drow)
+        self._rows["grass_density"] = drow
+        self.sliders["grass_density"] = self.density
+        self.values["grass_density"] = self.density_value
         self.map_size = QDoubleSpinBox()
         self.map_size.setRange(0.02, 50.0)
         self.map_size.setDecimals(2)
@@ -372,6 +411,7 @@ class MaterialEditor(QDialog):
                                  "follow the picture's size).")
         self.map_size.valueChanged.connect(self._changed)
         form.addRow("Map image size", self.map_size)
+        self._rows["map_size"] = self.map_size
         self.reset_btn = QPushButton("Back to automatic")
         self.reset_btn.setToolTip("Forget these settings: IngeTrazo's own finish for this material.")
         self.reset_btn.clicked.connect(self._reset)
@@ -414,8 +454,14 @@ class MaterialEditor(QDialog):
         except Exception:  # noqa: BLE001 - an odd folder never breaks the editor
             return None
 
-    def _show_texture_set(self, name):
-        ts = self.texture_set(name) or {}
+    def _show_texture_set(self, name, kind="generic"):
+        """The line listing the set's maps, and «Texture set: …» as the first map
+        choice of the settings it gives — only what the render uses for this type
+        (glass and water take only the normal map; the grass's blades none)."""
+        ts = dict(getattr(self, "_ts", None) or {}) if name else {}
+        if kind in ("glass", "water"):
+            ts = {"normal": ts["normal"], "normal_flip_green": ts.get("normal_flip_green")} \
+                if ts.get("normal") else {}
         names = (("normal", "normal"), ("roughness", "roughness"), ("ao", "ambient occlusion"),
                  ("displacement", "displacement"), ("metalness", "metal"), ("opacity", "opacity"),
                  ("arm", "AO/roughness/metal packed"))
@@ -434,6 +480,14 @@ class MaterialEditor(QDialog):
             self.maps["bump"].set_texture_set(ts.get("displacement", ""), what="displacement")
         self.maps["glow"].set_texture_set("")
 
+    def detected(self, name):
+        """The settings the material's name (or its picture's file name) gives it when it has
+        none of its own — what the render uses too (materials.detected_spec) — or None."""
+        mat = self.app.scene.materials.get(name) if name else None
+        tex = (getattr(mat, "texture", None) or {}) if mat is not None else {}
+        pic = tex.get("base") or tex.get("path") or ""
+        return M.detected_spec(name, Path(pic).name if pic else None)
+
     def _picture(self, name):
         mat = self.app.scene.materials.get(name) if name else None
         tex = (getattr(mat, "texture", None) or {}).get("path") if mat is not None else None
@@ -450,8 +504,8 @@ class MaterialEditor(QDialog):
         self.list.clear()
         for name in sorted(used, key=str.lower):
             mat = scene.materials.get(name)
-            item = QListWidgetItem(_swatch(mat) if mat is not None else QIcon(),
-                                   ("● " if name in specs else "") + name)
+            mark = "● " if name in specs else "◦ " if self.detected(name) else ""
+            item = QListWidgetItem(_swatch(mat) if mat is not None else QIcon(), mark + name)
             item.setData(Qt.UserRole, name)
             item.setToolTip(f"{used[name]} painted with it" if used[name]
                             else "In the model's materials, not worn by anything yet")
@@ -518,6 +572,7 @@ class MaterialEditor(QDialog):
         v = self._get(key)
         self.values[key].setText(f"{v * 100:.0f}%" if key == "transparency"
                                  else f"{v * 100:.0f} cm" if key == "grass_height"
+                                 else f"{v:.0f}/m²" if key == "grass_density"
                                  else f"{v:.0f}" if key == "glow" else f"{v:.2f}")
 
     def _show(self, item, _prev=None):
@@ -530,12 +585,19 @@ class MaterialEditor(QDialog):
                   *self.sliders.values(), *self.maps.values()):
             w.setEnabled(enabled)
         self.title.setText(name or "No material is used in the model.")
+        self._ts = (self.texture_set(name) or {}) if enabled else {}
         if not enabled:
             self.cube.clear()
             self.set_label.setVisible(False)
             return
         spec = dict(M.DEFAULT)
-        spec.update(self.specs().get(name) or {})
+        own = self.specs().get(name)
+        detected = None if own else self.detected(name)
+        spec.update(own or detected or {})
+        self.detected_label.setText(
+            f"Detected from the name: {M.preset_label(detected['preset'], self.lang)}. The render uses it; "
+            "change any setting to make it your own." if detected else "")
+        self.detected_label.setVisible(bool(detected))
         maps = spec.get("maps") or {}
         picture = self._picture(name)
         self._loading = True
@@ -544,9 +606,10 @@ class MaterialEditor(QDialog):
         for key, *_r in _FIELDS:
             self._set_slider(key, spec.get(key, M.DEFAULT.get(key, 0.0)))
             self.maps[key].load(maps.get(key), picture)
-        self._show_texture_set(name)
         self._set_slider("ripple_size", spec.get("ripple_size", M.DEFAULT_RIPPLE_SIZE))
         self._set_slider("grass_height", spec.get("grass_height", M.DEFAULT_GRASS_HEIGHT))
+        self._set_slider("grass_density", spec.get("grass_density") or M.auto_grass_density(
+            spec.get("grass_height", M.DEFAULT_GRASS_HEIGHT)))
         self._set_slider("transparency", 1.0 - opacity_mod.material_opacity(self.app.scene, name))
         size = next((m.get("size") for m in maps.values() if m and m.get("size")), 1.0)
         self.map_size.setValue(float(size))
@@ -602,6 +665,7 @@ class MaterialEditor(QDialog):
             "bump": self._get("bump"), "glow": self._get("glow"),
             "opacity": 1.0 - self._get("transparency"),
             "grass_height": self._get("grass_height"),
+            "grass_density": self._get("grass_density"),
         }
 
     def _update_cube(self):
@@ -613,13 +677,35 @@ class MaterialEditor(QDialog):
         except Exception:  # noqa: BLE001 - a preview must never break the editor
             self.cube.clear()
 
+    def shown_controls(self) -> set:
+        """The controls that change the render of the current material as it is set
+        now (materials.shown_controls)."""
+        name = self.current_name()
+        ts = getattr(self, "_ts", None) or {}
+        kind = self.kind.currentData()
+        return M.shown_controls(
+            kind, picture=bool(self._picture(name)) if name else False,
+            set_relief=bool(ts.get("normal") or (ts.get("displacement") and kind not in ("glass", "water"))),
+            relief_source=self.maps["bump"].source.currentData() or "",
+            file_maps=any(self.maps[k].source.currentData() in ("file", "normal")
+                          for k in self.maps if f"map:{k}" in self._kind_maps(kind)))
+
+    @staticmethod
+    def _kind_maps(kind) -> set:
+        """The map rows the type has at all (before the finer rules)."""
+        return {r for r in M.shown_controls(kind, set_relief=False) if r.startswith("map:")}
+
     def _enable_glow(self):
-        water = self.kind.currentData() == "water"
-        self.ripple.setEnabled(water)
-        self.grass.setEnabled(self.kind.currentData() == "grass")
-        on = self.kind.currentData() == "glow"
-        self.sliders["glow"].setEnabled(on)
-        self.maps["glow"].setEnabled(on)
+        """Hide what does nothing for this material (another type's setting, one a
+        texture set replaces, a picture's control without a picture)."""
+        shown = self.shown_controls() if self.current_name() is not None else set(self._rows)
+        for key, row in self._rows.items():
+            self.form.setRowVisible(row, key in shown)
+        kind = self.kind.currentData()
+        label = self.form.labelForField(self._rows["bump"])
+        if label is not None:                    # water's relief is its waves' height
+            label.setText("Wave height" if kind == "water" else "Relief")
+        self._show_texture_set(self.current_name(), kind)
 
     def _preset(self, _i):
         key = self.preset.currentData()
@@ -632,6 +718,8 @@ class MaterialEditor(QDialog):
             self._set_slider(k, spec.get(k, M.DEFAULT.get(k, 0.0)))
         self._set_slider("ripple_size", spec.get("ripple_size", M.DEFAULT_RIPPLE_SIZE))
         self._set_slider("grass_height", spec.get("grass_height", M.DEFAULT_GRASS_HEIGHT))
+        self._set_slider("grass_density", spec.get("grass_density") or M.auto_grass_density(
+            spec.get("grass_height", M.DEFAULT_GRASS_HEIGHT)))
         self._set_slider("transparency", spec.get("transparency", 0.0))
         self._loading = False
         self._opacity_timer.start()            # the model follows the preset's transparency
@@ -646,16 +734,20 @@ class MaterialEditor(QDialog):
         if name is None:
             return
         spec = {"type": self.kind.currentData()}
+        kind_maps = self._kind_maps(spec["type"])
         for key, *_r in _FIELDS:
             spec[key] = self._get(key)
         if spec["type"] == "water":
             spec["ripple_size"] = self._get("ripple_size")
         if spec["type"] == "grass":
             spec["grass_height"] = self._get("grass_height")
+            spec["grass_density"] = round(self._get("grass_density"), 1)
         if spec["type"] == "glass":
             spec["transparency"] = self._get("transparency")
         maps = {}
         for key, row in self.maps.items():
+            if f"map:{key}" not in kind_maps:      # another type's map: the render ignores it
+                continue
             m = row.spec()
             if m:
                 if m["source"] in ("file", "normal"):
@@ -701,7 +793,9 @@ class MaterialEditor(QDialog):
         for i in range(self.list.count()):
             item = self.list.item(i)
             if item.data(Qt.UserRole) == name:
-                item.setText(("● " if on else "") + name)
+                item.setText(("● " if on else "◦ " if self.detected(name) else "") + name)
+        if on and name == self.current_name():
+            self.detected_label.setVisible(False)      # its own settings now
 
     def _reset(self):
         name = self.current_name()

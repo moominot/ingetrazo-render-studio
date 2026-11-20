@@ -30,11 +30,11 @@ image(tmp / "ph" / "tiles_arm_1k.png", "#ff2080")          # metal from the pack
 plain = image(tmp / "plain" / "photo.png", "#a0a0a0")
 
 scene = Scene()
-scene.materials["Lawn"] = Material("Lawn", color=(0.2, 0.45, 0.1))
+scene.materials["Terreny"] = Material("Terreny", color=(0.2, 0.45, 0.1))
 scene.materials["Floor"] = Material("Floor", texture={"path": floor, "sw": 1.0, "sh": 1.0})
 scene.materials["Plain"] = Material("Plain", texture={"path": plain, "sw": 1.0, "sh": 1.0})
 m = Mesh()
-for i, name in enumerate(("Lawn", "Floor", "Plain")):
+for i, name in enumerate(("Terreny", "Floor", "Plain")):
     f = m.add_face([QVector3D(i, 0, 0), QVector3D(i + 1, 0, 0), QVector3D(i + 1, 1, 0), QVector3D(i, 1, 0)])
     f.attrs["mat"] = name
 scene.groups.append(Group(m, name="g"))
@@ -48,29 +48,45 @@ spec = lambda n: (app.data.get("materials") or {}).get(n) or {}
 
 # ---- grass -----------------------------------------------------------------------------
 ok("grass" in M.TYPES and M.TYPE_LABELS["grass"] == "Grass", "Grass is a material type")
-ed.select("Lawn")
-ok(not ed.grass.isEnabled(), "Grass height is off for a generic material")
+ed.select("Terreny")
+ok(not ed.grass.isVisibleTo(ed) and not ed.density.isVisibleTo(ed),
+   "Grass height and density are hidden for a generic material")
 ed.kind.setCurrentIndex(ed.kind.findData("grass")); ed._flush()
-ok(ed.grass.isEnabled(), "…and on for grass")
-ok(spec("Lawn").get("type") == "grass" and abs(spec("Lawn")["grass_height"] - M.DEFAULT_GRASS_HEIGHT) < 0.01,
-   f"a grass spec carries its height, {M.DEFAULT_GRASS_HEIGHT * 100:.0f} cm to start ({spec('Lawn')})")
+ok(ed.grass.isVisibleTo(ed) and ed.density.isVisibleTo(ed), "…and shown for grass")
+ok(abs(spec("Terreny").get("grass_density", 0) - M.auto_grass_density(M.DEFAULT_GRASS_HEIGHT)) < 8,
+   f"a new grass gets the density the render used for its height ({spec('Terreny').get('grass_density')})")
+ed._set_slider("grass_density", 500.0); ed._changed(); ed._flush()
+ok(abs(spec("Terreny")["grass_density"] - 500.0) < 8 and ed.density_value.text().endswith("/m²"),
+   f"the density slider sets it, in tufts per m² ({spec('Terreny')['grass_density']}, «{ed.density_value.text()}»)")
+few = cube_preview.render({**ed.cube_params(), "grass_density": 30.0}, 150).toImage()
+many = cube_preview.render({**ed.cube_params(), "grass_density": 600.0}, 150).toImage()
+green = lambda im: sum(1 for y in range(150) for x in range(150)
+                       if im.pixelColor(x, y).alpha() > 0 and im.pixelColor(x, y).green() > im.pixelColor(x, y).red())
+ok(green(many) > green(few), f"the cube preview follows the density ({green(few)} to {green(many)} px of blades)")
+ok(not ed.ripple.isVisibleTo(ed) and not ed.transparency.isVisibleTo(ed) and not ed.sliders["metallic"].isVisibleTo(ed),
+   "grass: no ripple size, transparency or metal")
+ok(spec("Terreny").get("type") == "grass" and abs(spec("Terreny")["grass_height"] - M.DEFAULT_GRASS_HEIGHT) < 0.01,
+   f"a grass spec carries its height, {M.DEFAULT_GRASS_HEIGHT * 100:.0f} cm to start ({spec('Terreny')})")
 ed._set_slider("grass_height", 0.30); ed._changed(); ed._flush()
-ok(abs(spec("Lawn")["grass_height"] - 0.30) < 0.01 and ed.grass_value.text() == "30 cm",
+ok(abs(spec("Terreny")["grass_height"] - 0.30) < 0.01 and ed.grass_value.text() == "30 cm",
    f"the slider sets it, shown in cm ({ed.grass_value.text()})")
 lo, hi = M.GRASS_HEIGHT_RANGE
 ed._set_slider("grass_height", 5.0); ed._changed(); ed._flush()
-ok(abs(spec("Lawn")["grass_height"] - hi) < 1e-6, f"it stops at {hi * 100:.0f} cm")
+ok(abs(spec("Terreny")["grass_height"] - hi) < 1e-6, f"it stops at {hi * 100:.0f} cm")
 ed.preset.setCurrentIndex(ed.preset.findData("lawn")); ed._preset(0); ed._flush()
-ok(spec("Lawn")["type"] == "grass" and abs(spec("Lawn")["grass_height"] - 0.06) < 0.01, "the Lawn preset: grass, 6 cm")
+ok(spec("Terreny")["type"] == "grass" and abs(spec("Terreny")["grass_height"] - 0.06) < 0.01
+   and abs(spec("Terreny")["grass_density"] - 260) < 8, "the Lawn preset: grass, 6 cm, 260/m²")
 ed.preset.setCurrentIndex(ed.preset.findData("meadow")); ed._preset(0); ed._flush()
-ok(abs(spec("Lawn")["grass_height"] - 0.30) < 0.01, "the Tall grass preset: 30 cm")
+ok(abs(spec("Terreny")["grass_height"] - 0.30) < 0.01 and abs(spec("Terreny")["grass_density"] - 90) < 8,
+   "the Tall grass preset: 30 cm, 90/m²")
 ok(abs(ed.cube_params()["grass_height"] - 0.30) < 0.01 and ed.cube_params()["kind"] == "grass", "the cube preview gets the height")
 a = cube_preview.render({**ed.cube_params(), "grass_height": 0.05}, 150).toImage()
 b = cube_preview.render({**ed.cube_params(), "grass_height": 0.40}, 150).toImage()
 top = lambda im: sum(1 for y in range(0, 30) for x in range(150) if im.pixelColor(x, y).alpha() > 0)
 ok(top(b) > top(a), f"taller grass rises higher above the cube ({top(a)} to {top(b)} px above)")
 ed.kind.setCurrentIndex(ed.kind.findData("generic")); ed._flush()
-ok("grass_height" not in spec("Lawn"), "a generic material carries no grass height")
+ok("grass_height" not in spec("Terreny") and "grass_density" not in spec("Terreny"),
+   "a generic material carries no grass height or density")
 mesh_faces = len(m.faces)
 ok(mesh_faces == 3, "the model is not touched by the grass (render only)")
 
@@ -94,7 +110,7 @@ ok(not ed.set_label.isVisibleTo(ed) and ed.maps["bump"].source.itemText(0) == "A
    and ed.maps["roughness"].source.itemText(0) == "No map", "a picture without a set: the editor as before")
 tinted = image(tmp / "cache" / "tiles_tint_1.png", "#d0c0a0")
 scene.materials["Floor"].texture = {"path": tinted, "base": floor, "sw": 1.0, "sh": 1.0}
-ed.select("Lawn"); ed.select("Floor")
+ed.select("Terreny"); ed.select("Floor")
 ok("normal" in ed.set_label.text(), "a tinted picture shows its original's set")
 
 print(f"\n{len(fails)} failure(s)")

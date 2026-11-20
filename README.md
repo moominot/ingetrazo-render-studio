@@ -7,6 +7,12 @@ It drives the same Blender that IngeTrazo's own Render tab uses (Blender
 4.2+; tested with 5.3), with IngeTrazo's scene script plus
 `blender/studio_scene.py` for the look.
 
+When IngeTrazo finds no Blender, the panel says so at the top: a path box with **Browse…** (a
+macOS `Blender.app` is fine), a link to blender.org's download page and, on Linux packages
+(Flatpak, Snap), the exact install command. The chosen program is asked for its version (4.2 or
+newer) and saved under IngeTrazo's own key (`render/blender_path`), so the Render tab uses it too.
+**Render** and **Live view** stay off until there is one.
+
 ![Looks](docs/looks.png)
 
 ## Looks
@@ -124,7 +130,36 @@ scattered by geometry nodes over the faces of that material (instanced: a lawn c
 upright, turned and sized at random; their colour is the material's picture read at each tuft's UVs,
 else its colour, darker at the root. Short grass gets 260 tufts per m², taller grass fewer and bigger;
 past 250 000 tufts in one render the whole lawn is thinned (the log says by how much). The job carries
-it in the material's settings: `{"type": "grass", "grass_height": 0.08}`.
+it in the material's settings: `{"type": "grass", "grass_height": 0.08, "grass_density": 260}`.
+
+**Grass density** (0.11.0) is the tufts per m², 20–800 (Lawn preset 260, Tall grass 90). The live
+view grows the same grass as the render (before 0.11.0 it had a third of it). A material saved
+without a density gets the old automatic one for its height. Past 600 000 tufts in one render the
+whole lawn is thinned, and Blender's log says by how much.
+
+### Recognised by the name
+
+A material with no settings of its own whose name, or its picture's file name, says what it is gets
+that preset, in the editor and in the render job (`materials.detect_preset` / `with_detected`):
+**Water** (aigua, agua, água, water, wasser, eau, piscina, pool, mar, llac, lago, estany…),
+**Clear glass** (vidre, vidrio, glass, glas, cristal, verre…), **Tall grass** (herba alta, hierba
+alta, tall grass, prat, prado, meadow…), **Lawn** (gespa, césped, grass, herba, lawn, rasen,
+pelouse…) and **Light panel** (llum, luz, LED, neon, làmpada, lámpara, emissive…). Whole words or
+word starts, camel case split («WaterBlue»), short words must end there (Mar ≠ Marbre, Glas ≠
+Glasur, Led ≠ Ledge). The list marks such materials ◦; the editor shows the preset with a note and
+writes nothing until a setting changes (then ●). The model's transparency is left alone.
+
+### Only what matters is shown
+
+The editor hides the controls that do nothing for the material as it is set
+(`materials.shown_controls`, which follows what `studio_scene.py` does): Metal only for Generic;
+Glow for Glowing; Ripple size for Water (whose Relief is the waves' height, with no relief map);
+grass height and density for Grass (no Transparency there); the Relief slider while a texture set
+gives the relief and no relief map is chosen; **Map image size** only for a map file on a material
+without a picture; **Change picture…** only with a picture; Invert and contrast only for a
+black-and-white map; «Picture (B/W)» can't be chosen without a picture. For Glass and Water the
+texture set offers only its normal map, the only one the render uses on them. The map of a hidden
+setting is not saved.
 
 ### Full texture sets (normal, roughness, AO, displacement, metalness, opacity)
 
@@ -224,9 +259,11 @@ an image follows your work. Two switches under it, remembered between sessions:
   when it changed. A change that comes while the previous one is still being built waits for it.
   Off: the live scene keeps the model and materials it has; the look and sliders still apply.
 
-The live Blender always uses EEVEE with its costliest effects off (ray tracing, fast GI, fine
-shadows) and grass at a third of its density: the panel's **Engine** and **Quality** are for
-**Render**. Measured on a test machine (Blender 5.3): first start about 3 s, a camera stop to the
+The live Blender uses EEVEE with its costliest effects off (ray tracing, fast GI, fine
+shadows): the panel's **Engine** and **Quality** are for **Render**. The **Interior** look is the
+exception (0.11.0): EEVEE can't fill a room lit through a window, so its live view is **Cycles**
+(persistent data, GPU denoiser; 2 samples while moving, 4 for the quick image, 32 for the draft),
+and the preview looks like the render. The grass is as dense as in the render. Measured on a test machine (Blender 5.3): first start about 3 s, a camera stop to the
 quick image about 0.3 s, a change of look, material or model about 0.7–1 s, and 3–4 frames a second
 while the camera moves. That last figure is EEVEE's fixed cost per image (about a quarter of a second
 whatever its size; saving it and the compositor barely count): a smoother motion would need an
@@ -295,8 +332,12 @@ Render tab).
 - `tests/test_texture_swap_offline.py` changes a material's picture on loose faces, nested
   components and painted objects, and checks placement, proportions, tint, undo and save/reopen.
 - `tests/test_help_offline.py` checks the help against the code.
-- `tests/test_grass_sets_editor_offline.py` checks the Grass type in the editor (height slider, presets, cube
-  preview) and how the editor shows a picture's texture set.
+- `tests/test_grass_sets_editor_offline.py` checks the Grass type in the editor (height and density sliders,
+  presets, cube preview) and how the editor shows a picture's texture set.
+- `tests/test_detect_offline.py` checks the names recognised (and the look-alikes that are not), the editor's
+  ◦ mark and note, and the render job.
+- `tests/test_shown_controls_offline.py` checks which controls the editor shows for each type, picture and
+  texture set, and the panel's check of a Blender chosen by hand.
 - `tests/test_grass_blender.py` renders a lawn with a real Blender (EEVEE and Cycles): the blades grow on the lawn
   only, take its picture's colour where they stand, follow the height slider and leave the model's mesh alone.
 - `tests/test_pbr_offline.py` (plain Python) finds texture sets by manifest and by the two libraries' names,

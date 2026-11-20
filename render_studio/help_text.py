@@ -51,7 +51,10 @@ def html() -> str:
 <h3>Render Studio: how it works</h3>
 <p>Render Studio makes a realistic picture of your model with one click. You choose a <b>look</b> (the light and
 the mood), press <b>Render</b>, and then fine-tune the finished image <i>without rendering again</i>. It uses
-Blender in the background: IngeTrazo has to be able to find it (set its path in IngeTrazo's Render tab first).</p>
+Blender (free, 4.2 or newer) in the background. When IngeTrazo can't find one, the panel says so at the top: choose
+the Blender program there (type its path or <b>Browse…</b>; on a Mac the Blender app itself), or follow the link to
+download it from blender.org, install it and choose it. The path is checked (it must be Blender 4.2 or newer) and kept
+where IngeTrazo's Render tab keeps it, so both use the same Blender.</p>
 
 <h4>In five steps</h4>
 <ol>
@@ -84,9 +87,10 @@ it, up to 2. Not available while a 360° background lights the scene.</td></tr>
 <tr><td valign='top'><b>Vignette</b></td><td>Darkens the corners of the picture to draw the eye to the centre.</td></tr>
 <tr><td valign='top'><b>Materials…</b></td><td>Opens the material editor (see below).</td></tr>
 <tr><td valign='top'><b>Live view</b></td><td>Keeps Blender open with your scene and look loaded, and an image
-follows your work. It always uses EEVEE with its slowest effects off and lighter grass, whatever the <b>Engine</b> and
-<b>Quality</b> say (those are for Render), so an interior meant for Cycles looks only roughly right here. The first start
-takes a few seconds; after that everything happens in the same Blender.
+follows your work. It uses EEVEE with its slowest effects off, whatever the <b>Engine</b> and <b>Quality</b> say (those
+are for Render), except with the <b>Interior</b> look: EEVEE can't fill a room lit through a window, so there the live
+view uses <b>Cycles</b> (a few samples, denoised; best with a graphics card), and the preview looks like the render. The
+grass is as dense as in the render. The first start takes a few seconds; after that everything happens in the same Blender.
 <br><b>Follow the camera</b>: while you orbit or walk, small rough frames keep coming (three or four a second, as fast as
 Blender renders them); stop, and a <b>quick</b> image comes, then a cleaner <b>draft</b>. Off: the image keeps the camera
 it had, so you can look elsewhere in the 3D view while watching one view change.
@@ -146,7 +150,17 @@ without rendering again, and what you see is what you save.</p>
 <h3>The material editor</h3>
 <p>Controls how each material of the model <b>renders</b>, in a few simple settings. The list shows the
 materials used in the model (hover one for its number of faces). <b>From the selection</b> jumps to the material of the
-selected face or group. Changes apply to the <b>next render</b>, are saved in the document, and each one is an undo step.</p>
+selected face or group. Changes apply to the <b>next render</b>, are saved in the document, and each one is an undo step.
+The editor shows only the settings that change the render of the material as it is: those of its <b>type</b> (Metal for
+generic materials, Ripple size for water, Glow for glowing ones, the grass's height and density for grass), <b>Change
+picture…</b> only when it has a picture, and no Relief slider while its texture set gives the relief (choose a relief map
+and the slider comes back to scale it).</p>
+<p><b>Recognised by the name.</b> A material without settings of its own whose name (or picture's file name) says what
+it is starts as that preset, in the editor <i>and</i> in the render: water (aigua, agua, water, piscina, mar, llac…),
+glass (vidre, vidrio, glass, cristal…), grass (gespa, césped, grass, herba, lawn…; «herba alta», «tall grass», prat or
+prado give Tall grass) and lights (llum, luz, LED, neon, làmpada…), in several languages. The list marks them ◦ and the
+editor says so; change any setting and they become the material's own (●). The model's transparency is not changed:
+for see-through water or glass, move <b>Transparency</b>.</p>
 <table cellspacing='0' cellpadding='3' width='100%'>
 <tr><td valign='top'><b>Cube preview</b></td><td>At the top, a quick preview of the material on a one-metre cube. It follows
 the picture (and its tile size), the colour, the <b>type</b> (glass and water are see-through, glowing ones get a halo) and
@@ -184,8 +198,11 @@ broad ones read as water; the sun then glints on them.</td></tr>
 The blades exist <b>only in the render</b>: the model stays flat and light to work with. They grow on every face that wears
 the material, upright whatever the slope, in small tufts turned and sized at random. Their colour is the material's
 <b>picture</b> where each tuft stands (a lawn picture gives the lawn's patches), or its colour, darker at the root; the
-face under them fills the gaps. Taller grass grows in fewer, bigger tufts. A very large lawn is thinned a little so the
-render stays quick (the status line says so). The cube preview shows the height.</td></tr>
+face under them fills the gaps. The cube preview shows the height.</td></tr>
+<tr><td valign='top'><b>Grass density</b></td><td>Grass only: how many tufts (of a few blades each) grow on a square metre,
+20 to 800. A thick lawn is 250 to 400, long grass 60 to 120 (taller tufts are bigger). The live view and the render use
+the same density, whatever the camera sees. Only a huge lawn (more than 600 000 tufts in all) is thinned so Blender
+does not run out of memory; Blender's log says by how much.</td></tr>
 <tr><td valign='top'><b>Map image size</b></td><td>How big one image of a map file is on the model, in metres. Used when
 the material has no picture of its own; with a picture, the maps follow its size and placement.</td></tr>
 <tr><td valign='top'><b>Back to automatic</b></td><td>Forgets these settings: IngeTrazo's own finish for the material.</td></tr>
