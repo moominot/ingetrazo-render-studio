@@ -169,7 +169,13 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
     out_of_file = [g for g in proxies.shown_proxies(scene) if g not in missing] if placed else []
     # The ground is sized and set at the model's foot with the proxies in it.
     ground_block = rb.ground_dict(scene) if (ground and out_of_file) else None
-    with _model_kept(work if reuse_model else None), proxies.left_out(out_of_file), _shared_copies(scene):
+    try:
+        symbols = studio_lights.symbols_out_of_render(scene)   # an imported light's component
+    except Exception:  # noqa: BLE001 - never stops a render: the symbols, as drawn
+        _log.exception("light symbols not read")
+        symbols = []
+    with _model_kept(work if reuse_model else None), proxies.left_out(out_of_file + symbols), \
+            _shared_copies(scene):
         job = rb.write_job(scene, camera, work, engine=engine, quality=quality, width=width,
                            height=height, ground=ground, ambience=ambience,
                            lights=tab_lights, serve=serve)

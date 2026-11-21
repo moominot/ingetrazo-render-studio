@@ -526,6 +526,29 @@ def iter_object_lights(scene):
         yield from walk(g, None, (), None)
 
 
+def symbols_out_of_render(scene) -> list:
+    """The shown placements that are only a light's symbol (an Enscape light
+    comes in as a component): ``group.ext["render_studio"]["hide_in_render"]``.
+    The drawing keeps them; the render's model file leaves them out. The light
+    itself is untouched: it is read from the same group."""
+    out = []
+
+    def walk(group):
+        if getattr(group, "hidden", False):
+            return
+        ext = getattr(group, "ext", None) or {}
+        block = ext.get(KEY) if isinstance(ext, dict) else None
+        if isinstance(block, dict) and block.get("hide_in_render"):
+            out.append(group)
+            return                      # its parts go with it
+        for child in getattr(group, "children", None) or ():
+            walk(child)
+
+    for g in list(getattr(scene, "groups", None) or ()):
+        walk(g)
+    return out
+
+
 def find_group(scene, path):
     """The placement at ``path`` (uids from the top-level object down), or None."""
     level = list(getattr(scene, "groups", None) or ())

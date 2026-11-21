@@ -460,10 +460,17 @@ class LightsTab(QWidget):
         key = item.data(0, Qt.UserRole)
         if self._filling or key is None:
             return
+        on = item.checkState(0) == Qt.Checked
+        # The edit tells the document it changed, and the list is rebuilt
+        # (``refresh`` clears the tree): that deleted ``item`` while Qt was
+        # still inside its own signal, and the app crashed. So it waits for
+        # the next turn, when Qt is out of the item.
+        QTimer.singleShot(0, lambda: self._tick_apply(key, on))
+
+    def _tick_apply(self, key, on) -> None:
         e = ops.entry(self.app.scene, key)
         if e is None:
             return
-        on = item.checkState(0) == Qt.Checked
         if on != e["world"]["on"]:
             self._flush()
             ops.update(self.app, key, dict(e["world"], on=on), self._copies(e))
