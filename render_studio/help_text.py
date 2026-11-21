@@ -9,6 +9,7 @@ from html import escape
 
 from . import materials as M
 from . import presets
+from .i18n import language, localized_text, tr
 
 LOOKS = {
     "clear": "Physical sky, the sun coloured by its height, a few clouds. The all-round daylight look.",
@@ -33,19 +34,27 @@ PRESET_NOTES = {
 }
 
 
+def _l() -> str:
+    return language() if language() in ("ca", "es") else "en"
+
+
 def _looks() -> str:
-    rows = "".join(f"<tr><td valign='top'><b>{escape(presets.label(k))}</b></td><td>{LOOKS[k]}</td></tr>"
+    rows = "".join(f"<tr><td valign='top'><b>{escape(presets.label(k, _l()))}</b></td><td>{tr(LOOKS[k])}</td></tr>"
                    for k in presets.ORDER)
     return f"<table cellspacing='0' cellpadding='3' width='100%'>{rows}</table>"
 
 
 def _material_presets() -> str:
-    rows = "".join(f"<tr><td valign='top'><b>{escape(M.preset_label(k))}</b></td><td>{PRESET_NOTES[k]}</td></tr>"
+    rows = "".join(f"<tr><td valign='top'><b>{escape(M.preset_label(k, _l()))}</b></td><td>{tr(PRESET_NOTES[k])}</td></tr>"
                    for k in M.PRESETS)
     return f"<table cellspacing='0' cellpadding='3' width='100%'>{rows}</table>"
 
 
 def html() -> str:
+    translated = localized_text("help")
+    if translated is not None:
+        return (translated.replace("{LOOKS}", _looks())
+                .replace("{PRESETS}", _material_presets()))
     return f"""
 <a name="panel"></a>
 <h3>Render Studio: how it works</h3>

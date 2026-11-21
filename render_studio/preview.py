@@ -14,6 +14,8 @@ Alone (``panel`` None, as the tests use it) it is just the final-picture viewer.
 """
 from __future__ import annotations
 
+from .i18n import tr, translate_on_show  # noqa: F401
+
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, Qt
@@ -188,7 +190,7 @@ class ImageWindow(QWidget):
         self.cancel_btn.setVisible(mode == "rendering" and has_panel)
         if mode == "rendering":
             self.bar.setValue(0)
-        self.note.setText(NOTES[mode] if has_panel or mode == "final" else "")
+        self.note.setText(tr(NOTES[mode]) if has_panel or mode == "final" else "")
         if mode == "final":
             self.status.setText("")
 
@@ -295,23 +297,23 @@ class ImageWindow(QWidget):
         extra = self.rendered_file if self.rendered_file is not None and self.rendered_file.is_file() else None
         if extra is not None:
             ext = extra.suffix
-            filters = f"{self.rendered_label}, as rendered, without the retouching (*{ext});;" + filters
+            filters = tr("{label}, as rendered, without the retouching (*{ext})", label=self.rendered_label, ext=ext) + ";;" + filters
             start = str(Path(start).with_suffix(ext))
-        path, chosen = QFileDialog.getSaveFileName(self, "Save image", start, filters)
+        path, chosen = QFileDialog.getSaveFileName(self, tr("Save image"), start, filters)
         if path and extra is not None and (chosen.startswith(self.rendered_label) or (
                 extra.suffix.lower() not in (".png", ".jpg", ".jpeg") and path.lower().endswith(extra.suffix.lower()))):
             import shutil
             try:
                 shutil.copyfile(extra, path)
             except OSError:
-                self.status.setText(f"Could not write {path}")
+                self.status.setText(tr("Could not write {path}", path=path))
                 return
             QSettings().setValue(_SETTINGS + "save_dir", str(Path(path).parent))
-            self.status.setText(f"Saved as rendered: {path}")
+            self.status.setText(tr("Saved as rendered: {path}", path=path))
             return
         if path and self.save_to(path):
             QSettings().setValue(_SETTINGS + "save_dir", str(Path(path).parent))
-            self.status.setText(f"Saved: {path}")
+            self.status.setText(tr("Saved: {path}", path=path))
 
     def closeEvent(self, ev):          # noqa: N802
         if self.panel is not None:

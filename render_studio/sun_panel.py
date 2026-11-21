@@ -8,6 +8,8 @@ with it (Golden hour lowers it, Overcast and Night have none).
 """
 from __future__ import annotations
 
+from .i18n import tr, translate_on_show  # noqa: F401
+
 import math
 
 from PySide6.QtCore import QDate, Qt, QTime, QTimer
@@ -126,7 +128,7 @@ class SunTab(QWidget):
                                                ("autumn", "Autumn", "The autumn equinox"),
                                                ("winter", "Winter", "The winter solstice"))):
             b = _wide_button(label)
-            b.setToolTip(tip + ", as the site lives it: summer is June in the north, December in the south")
+            b.setToolTip(tr(tip) + tr(", as the site lives it: summer is June in the north, December in the south"))
             b.clicked.connect(lambda _c=False, k=key: self._season(k))
             self.season_btns[key] = b
             srow.addWidget(b, i // 2, i % 2)
@@ -165,7 +167,7 @@ class SunTab(QWidget):
         qbox.setLayout(qrow)
         form2.addRow(qbox)
         self.zone = QComboBox()
-        self.zone.addItem("From the longitude", None)
+        self.zone.addItem(tr("From the longitude"), None)
         for h in range(-12, 15):
             self.zone.addItem(f"UTC{h:+d}", h)
         self.zone.setToolTip("The clock the hour is read on. «From the longitude» is solar time; choose the "
@@ -211,15 +213,15 @@ class SunTab(QWidget):
             self.time_slider.setValue(s["hour"] * 60 + s["minute"])
             i = self.zone.findData(s["utc_offset"])
             self.zone.setCurrentIndex(i if i >= 0 else 0)
-            self.zone.setItemText(0, f"From the longitude (UTC{s['zone']:+d})")
+            self.zone.setItemText(0, tr("From the longitude (UTC{zone})", zone=f"{s['zone']:+d}"))
             self.shadows.setChecked(s["shadows"])
         finally:
             for w in widgets:
                 w.blockSignals(False)
             self._filling = False
-        self.where.setText("The model's location (the map and the terrain follow it too)." if s["located"] else
-                           "The model has no location yet: the sun stands at IngeTrazo's default place. Type the "
-                           "real one, or choose it on the map; it becomes the model's location.")
+        self.where.setText(tr("The model's location (the map and the terrain follow it too).") if s["located"] else
+                           tr("The model has no location yet: the sun stands at IngeTrazo's default place. Type the "
+                              "real one, or choose it on the map; it becomes the model's location."))
         self._show_sun(s)
 
     def _show_sun(self, s=None) -> None:
@@ -227,23 +229,23 @@ class SunTab(QWidget):
         i = S.info(s)
         day = i["daylight"]
         if day:
-            self.daylight.setText(f"Daylight {S.minutes_text(day[0])} – {S.minutes_text(day[1])} on that clock")
+            self.daylight.setText(tr("Daylight {a} – {b} on that clock", a=S.minutes_text(day[0]), b=S.minutes_text(day[1])))
         else:
-            self.daylight.setText("The sun does not rise that day (polar night).")
+            self.daylight.setText(tr("The sun does not rise that day (polar night)."))
         if i["up"]:
-            self.sun_now.setText(f"{i['elevation']:.1f}° above the horizon, from the {S.compass(i['azimuth'])} "
-                                 f"({i['azimuth']:.0f}° from north). Shadows "
-                                 f"{1 / max(0.01, math.tan(math.radians(i['elevation']))):.1f}× "
-                                 "as long as the things that cast them.")
+            self.sun_now.setText(tr("{elev:.1f}° above the horizon, from the {dir} ({az:.0f}° from north). "
+                                    "Shadows {ratio:.1f}× as long as the things that cast them.",
+                                    elev=i['elevation'], dir=S.compass(i['azimuth']), az=i['azimuth'],
+                                    ratio=1 / max(0.01, math.tan(math.radians(i['elevation'])))))
         else:
-            self.sun_now.setText("Below the horizon: night. A day look renders with sky light only; choose an hour "
-                                 "with sun, or the Night look.")
+            self.sun_now.setText(tr("Below the horizon: night. A day look renders with sky light only; choose an hour "
+                                    "with sun, or the Night look."))
         look, hdri = "clear", False
         if self.panel is not None:
             look = self.panel.preset.currentData()
             h = self.panel.hdri_settings()
             hdri = bool(h and h.get("light"))
-        self.look.setText(S.look_note(look, hdri))
+        self.look.setText(tr(S.look_note(look, hdri)))
         self.look.setVisible(bool(self.look.text()))
 
     # ---- editing ------------------------------------------------------------------------

@@ -20,6 +20,8 @@ Every change is one undo step, a moment after the last touch.
 """
 from __future__ import annotations
 
+from .i18n import tr, translate_on_show  # noqa: F401
+
 import os
 
 from PySide6.QtCore import QSettings, Qt, QTimer
@@ -132,9 +134,9 @@ class LightsTab(QWidget):
         lay.addLayout(add)
         prow = QHBoxLayout()
         self.preset = QComboBox()
-        self.preset.addItem("Add a ready-made light…", "")
+        self.preset.addItem(tr("Add a ready-made light…"), "")
         for key, kind, label, _v in L.PRESETS:
-            self.preset.addItem(f"{label}", key)
+            self.preset.addItem(tr(label), key)
         self.preset.activated.connect(self._preset_chosen)
         self.preset.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.preset.setMinimumContentsLength(8)
@@ -169,7 +171,7 @@ class LightsTab(QWidget):
         ef.addRow("Name", self.name)
         self.kind = QComboBox()
         for k in L.TYPES:
-            self.kind.addItem(KIND_LABEL[k], k)
+            self.kind.addItem(tr(KIND_LABEL[k]), k)
         self.kind.setToolTip("Changing the kind keeps the place, aim, power and colour.")
         self.kind.currentIndexChanged.connect(self._changed)
         ef.addRow("Kind", self.kind)
@@ -247,7 +249,7 @@ class LightsTab(QWidget):
         ef.addRow("Soft edge", self.spot_blend)
         self.shape = QComboBox()
         for s in L.SHAPES:
-            self.shape.addItem(s.capitalize(), s)
+            self.shape.addItem(tr(s.capitalize()), s)
         self.shape.currentIndexChanged.connect(self._changed)
         ef.addRow("Shape", self.shape)
         self.size = _spin(0.001, 100.0, 3, 0.05, " m", "Its width (the diameter of a disc).")
@@ -286,7 +288,7 @@ class LightsTab(QWidget):
         prow2.setContentsMargins(0, 0, 0, 0)
         self.xyz = [_spin(-1e6, 1e6, 2, 0.1) for _ in range(3)]
         for w, axis in zip(self.xyz, "XYZ"):
-            w.setToolTip(f"{axis} in the world, in metres")
+            w.setToolTip(tr("{axis} in the world, in metres", axis=axis))
             w.setButtonSymbols(QDoubleSpinBox.NoButtons)
             w.valueChanged.connect(self._changed)
             prow2.addWidget(w)
@@ -397,7 +399,7 @@ class LightsTab(QWidget):
         for n, e in enumerate(entries, 1):
             src = e["source"]
             if src not in sections:
-                head = QTreeWidgetItem([SECTION[src]])
+                head = QTreeWidgetItem([tr(SECTION[src])])
                 head.setFlags(Qt.ItemIsEnabled)
                 f = head.font(0)
                 f.setBold(True)
@@ -408,7 +410,7 @@ class LightsTab(QWidget):
             lt = e["world"]
             text = light_view._label(lt, n)
             if src == "object" and e["group"] is not None:
-                text += f"  — on «{e['group'].name}»"
+                text += "  " + tr("— on «{name}»", name=e["group"].name)
             item = QTreeWidgetItem([text])
             item.setData(0, Qt.UserRole, e["key"])
             item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsUserCheckable)
@@ -419,7 +421,7 @@ class LightsTab(QWidget):
             if e["key"] == want:
                 found = item
         if not entries:
-            empty = QTreeWidgetItem(["No lights yet: add one with the buttons below."])
+            empty = QTreeWidgetItem([tr("No lights yet: add one with the buttons below.")])
             empty.setFlags(Qt.ItemIsEnabled)
             self.tree.addTopLevelItem(empty)
         self.tree.blockSignals(False)
@@ -525,11 +527,11 @@ class LightsTab(QWidget):
         self._kelvin_named(k)
         src = e["source"]
         self.where.setText({
-            "free": "A Render Studio light, where it is placed.",
-            "object": f"On «{e['group'].name if e['group'] is not None else '?'}»: it moves, turns and is "
-                      "copied with it. Place and aim are in the world.",
-            "tab": "A light of IngeTrazo's Render tab: both renders use it. Here only what that tab knows "
-                   "can change (place, aim, power, colour, beam); make it a Render Studio light for the rest.",
+            "free": tr("A Render Studio light, where it is placed."),
+            "object": tr("On «{name}»: it moves, turns and is copied with it. Place and aim are in the world.",
+                         name=e['group'].name if e['group'] is not None else '?'),
+            "tab": tr("A light of IngeTrazo's Render tab: both renders use it. Here only what that tab knows "
+                      "can change (place, aim, power, colour, beam); make it a Render Studio light for the rest."),
         }[src])
         self._layout_for(lt, src, e)
 
@@ -567,7 +569,7 @@ class LightsTab(QWidget):
             self.power_note.setText("Blender's sun strength: a clear day's sun is 1000 W/m² of real light; "
                                     "the looks use a few W/m². Moonlight ≈ 0.05.")
         elif lt["unit"] == "lm":
-            self.power_note.setText(f"≈ {L.blender_watts(lt):.3g} W in Blender")
+            self.power_note.setText(tr("≈ {w:.3g} W in Blender", w=L.blender_watts(lt)))
         else:
             self.power_note.setText(f"≈ {L.lumens(lt):,.0f} lm".replace(",", " "))
         on_obj = src == "object"
@@ -581,17 +583,17 @@ class LightsTab(QWidget):
     def _kelvin_named(self, k):
         if self.custom is not None:
             r, g, b = self.custom
-            self.kelvin_label.setText(f"Own colour ({int(r * 255)}, {int(g * 255)}, {int(b * 255)}); "
-                                      "move the slider for a temperature again")
+            self.kelvin_label.setText(tr("Own colour ({r}, {g}, {b}); move the slider for a temperature again",
+                                         r=int(r * 255), g=int(g * 255), b=int(b * 255)))
         else:
-            self.kelvin_label.setText(kelvin_name(int(k)))
+            self.kelvin_label.setText(tr(kelvin_name(int(k))))
 
     def _pick_colour(self):
         e = ops.entry(self.app.scene, self._key)
         if e is None:
             return
         r, g, b = e["world"]["color"]
-        c = QColorDialog.getColor(QColor.fromRgbF(r, g, b), self, "Light colour")
+        c = QColorDialog.getColor(QColor.fromRgbF(r, g, b), self, tr("Light colour"))
         if c.isValid():
             self.custom = [round(c.redF(), 4), round(c.greenF(), 4), round(c.blueF(), 4)]
             self._kelvin_named(0)
@@ -715,15 +717,15 @@ class LightsTab(QWidget):
             return
         self._flush()
         self._picking = (purpose, what)
-        prompts = {"new": "Click where the light goes",
-                   "move": "Click the light's new place",
-                   "aim": "Click the point the light looks at"}
+        prompts = {"new": tr("Click where the light goes"),
+                   "move": tr("Click the light's new place"),
+                   "aim": tr("Click the point the light looks at")}
         tool = light_view.make_pick_tool(prompts[purpose], self._picked, self._end_pick)
         vp = self.app.viewport
         vp.set_active_tool(tool)
         win = getattr(self.app, "window", None)
         if win is not None and hasattr(win, "statusBar"):
-            win.statusBar().showMessage(prompts[purpose] + " — Esc cancels")
+            win.statusBar().showMessage(prompts[purpose] + tr(" — Esc cancels"))
         vp.setFocus()
 
     def place(self, light, point, normal):

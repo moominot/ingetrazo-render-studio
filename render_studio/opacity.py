@@ -9,6 +9,8 @@ and the render (which read the same value) agree.
 """
 from __future__ import annotations
 
+from .i18n import tr
+
 import logging
 
 from core.history import RestampMaterialCommand
@@ -120,7 +122,7 @@ def set_opacity(app, name, opacity) -> tuple[bool, str]:
         vp.history.execute(SetMaterialOpacityCommand(name, opacity))
     except Exception as exc:  # noqa: BLE001 - say it, never crash the app
         _log.exception("could not change the opacity of %s", name)
-        return False, f"Could not change the transparency: {exc}"
+        return False, tr("Could not change the transparency: {error}", error=exc)
     notify = getattr(vp, "notify_scene_changed", None)
     if callable(notify):
         notify()

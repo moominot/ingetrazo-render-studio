@@ -14,6 +14,8 @@ The size and the file are kept in the document (``settings["output"]``, see
 """
 from __future__ import annotations
 
+from .i18n import tr, translate_on_show  # noqa: F401
+
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, Signal
@@ -66,7 +68,7 @@ class OutputTab(QWidget):
         form.setRowWrapPolicy(QFormLayout.WrapLongRows)
         self.size = QComboBox()
         for key, label, _w, _h in O.SIZES:
-            self.size.addItem(label, key)
+            self.size.addItem(tr(label), key)
         self.size.setToolTip("The picture's size. «Same shape as the 3D view»: the width below, the height "
                              "follows the view.")
         self.size.currentIndexChanged.connect(self._size_chosen)
@@ -126,7 +128,7 @@ class OutputTab(QWidget):
         self._file_form = form2
         self.format = QComboBox()
         for key in O.FORMAT_ORDER:
-            self.format.addItem(O.FORMATS[key][0], key)
+            self.format.addItem(tr(O.FORMATS[key][0]), key)
         self.format.setToolTip("PNG and JPEG keep the preview window's retouching. 16-bit PNG and TIFF and "
                                "OpenEXR keep more of the light for editing elsewhere; they are saved as "
                                "Blender wrote them.")
@@ -335,8 +337,8 @@ class OutputTab(QWidget):
             self.height.setValue(h)
             self.height.blockSignals(False)
         self.summary.setText(O.describe(w, h, self.dpi.value()) +
-                             ("\nThe height follows the 3D view's shape." if view else
-                              "\nThe preview shows this frame; the view's height is kept, its sides change."))
+                             ("\n" + tr("The height follows the 3D view's shape.") if view else
+                              "\n" + tr("The preview shows this frame; the view's height is kept, its sides change.")))
         fmt = self.format.currentData()
         self.jpeg_quality.setVisible(fmt == "jpeg")
         lab = self._file_form.labelForField(self.jpeg_quality)
@@ -347,10 +349,10 @@ class OutputTab(QWidget):
         if not alpha:
             self.transparent.setChecked(False)
         self.file_note.setText(
-            "The preview window's retouching is saved with it." if O.retouchable(fmt) else
-            "Saved as Blender wrote it (the retouching sliders only change the picture on screen). "
-            + ("Linear light, for compositing: it looks dark and flat until it is toned." if fmt == "exr" else
-               "16 bits per channel: more room to edit it elsewhere."))
+            tr("The preview window's retouching is saved with it.") if O.retouchable(fmt) else
+            tr("Saved as Blender wrote it (the retouching sliders only change the picture on screen). ")
+            + (tr("Linear light, for compositing: it looks dark and flat until it is toned.") if fmt == "exr" else
+               tr("16 bits per channel: more room to edit it elsewhere.")))
 
     def _remember_autosave(self, *_a) -> None:
         st = QSettings()
@@ -359,7 +361,7 @@ class OutputTab(QWidget):
         st.setValue(_SETTINGS + "autosave_name", self.pattern.text().strip())
 
     def _browse(self) -> None:
-        path = QFileDialog.getExistingDirectory(self, "Save every render in", self.folder.text() or str(Path.home()))
+        path = QFileDialog.getExistingDirectory(self, tr("Save every render in"), self.folder.text() or str(Path.home()))
         if path:
             self.folder.setText(path)
             self.autosave.setChecked(True)

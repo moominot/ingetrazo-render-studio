@@ -24,13 +24,17 @@ _log = logging.getLogger(__name__)
 def setup(app):
     if getattr(app, "api_version", 0) < 2:
         raise RuntimeError("Requires IngeTrazo with Extension API 2")
+    from .i18n import tr, translate_on_show
+    from .icons import panel_icon
     from .panel import StudioPanel
     panel = StudioPanel(app)
-    dock = app.add_panel("Render Studio", panel, start_hidden=True)
-    app.add_menu_action("Render Studio…", lambda: app.show_panel(dock),
-                        tip="Photographic renders: looks, auto exposure, clouds, live adjustments.")
-    app.add_menu_action("Render Studio materials…", panel.open_materials,
-                        tip="How each material renders: polish, metal, relief, glass, glow.")
+    translate_on_show(panel)
+    dock = app.add_panel(tr("Render Studio"), panel, start_hidden=True,
+                         **panel_icon(app, "render_studio"))
+    app.add_menu_action(tr("Render Studio…"), lambda: app.show_panel(dock),
+                        tip=tr("Photographic renders: looks, auto exposure, clouds, live adjustments."))
+    app.add_menu_action(tr("Render Studio materials…"), panel.open_materials,
+                        tip=tr("How each material renders: polish, metal, relief, glass, glow."))
     if hasattr(app, "on_document_changed"):
         app.on_document_changed(panel.document_changed)
 
@@ -41,8 +45,8 @@ def setup(app):
         app.show_panel(dock)
         panel.tabs.setCurrentWidget(panel.tabs.widget(1))
 
-    app.add_menu_action("Render Studio lights…", show_lights,
-                        tip="Point, spot, area and sun lights for the render, placed in the model.")
+    app.add_menu_action(tr("Render Studio lights…"), show_lights,
+                        tip=tr("Point, spot, area and sun lights for the render, placed in the model."))
     tab = panel.lights_tab
     if hasattr(app, "add_overlay"):
         app.add_overlay(lambda viewport, painter: light_view.draw(tab, viewport, painter))

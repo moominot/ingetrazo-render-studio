@@ -8,6 +8,8 @@ original picture. Only what differs from the picture as it is gets saved.
 """
 from __future__ import annotations
 
+from .i18n import tr, translate_on_show  # noqa: F401
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QCheckBox, QColorDialog, QFormLayout, QHBoxLayout, QLabel, QPushButton,
@@ -177,7 +179,7 @@ class ImageAdjust(QWidget):
     def _pick(self, which):
         current = getattr(self, which)
         c = QColorDialog.getColor(QColor.fromRgbF(*current) if current else QColor(255, 255, 255), self,
-                                  "Tint colour" if which == "tint" else "Flat colour")
+                                  tr("Tint colour") if which == "tint" else tr("Flat colour"))
         if c.isValid():
             self.set_colour(which, (c.redF(), c.greenF(), c.blueF()))
 

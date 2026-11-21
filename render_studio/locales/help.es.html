@@ -1,0 +1,332 @@
+
+<a name="panel"></a>
+<h3>Render Studio: cómo funciona</h3>
+<p>Render Studio hace una imagen realista de tu modelo. Eliges un <b>aspecto</b> (la luz y el ambiente), lo miras en una
+<b>vista previa</b> en vivo, pulsas <b>Renderizar</b>, y luego afinas la imagen terminada <i>sin volver a renderizar</i>. Usa
+Blender (gratuito, 4.2 o posterior) en segundo plano. Cuando IngeTrazo no encuentra ninguno, el panel lo dice arriba del todo: elige
+allí el programa Blender (escribe su ruta o <b>Examinar…</b>; en un Mac, la propia aplicación Blender), o sigue el enlace para
+descargarlo de blender.org, instalarlo y elegirlo. La ruta se comprueba (debe ser Blender 4.2 o posterior) y se guarda
+donde la pestaña Render de IngeTrazo guarda la suya, así que ambas usan el mismo Blender.</p>
+
+<h4>En cuatro pasos</h4>
+<ol>
+<li>Elige un <b>Aspecto</b> y mueve los controles deslizantes (la escena), y fija el <b>Motor</b>, la <b>Calidad</b> y el <b>Ancho</b> del render final.</li>
+<li>Pulsa <b>Abrir la vista previa…</b>: una ventana con una <b>vista previa en vivo</b> de la vista 3D que puedes ampliar y mover.</li>
+<li>Pulsa <b>Renderizar</b> para la imagen final. Entonces aparecen los controles de retoque y <b>Guardar la imagen…</b>. O pulsa
+<b>Renderizar y guardar…</b> para elegir un archivo y que la imagen se guarde enseguida, sin retoque.</li>
+<li>En las herramientas de retoque, ajusta la imagen al instante y <b>Guardar la imagen…</b>; <b>Volver a la vista previa</b> regresa a la vista en vivo.</li>
+</ol>
+
+<h4>Dos clases de controles deslizantes</h4>
+<p>Algunos nombres aparecen dos veces (exposición, saturación, calidez, viñeta) porque hacen dos cosas distintas:
+los controles del <b>panel</b> cambian la <b>escena</b> (la luz, el cielo), así que la vista previa y Renderizar los dibujan, y
+un cambio hace que la vista previa se actualice; los controles de <b>retoque</b> de la ventana de vista previa cambian solo la <b>imagen terminada</b>,
+al instante, sin volver a renderizar. Cada control muestra su valor y una línea que dice qué hace.</p>
+
+<h4>El panel</h4>
+<p>Tres grupos: <b>Aspecto y luz</b> (la escena), <b>Fondo de 360°</b> y <b>Render final</b> (solo Renderizar usa
+el motor, la calidad y el ancho; la vista previa es siempre un borrador rápido).</p>
+<table cellspacing='0' cellpadding='3' width='100%'>
+<tr><td valign='top'><b>Aspecto</b></td><td>La luz y el ambiente: véase la lista de abajo. Cambiarlo pone los valores propios de ese aspecto
+en los controles que fija.</td></tr>
+<tr><td valign='top'><b>Exposición</b></td><td>Cuán claro es el render, en pasos (EV) de -3 a +3, sobre la exposición
+automática que aplica cada aspecto. 0 es lo que mide el aspecto.</td></tr>
+<tr><td valign='top'><b>Nubes</b></td><td>Cobertura de nubes, de 0 a 100 %. No disponible mientras un fondo de 360° ilumina
+la escena (su propio cielo sustituye al del aspecto).</td></tr>
+<tr><td valign='top'><b>Sol</b></td><td>La intensidad del sol como múltiplo de la del aspecto: 0 ninguna, 1 como la tiene el aspecto,
+hasta 2. No disponible mientras un fondo de 360° ilumina la escena.</td></tr>
+<tr><td valign='top'><b>Calidez</b></td><td>Color de la luz, de fría y azulada (-1) a cálida y amarillenta (+1).</td></tr>
+<tr><td valign='top'><b>Saturación</b></td><td>Intensidad de los colores en el render: 0 es blanco y negro, 1,6 es vivo.</td></tr>
+<tr><td valign='top'><b>Viñeta</b></td><td>Oscurece las esquinas del render para llevar la mirada al centro.</td></tr>
+<tr><td valign='top'><b>Motor</b></td><td><b>EEVEE</b> es rápido (unos 3 segundos). <b>Cycles</b> da la mejor
+calidad (unos 5 segundos en una tarjeta gráfica RTX, más lento sin ella), con un rebote de luz más verdadero.</td></tr>
+<tr><td valign='top'><b>Calidad</b></td><td>Borrador, Media o Alta: el número de muestras. EEVEE usa 16 / 64 / 128 y
+Cycles 32 / 128 / 512. Más muestras significan menos ruido y un render más lento. Usa Borrador mientras ajustas y Alta para la
+imagen final.</td></tr>
+<tr><td valign='top'><b>Ancho</b></td><td>El ancho de la imagen en píxeles (de 320 a 7680). La altura sigue las
+proporciones de la vista 3D.</td></tr>
+<tr><td valign='top'><b>Materiales…</b></td><td>Abre el editor de materiales (véase más abajo).</td></tr>
+<tr><td valign='top'><b>Abrir la vista previa…</b></td><td>Abre la ventana de vista previa (véase más abajo). La línea de debajo dice qué
+pasa, o por qué no pudo iniciarse (por ejemplo, no se encontró Blender).</td></tr>
+</table>
+<h4>Los ajustes se guardan en el documento</h4>
+<p>El aspecto, el motor, la calidad, el ancho, los controles deslizantes y el fondo de 360° se guardan <b>dentro del documento de IngeTrazo</b>
+(junto a los ajustes de render de los materiales), un momento después de cada cambio, un paso de deshacer por pausa. Guarda el dibujo y
+vuelven con él; otra pestaña o archivo muestra los suyos. Deshacer y rehacer también los mueven. El formato es público
+(véase el README), así que otras herramientas que lean el documento pueden usarlo.</p>
+
+<h4>Los aspectos</h4>
+{LOOKS}
+<p>Todos los aspectos comparten: <b>exposición automática</b> (se mide un pequeño pre-render, protegiendo las luces altas), mapeo de tonos <b>AgX</b>
+con balance de blancos, una <b>bruma de distancia</b> que diluye el suelo en el horizonte, superficies blanco papel
+limitadas al 80 % para que no brillen, y un ligero acabado de saturación y viñeta.</p>
+
+<a name="lights"></a>
+<h4>Luces</h4>
+<p>La pestaña <b>Iluminación</b> del panel coloca luces para el render, de los cuatro tipos que tiene Blender. Se dibujan en
+la vista 3D (una bombilla, el cono de un foco, el contorno de una luz de área y hacia dónde mira, los rayos de un sol), de su color,
+grises cuando están apagadas; <b>Mostrar en la vista 3D</b> las oculta. Haz clic en una con la herramienta Seleccionar para elegirla; Supr la elimina.</p>
+<table cellspacing='0' cellpadding='3' width='100%'>
+<tr><td valign='top'><b>Luz puntual</b></td><td>Una bombilla que ilumina todo alrededor. <b>Tamaño de la bombilla</b>: más grande, sombras más suaves.</td></tr>
+<tr><td valign='top'><b>Foco</b></td><td>Un cono de luz: <b>Ángulo del haz</b> y <b>Borde suave</b> (0 un borde duro, 1 se desvanece
+desde el centro). Sus lúmenes van al cono: un foco estrecho es más brillante en su haz.</td></tr>
+<tr><td valign='top'><b>Luz de área</b></td><td>Un cuadrado, rectángulo, disco o elipse luminoso: un panel LED, un tubo, una tira,
+la luz de una ventana. <b>Ancho</b>, <b>Largo</b>, <b>Giro</b> alrededor de hacia dónde mira, <b>Dispersión</b> (180° por todas partes, menos como
+una rejilla; solo Cycles).</td></tr>
+<tr><td valign='top'><b>Sol</b></td><td>Luz paralela desde muy lejos, en W/m²: un segundo sol, luz de luna. <b>Disco</b>: más grande,
+sombras más suaves. Se añade sobre el modelo al instante (no tiene lugar, solo una dirección).</td></tr>
+</table>
+<p><b>Añadir.</b> <b>+ Puntual</b>, <b>+ Foco</b>, <b>+ Área</b>, o <b>Añadir una luz predefinida…</b> (una vela, bombillas,
+un downlight, un carril con foco, una farola, un proyector, un panel LED, un tubo fluorescente, una tira LED, una iluminación de ventana,
+un disco de techo, luz de luna), y luego un clic en la vista 3D, con ajuste como cualquier herramienta. En una cara, una bombilla queda a un palmo
+de ella, y un foco o una luz de área ilumina hacia fuera: un downlight pulsado en un techo cuelga por debajo e ilumina hacia abajo,
+un panel pulsado en una pared se apoya en ella. En el aire, iluminan hacia abajo. Esc cancela.</p>
+<p><b>Sobre un objeto.</b> Con <b>En el objeto pulsado</b>, la luz va al grupo o componente cuya cara
+pulses: mover, girar o copiar el objeto se lleva su luz; cada copia de un componente tiene la suya. Con
+<b>Cada copia del componente</b> un cambio (potencia, color, haz…) llega a la luz de cada copia, cada una donde está;
+moverla dentro del objeto la mueve en todas las copias. <b>Ponerla en el objeto seleccionado</b> y <b>Liberarla</b> ponen y quitan una luz
+de un objeto sin moverla. Una luz sobre un objeto oculto, o sobre una etiqueta oculta, no ilumina el render.</p>
+<p><b>Potencia</b> en <b>lúmenes</b>, como dice la caja de una lámpara, o en <b>W</b> propios de Blender (potencia radiante, no los vatios
+eléctricos de una bombilla); cambiarlo conserva el brillo. Los lúmenes se convierten en vatios de Blender a 381 lm/W (el manual de Blender sitúa una
+bombilla de 800 lm en 2,1 W): un punto de partida, no una verdad fotométrica. La exposición automática sigue fijando el
+brillo de la imagen, así que lo que más cuenta es cómo se comparan las luces. <b>Color</b>: una temperatura, de una vela (1000 K) a un cielo
+azul (12 000 K), o un color propio (<b>…</b>). <b>Dirección</b>: un rumbo (0° norte, 90° este) y una inclinación bajo el
+horizonte (90° recto hacia abajo), o <b>Apuntar…</b> y un clic en el punto al que debe mirar. <b>Lugar</b>: X, Y, Z, o <b>Mover…</b>
+y un clic. <b>Proyecta sombras</b> se puede desactivar para una luz de relleno.</p>
+<p><b>Perfil IES</b> (luces puntuales y focos): un archivo fotométrico del fabricante da a la luz su forma real (los
+festones de un downlight en una pared). La potencia fijada aquí sigue siendo el total; el perfil solo le da forma. Solo <b>Cycles</b>
+lo lee: EEVEE ilumina la misma lámpara uniformemente.</p>
+<p><b>Las luces de la pestaña Render.</b> Las luces puntuales y los focos colocados en la pestaña Render de IngeTrazo también se listan,
+con trazo discontinuo en la vista 3D, y los dos renders las usan. Aquí solo se puede cambiar lo que esa pestaña conoce (lugar, dirección, potencia,
+color, haz); <b>Convertirla en una luz de Render Studio</b> trae una aquí, con todos los ajustes (la pestaña Render ya no
+la renderiza).</p>
+<p>Las luces se guardan en el documento (las libres en sus datos, las demás en sus objetos); cada cambio es un paso de
+deshacer. La vista previa las sigue.</p>
+
+<a name="sun"></a>
+<h4>Sol</h4>
+<p>La pestaña <b>Sol</b> fija dónde está el modelo y la fecha y la hora del sol. Son las de IngeTrazo (la fecha y
+la hora del panel Sombras, la ubicación y el norte del modelo), así que las sombras de la vista 3D, la pestaña Render y
+Render Studio muestran siempre el mismo sol. Cada cambio es un paso de deshacer.</p>
+<table cellspacing='0' cellpadding='3' width='100%'>
+<tr><td valign='top'><b>Latitud, longitud</b></td><td>Escritas, o <b>Mapa…</b> para elegir el lugar en un mapa. Pasa a ser la
+ubicación del modelo: el mapa y el terreno también la siguen. Sin una, el sol está en el lugar
+predeterminado de IngeTrazo.</td></tr>
+<tr><td valign='top'><b>Norte</b></td><td>Dónde está el norte real, en sentido horario desde el eje verde. Las sombras giran;
+el modelo no se mueve.</td></tr>
+<tr><td valign='top'><b>Fecha</b></td><td>Día y mes; <b>Primavera</b>, <b>Verano</b>, <b>Otoño</b> e <b>Invierno</b> dan los equinoccios y solsticios tal como
+los vive el lugar (el verano es en junio en el norte, en diciembre en el sur).</td></tr>
+<tr><td valign='top'><b>Hora</b></td><td>El control deslizante y el cuadro; <b>Mañana</b> (una hora después del amanecer), <b>Mediodía</b> (mediodía
+solar) y <b>Tarde</b> (una hora antes del atardecer) saltan allí. La luz de día muestra las horas en que el sol está arriba ese día.</td></tr>
+<tr><td valign='top'><b>Huso horario</b></td><td>El reloj en que se lee la hora: según la longitud (hora solar), o un huso
+real (incluido el horario de verano) para coincidir con un reloj.</td></tr>
+<tr><td valign='top'><b>Sombras en la vista 3D</b></td><td>Las sombras de sol propias de IngeTrazo en el modelo, con esta fecha
+y hora.</td></tr>
+</table>
+<p><b>El sol entonces</b> dice a qué altura está, de dónde viene y cuán largas son las sombras. Algunos aspectos lo cambian:
+<b>Hora dorada</b> lo baja a 7° (misma dirección de brújula), <b>Nublado</b> y <b>Noche</b> no tienen, y un fondo de 360°
+que ilumina la escena trae uno propio.</p>
+
+<a name="output"></a>
+<h4>Salida</h4>
+<p>La pestaña <b>Salida</b> fija el tamaño de la imagen final y su archivo. Se guardan en el documento.</p>
+<table cellspacing='0' cellpadding='3' width='100%'>
+<tr><td valign='top'><b>Tamaño</b></td><td><b>Misma forma que la vista 3D</b> (un ancho; la altura sigue la vista), un
+tamaño predefinido (HD, Full HD, QHD, 4K UHD, cuadrado, vertical 4:5, vertical 9:16, A4, A3, A2 y A1 a la resolución de impresión)
+o <b>Personalizado</b>. Escribir un ancho o una altura lo hace Personalizado; <b>Mantener las proporciones</b> cambia el otro con él;
+<b>⇄</b> lo gira entre apaisado y vertical. La vista previa encuadra la misma imagen: la altura de la vista se mantiene,
+los lados cambian.</td></tr>
+<tr><td valign='top'><b>Resolución de impresión</b></td><td>Puntos por pulgada: los tamaños de papel se calculan con ella, y la línea de
+debajo del tamaño dice cómo de grande es una impresión.</td></tr>
+<tr><td valign='top'><b>Formato</b></td><td><b>PNG</b> y <b>JPEG</b> (con su calidad) conservan el retoque de la ventana de vista previa.
+<b>PNG, 16 bits</b>, <b>TIFF, 16 bits</b> y <b>OpenEXR</b> (coma flotante de 32 bits, luz lineal, para composición)
+conservan más luz para editarla en otra parte; se guardan tal como los escribió Blender, y Guardar la imagen… los ofrece
+junto al PNG y JPEG retocados.</td></tr>
+<tr><td valign='top'><b>Cielo transparente</b></td><td>El cielo se deja transparente (el suelo y el modelo se quedan), para
+poner otro cielo detrás; la exposición sigue midiéndose con el cielo. No para JPEG. La ventana de vista previa lo muestra sobre
+un tablero de ajedrez.</td></tr>
+<tr><td valign='top'><b>Guardar cada render</b></td><td>Cada render final se guarda también en una carpeta de este ordenador,
+con nombre formado a partir de {document}, {look} y {date}.</td></tr>
+</table>
+
+<a name="hdri"></a>
+<h4>Fondo de 360° (HDRI)</h4>
+<p>Cualquier imagen equirrectangular de 360° (.hdr, .exr, .jpg) puede ser el mundo alrededor del modelo. Elige <b>Ninguno</b>, una de
+las ocho propias de Blender (gratuitas, 1K), o <b>Elegir un archivo…</b> (se recuerdan las últimas que has usado).</p>
+<table cellspacing='0' cellpadding='3' width='100%'>
+<tr><td valign='top'><b>Ilumina la escena</b></td><td><b>Activado</b>: la imagen ilumina el modelo y su sol proyecta las sombras;
+el cielo y el sol del aspecto se sustituyen (su exposición y acabado se quedan). <b>Desactivado</b>: el aspecto ilumina el modelo y la imagen
+es solo lo que la cámara ve detrás.</td></tr>
+<tr><td valign='top'><b>Rotación</b></td><td>Gira la imagen sobre la vertical, de 0 a 360°: úsalo para poner el sol o una
+vista donde quieras.</td></tr>
+<tr><td valign='top'><b>Brillo</b></td><td>El brillo de la imagen en pasos (-3 a +3), respecto a las lámparas y la luz del
+aspecto.</td></tr>
+</table>
+<p>Las imágenes propias de Blender son de 1K: buena luz, pero suaves detrás del modelo. Para un fondo nítido elige un archivo de 4K o mayor,
+por ejemplo uno gratuito de polyhaven.com. El suelo se funde con el horizonte de la imagen.</p>
+
+<a name="image"></a>
+<h4>La ventana de vista previa</h4>
+<p>Una ventana para mirar la escena y hacer la imagen. Tiene tres estados:</p>
+<table cellspacing='0' cellpadding='3' width='100%'>
+<tr><td valign='top'><b>Vista previa</b></td><td>La vista en vivo: Blender se queda abierto con tu escena y aspecto, y una imagen sigue tu
+trabajo. Usa EEVEE con los efectos más lentos desactivados, diga lo que diga el <b>Motor</b> y la <b>Calidad</b> (son para Renderizar),
+salvo con el aspecto <b>Interior</b>: EEVEE no puede llenar de luz una habitación iluminada por una ventana, así que allí la vista previa usa <b>Cycles</b> (unas
+pocas muestras, sin ruido; mejor con una tarjeta gráfica) y se parece al render. El césped es tan denso como en el render. El
+primer arranque tarda unos segundos; después todo ocurre en el mismo Blender. Cerrar la ventana lo detiene.
+<br><b>Seguir la cámara</b>: mientras orbitas o caminas, van llegando fotogramas pequeños y toscos (tres o cuatro por segundo, tan rápido como
+Blender los renderiza); detente, y llega una imagen <b>rápida</b>, luego un <b>borrador</b> más limpio. Desactivado: la imagen conserva la cámara
+que tenía, así que puedes mirar a otro lado en la vista 3D mientras ves cambiar una sola vista.
+<br><b>Seguir los cambios</b>: una edición del modelo, de una textura o de los ajustes de render de un material se ve sola, en aproximadamente
+un segundo (la escena se reconstruye en el mismo Blender; el modelo solo se exporta de nuevo cuando ha cambiado). Desactivado: la vista previa
+conserva el modelo y los materiales que tenía mientras trabajas; el aspecto y los controles del panel se siguen aplicando. Márcalo de nuevo para traer
+tus ediciones.
+<br><b>Renderizar</b> hace la imagen final con el motor, la calidad y el ancho del panel (mostrados junto a los botones).
+<b>Renderizar y guardar…</b> pide primero un archivo (PNG o JPEG), hace la imagen, la guarda exactamente como se renderizó y vuelve a
+la vista previa.</td></tr>
+<tr><td valign='top'><b>Renderizando</b></td><td>La barra de progreso y <b>Cancelar</b>. El Blender en vivo se cierra mientras tanto. Si cierras la
+ventana el render continúa, y la imagen se abre cuando está lista.</td></tr>
+<tr><td valign='top'><b>Imagen final</b></td><td>El render terminado, con los controles de retoque debajo; cambian la <b>imagen</b>
+al instante, sin volver a renderizar, y lo que ves es lo que se guarda. La vista en vivo queda apagada para que no dibuje encima;
+<b>Volver a la vista previa</b> la trae de nuevo.</td></tr>
+</table>
+<p><b>Zoom y movimiento</b> (vista previa e imagen final): la rueda del ratón amplía donde está el cursor, arrastrar mueve la imagen, un
+doble clic va entre <b>Ajuste</b> y <b>100 %</b> (un píxel de la imagen por píxel de pantalla); las teclas <b>+</b> y <b>-</b> amplían,
+<b>0</b> ajusta y <b>1</b> es 100 %. El zoom y el lugar se conservan mientras llegan nuevos fotogramas de vista previa.</p>
+<p><b>Controles de retoque</b> (solo la imagen final):</p>
+<table cellspacing='0' cellpadding='3' width='100%'>
+<tr><td valign='top'><b>Exposición (EV)</b></td><td>-2 a +2 pasos; las luces altas se suavizan en lugar de recortarse.</td></tr>
+<tr><td valign='top'><b>Contraste</b></td><td>0,6 plano a 1,6 contundente; 1 es tal como se renderizó.</td></tr>
+<tr><td valign='top'><b>Saturación</b></td><td>0 blanco y negro a 1,8; 1 es tal como se renderizó.</td></tr>
+<tr><td valign='top'><b>Calidez</b></td><td>-1 más fría a +1 más cálida.</td></tr>
+<tr><td valign='top'><b>Viñeta</b></td><td>0 a 0,8, oscurece las esquinas.</td></tr>
+<tr><td valign='top'><b>Restablecer</b></td><td>Pone todos los controles deslizantes en neutro.</td></tr>
+<tr><td valign='top'><b>Guardar la imagen…</b></td><td>Guarda la imagen retocada como PNG o JPEG.</td></tr>
+<tr><td valign='top'><b>Volver a la vista previa</b></td><td>Vuelve a la vista en vivo para cambiar la escena y renderizar de nuevo.</td></tr>
+</table>
+<a name="materials"></a>
+<h3>El editor de materiales</h3>
+<p>Controla cómo se <b>renderiza</b> cada material del modelo, en unos pocos ajustes sencillos. La lista muestra los
+materiales usados en el modelo (pasa el cursor por encima para ver su número de caras). <b>De la selección</b> salta al material de la
+cara o grupo seleccionado. Los cambios se aplican al <b>siguiente render</b>, se guardan en el documento, y cada uno es un paso de deshacer.
+El editor solo muestra los ajustes que cambian el render del material tal como es: los de su <b>tipo</b> (Metal para los
+materiales genéricos, Tamaño de la ondulación para el agua, Brillo propio para los luminosos, la altura y la densidad del césped para el césped), <b>Cambiar la
+imagen…</b> solo cuando tiene una imagen, y ningún control de Relieve mientras su juego de texturas da el relieve (elige un mapa de relieve
+y el control vuelve para escalarlo).</p>
+<p><b>Reconocido por el nombre.</b> Un material sin ajustes propios cuyo nombre (o el nombre del archivo de su imagen) dice qué
+es empieza como ese predefinido, en el editor <i>y</i> en el render: agua (aigua, agua, water, piscina, mar, llac…),
+vidrio (vidre, vidrio, glass, cristal…), césped (gespa, césped, grass, herba, lawn…; «herba alta», «tall grass», prat o
+prado dan Hierba alta) y luces (llum, luz, LED, neon, làmpada…), en varios idiomas. La lista los marca con ◦ y
+el editor lo dice; cambia cualquier ajuste y pasan a ser propios del material (●). La transparencia del modelo no se cambia:
+para agua o vidrio transparentes, mueve <b>Transparencia</b>. En el EEVEE de Blender (todos los aspectos salvo Interior) el vidrio se hace transparente por alfa, porque EEVEE solo puede refractar el cielo, no la escena detrás del cristal: Transparencia es cuánta, y conserva sus reflejos; Cycles (el aspecto Interior) refracta de verdad.</p>
+<table cellspacing='0' cellpadding='3' width='100%'>
+<tr><td valign='top'><b>Ajustes de la imagen</b></td><td>Despliega la sección bajo los botones de imagen: <b>Tono</b> (grados alrededor de la rueda de color), <b>Saturación</b>,
+<b>Brillo</b>, <b>Contraste</b>, <b>Rotación</b> de la imagen sobre la superficie (grados, alrededor de su centro), un <b>Tinte</b> de color puesto sobre
+la imagen con una intensidad, o un <b>Color plano</b> en lugar de la imagen. Solo se conserva lo que cambias. El render y la vista previa los muestran
+(un cambio se hace en una fracción de segundo en la vista previa); la vista 3D conserva la imagen original. Un material sin imagen
+toma el tono, la saturación, el brillo, el contraste y el tinte sobre su color. <b>Restablece la imagen</b> vuelve atrás.</td></tr>
+<tr><td valign='top'><b>Elegir, pintar, nuevo, duplicar</b></td><td>Bajo la lista: <b>Elegir desde la vista</b> es el cuentagotas (haz clic en una cara o un objeto en la vista 3D y aquí se elige su
+material); <b>Pintar con él</b> es el bote de pintura (la herramienta Pintar con este material: haz clic en una cara o un objeto para pintarlo);
+<b>Nuevo…</b> crea un material (un nombre, un color o una imagen y el ancho del azulejo) y pinta con él la selección si lo pides; <b>Duplicar</b>
+hace una copia del material elegido, con sus ajustes de render, como <i>Nombre (2)</i>. Crear y copiar son un paso de deshacer.</td></tr>
+<tr><td valign='top'><b>Mapa de opacidad</b></td><td>Bajo <b>Transparencia</b>: una imagen que dice dónde el material es transparente, para un
+recorte como hojas, una valla o un encaje. <b>El blanco es opaco, el negro es transparente</b>, los grises entremedio; <b>Invertido</b> los
+intercambia. Con una imagen en el material el mapa sigue la disposición de la imagen, de modo que un mapa hecho para esa imagen encaja; sin
+una, se repite al <i>tamaño del mapa</i>. El render y la vista previa lo usan; la vista 3D solo muestra el control Transparencia.</td></tr>
+<tr><td valign='top'><b>Vista previa en cubo</b></td><td>Arriba, una vista previa rápida del material en un cubo de un metro. Sigue
+la imagen (y su tamaño de azulejo), el color, el <b>tipo</b> (el vidrio y el agua son transparentes, los luminosos tienen un halo) y
+los controles de <b>Rugosidad</b>, <b>Metal</b>, <b>Relieve</b> y <b>Brillo propio</b>, al instante y sin Blender. Es solo una idea del
+aspecto: los <b>mapas</b> y la iluminación de Blender solo se ven en el render.</td></tr>
+<tr><td valign='top'><b>Cambiar la imagen…</b></td><td>Sustituye la imagen del material <b>en el modelo mismo</b>, no solo en el
+render: la vista también cambia, en cada cara, componente y objeto que lleva el material, como <b>un solo paso de
+deshacer</b> (junto con <b>Transparencia</b>, los controles de aquí que editan el material propio de IngeTrazo). Cada cara conserva dónde estaba
+colocada su textura, y un tinte de color se mantiene sobre la imagen nueva. <b>Mantener las proporciones</b> hace que la altura del azulejo siga la forma de la
+imagen nueva (el ancho del azulejo se queda); desactivado, el tamaño del azulejo se queda y una forma distinta se estira. El material necesita
+ya una imagen; píntalo primero con una textura si solo tiene un color. La imagen se copia en la caché de texturas de IngeTrazo
+y viaja con el documento cuando lo guardas.</td></tr>
+<tr><td valign='top'><b>Partir de</b></td><td>Un punto de partida predefinido; luego ajústalo. Véase la lista de abajo.</td></tr>
+<tr><td valign='top'><b>Tipo</b></td><td><b>Genérico</b> (opaco), <b>Vidrio</b> (transparente), <b>Agua</b> (transparente, con ondulaciones),
+<b>Luminoso</b> (brilla por sí mismo e ilumina lo que lo rodea; el exposímetro lo ignora para que no oscurezca la
+imagen), o <b>Césped</b> (le crecen hojas de hierba en el render).</td></tr>
+<tr><td valign='top'><b>Transparencia</b></td><td>Cuánta luz deja pasar el material: 0 es opaco, hasta el 95 %. Cambia el material propio de IngeTrazo
+<b>en el modelo</b> (cada cara y objeto que lo lleva, un paso de deshacer, de modo que la vista 3D también lo muestra) y así el render lo ve: el agua y
+otros materiales se vuelven transparentes (el suelo se ve debajo), con el tinte del color o la imagen del material. Para el <b>Vidrio</b> es cuánta luz
+transmite el vidrio refractante. Un material pintado opaco sigue opaco por mucho que se escriba: elegir Agua o Vidrio le da una transparencia para
+empezar, igual que los predefinidos de Agua y Vidrio.</td></tr>
+<tr><td valign='top'><b>Rugosidad</b></td><td>0 es un pulido como un espejo, 1 totalmente mate.</td></tr>
+<tr><td valign='top'><b>Metal</b></td><td>1 para los metales: el reflejo toma el color del material.</td></tr>
+<tr><td valign='top'><b>Relieve</b></td><td>Cuán fuerte parece la superficie en relieve. Automático: de las partes claras y oscuras de la
+imagen del material cuando la tiene (juntas de mortero, veta de la madera), si no un grano fino. Con la imagen, el control es
+la <b>altura</b> del relieve (de 0 a 3 cm del negro al blanco). La imagen se suaviza primero, para que su grano no se convierta en ruido
+y una junta se convierta en una ranura que atrapa la luz. Se nota donde la imagen cambia con claridad (juntas, bordes), y apenas donde
+cambia suavemente (veta de la madera): para eso, sube el <b>Contraste</b> del mapa, o usa un <b>archivo de mapa de alturas</b>.</td></tr>
+<tr><td valign='top'><b>Tamaño de la ondulación</b></td><td>Solo agua. El tamaño de las ondulaciones en la superficie, de finas (izquierda) a olas anchas (derecha); el control
+<b>Relieve</b> es su altura (0 da un agua plana como un espejo). Son un ruido 3D convertido en relieve sobre la superficie brillante, la
+receta de «agua fácil» habitual de Blender, planteada en metros para que una ondulación tenga el mismo tamaño en todas partes. Las ondulaciones finas parecen grano de lejos,
+las anchas se leen como agua; el sol brilla en ellas.</td></tr>
+<tr><td valign='top'><b>Brillo propio</b></td><td>0 a 50: con qué fuerza brilla (tipo Luminoso): pantallas, paneles de luz.</td></tr>
+<tr><td valign='top'><b>Altura del césped</b></td><td>Solo césped: qué altura tienen las hojas, de 1 a 60 cm (un césped cortado mide de 4 a 8 cm).
+Las hojas existen <b>solo en el render</b>: el modelo se queda plano y ligero para trabajar. Crecen en cada cara que lleva
+el material, erguidas sea cual sea la pendiente, en pequeños mechones girados y de tamaño aleatorio. Su color es la <b>imagen</b> del
+material donde está cada mechón (una imagen de césped da las manchas del césped), o su color, más oscuro en la raíz; la
+cara de debajo rellena los huecos. La vista previa en cubo muestra la altura.</td></tr>
+<tr><td valign='top'><b>Densidad del césped</b></td><td>Solo césped: cuántos mechones (de unas cuantas hojas cada uno) crecen por metro cuadrado,
+de 20 a 800. Un césped espeso es de 250 a 400, hierba larga de 60 a 120 (los mechones más altos son más grandes). La vista en vivo y el render usan
+la misma densidad, vea lo que vea la cámara. Solo un césped enorme (más de 600 000 mechones en total) se aclara para que Blender
+no se quede sin memoria; el registro de Blender dice cuánto.</td></tr>
+<tr><td valign='top'><b>Tamaño de la imagen del mapa</b></td><td>Cuánto mide una imagen de un archivo de mapa sobre el modelo, en metros. Se usa cuando
+el material no tiene imagen propia; con una imagen, los mapas siguen su tamaño y colocación.</td></tr>
+<tr><td valign='top'><b>Volver a automático</b></td><td>Olvida estos ajustes: el acabado propio de IngeTrazo para el material.</td></tr>
+</table>
+
+<h4>Mapas</h4>
+<p>Bajo cada ajuste, un <b>mapa</b> hace que varíe por la superficie; el control deslizante de arriba entonces escala el mapa.</p>
+<ul>
+<li><b>Imagen (B/N)</b>: la textura propia del material en blanco y negro (la veta de una madera para su rugosidad y relieve).</li>
+<li><b>Archivo de imagen…</b>: un mapa de rugosidad o de metal, o una máscara de dónde brilla (png, jpg, tif, bmp, exr, hdr, tga).</li>
+<li>Para el <b>Relieve</b>: <b>Automático</b>, <b>Grano fino</b>, <b>Imagen</b>, un <b>archivo de mapa de alturas</b> o un <b>archivo de mapa de normales</b>.</li>
+<li><b>Invertido</b>: el blanco se vuelve negro, para una imagen cuyas partes oscuras deban ser las rugosas, en relieve o luminosas.</li>
+<li>El control de <b>Contraste</b>: 0 el mapa tal como es, 100 negro o blanco puro.</li>
+<li>La pequeña <b>vista previa</b> muestra lo que leerá el render. Un material sin imagen ignora un mapa de Imagen.</li>
+</ul>
+<p>Los archivos de mapa se enlazan por su <b>ruta</b>, no se incrustan en el documento: consérvalos donde están.</p>
+
+<a name="texture_sets"></a>
+<h4>Juegos de texturas completos</h4>
+<p>Las bibliotecas de materiales dan más que una imagen: un mapa de <b>normales</b>, <b>rugosidad</b>, <b>oclusión ambiental</b>,
+<b>desplazamiento</b>, <b>metal</b>, <b>opacidad</b>. Cuando la imagen del material los tiene al lado, el render los usa
+solo, colocados exactamente como la imagen (mismo tamaño de azulejo y rotación); no hay nada que fijar. Se encuentran:</p>
+<ol>
+<li>a partir de un pequeño archivo de descripción junto a la imagen, <b>&lt;nombre de la imagen&gt;.pbr.json</b> (lo escribe el panel de recursos
+cuando descarga un juego; los archivos que lista deben estar en la carpeta de la imagen);</li>
+<li>si no, por los nombres de archivo propios de las bibliotecas: <b>Poly Haven</b> (<i>wood_diff_1k.jpg</i> con <i>wood_nor_gl_1k</i>,
+<i>wood_rough_1k</i>, <i>wood_ao_1k</i>, <i>wood_disp_1k</i>, <i>wood_metal_1k</i>, <i>wood_arm_1k</i>) y
+<b>ambientCG</b> (<i>Wood049_1K-JPG_Color.jpg</i> con <i>_NormalGL</i>, <i>_Roughness</i>, <i>_AmbientOcclusion</i>,
+<i>_Displacement</i>, <i>_Metalness</i>, <i>_Opacity</i>).</li>
+</ol>
+<p>Una imagen sin ninguno se renderiza como antes. Con un juego:</p>
+<ul>
+<li>El <b>mapa de normales</b> sustituye el relieve <b>automático</b> adivinado de la imagen; una fuente de relieve que hayas elegido
+(grano, imagen, archivo de alturas o de normales) todavía se aplica, encima. Un mapa de normales dibujado de la otra manera habitual (con el canal verde invertido) se gira solo.
+Sin mapa de normales, el mapa de <b>desplazamiento</b> da el relieve (1 cm del negro al blanco).</li>
+<li><b>Rugosidad</b>: el mapa del juego, escalado por el control deslizante (0,5 lo deja como está; más bajo lo pule, más alto lo vuelve rugoso).
+Un mapa de rugosidad que elijas aquí gana.</li>
+<li><b>Metal</b>: el mapa del juego; el control sube su valor más bajo. Un mapa de metal que elijas aquí gana.</li>
+<li>La <b>oclusión ambiental</b> oscurece el color en las ranuras; la <b>opacidad</b> hace agujeros donde es negra.</li>
+<li>El <b>Vidrio</b> y el <b>Agua</b> solo toman el mapa de normales. La <b>Maqueta blanca</b> ignora los juegos.</li>
+<li>La vista previa en cubo solo muestra la imagen; los juegos se ven en el render.</li>
+</ul>
+<p>El editor muestra el juego: una línea bajo la imagen lista los mapas encontrados, y la primera opción bajo <b>Rugosidad</b>,
+<b>Metal</b> y <b>Relieve</b> dice <b>Juego de texturas: …</b> con una pequeña vista previa de ese mapa (para un mapa empaquetado, el canal usado).
+Elige otro mapa ahí para sustituirlo.</p>
+
+<h4>Puntos de partida</h4>
+{PRESETS}
+
+<h4>Consejos</h4>
+<ul>
+<li>Prueba ideas en <b>Borrador</b> con EEVEE; renderiza la imagen final en <b>Alta</b>, con Cycles para los interiores.</li>
+<li>Para un interior, usa el aspecto <b>Interior</b>: pasa a Cycles solo.</li>
+<li>Para una imagen de noche con lámparas, haz que el material de la lámpara sea <b>Luminoso</b>.</li>
+<li>Si la imagen es demasiado oscura o clara, cambia la <b>Exposición</b> en el panel (vuelve a medir) o en la ventana de la imagen (al instante).</li>
+</ul>

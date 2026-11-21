@@ -12,6 +12,8 @@
 """
 from __future__ import annotations
 
+from .i18n import tr
+
 import math
 
 from PySide6.QtCore import QPointF, Qt
@@ -39,7 +41,7 @@ def _tint(light) -> QColor:
 
 def _label(light, n: int) -> str:
     kinds = {"point": "Point light", "spot": "Spot", "area": "Area light", "sun": "Sun"}
-    return f"{light['name'] or kinds[light['type']] + ' ' + str(n)} · {L.power_label(light)}"
+    return f"{light['name'] or tr(kinds[light['type']]) + ' ' + str(n)} · {L.power_label(light)}"
 
 
 def draw(tab, viewport, painter) -> None:

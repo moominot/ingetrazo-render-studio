@@ -3,6 +3,8 @@
 button pressed (panel, image window or material editor)."""
 from __future__ import annotations
 
+from .i18n import tr, translate_on_show  # noqa: F401
+
 from PySide6.QtWidgets import QDialog, QLineEdit, QTextBrowser, QVBoxLayout
 
 from . import help_text

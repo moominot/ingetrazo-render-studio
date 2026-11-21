@@ -10,6 +10,8 @@ the image, with the same reach and the same undo; the placement of each face
 """
 from __future__ import annotations
 
+from .i18n import tr, translate_on_show  # noqa: F401
+
 import logging
 from pathlib import Path
 
@@ -77,27 +79,27 @@ def swap_picture(app, name, path, keep_proportions: bool = True) -> tuple[bool, 
     scene = app.scene
     mat = scene.materials.get(name) if name else None
     if mat is None:
-        return False, "Choose a material of the model first."
+        return False, tr("Choose a material of the model first.")
     if not mat.texture:
-        return False, (f"«{name}» has no picture, only a colour. Paint it with a texture "
-                       f"first; then its picture can be changed here.")
+        return False, tr("«{name}» has no picture, only a colour. Paint it with a texture "
+                         "first; then its picture can be changed here.", name=name)
     p = Path(path)
     if not is_image_file(p):
-        return False, f"{p.name} is not an image IngeTrazo can read."
+        return False, tr("{name} is not an image IngeTrazo can read.", name=p.name)
     try:
         # Into IngeTrazo's texture cache, as its own import does: the model then
         # does not depend on the file staying where it was.
         cached = cache_image(p.read_bytes(), p.name, "imported")
     except OSError as exc:
-        return False, f"Could not read {p.name}: {exc}"
+        return False, tr("Could not read {name}: {error}", name=p.name, error=exc)
     vp = app.viewport
     try:
         vp.history.execute(ReplaceTextureImageCommand(name, cached, keep_proportions))
     except Exception as exc:  # noqa: BLE001 - say it, never crash the app
         _log.exception("could not replace the picture of %s", name)
-        return False, f"Could not change the picture: {exc}"
+        return False, tr("Could not change the picture: {error}", error=exc)
     notify = getattr(vp, "notify_scene_changed", None)
     if callable(notify):
         notify()
     vp.update()
-    return True, f"«{name}» now uses {p.name}, on every face that wears it. One undo step."
+    return True, tr("«{name}» now uses {file}, on every face that wears it. One undo step.", name=name, file=p.name)

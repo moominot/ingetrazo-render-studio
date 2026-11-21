@@ -16,6 +16,8 @@ The width stays in ``settings["width"]``, as before.
 """
 from __future__ import annotations
 
+from .i18n import tr, translate_on_show  # noqa: F401
+
 MIN_PX, MAX_PX = 16, 16384
 
 #: key → (label, width, height); paper sizes are millimetres (landscape), turned into pixels at the dpi.
@@ -120,7 +122,8 @@ def describe(w: int, h: int, dpi: int) -> str:
     g = gcd(w, h) or 1
     ratio = f"{w // g}:{h // g}" if max(w // g, h // g) <= 32 else f"{w / h:.2f}:1"
     cm = (w / dpi * 2.54, h / dpi * 2.54)
-    return f"{w} × {h} px · {w * h / 1e6:.1f} MP · {ratio} · {cm[0]:.1f} × {cm[1]:.1f} cm at {dpi} dpi"
+    return tr("{w} × {h} px · {mp:.1f} MP · {ratio} · {cw:.1f} × {ch:.1f} cm at {dpi} dpi",
+              w=w, h=h, mp=w * h / 1e6, ratio=ratio, cw=cm[0], ch=cm[1], dpi=dpi)
 
 
 def blender_settings(out: dict) -> dict:

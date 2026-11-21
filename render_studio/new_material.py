@@ -3,6 +3,8 @@
 what is selected with it."""
 from __future__ import annotations
 
+from .i18n import tr, translate_on_show  # noqa: F401
+
 from pathlib import Path
 
 from PySide6.QtGui import QColor, QImage
@@ -52,8 +54,8 @@ class NewMaterialDialog(QDialog):
         self.tile.setToolTip("How wide the picture is on a surface; its height follows its proportions")
         form.addRow("Tile width", self.tile)
         lay.addLayout(form)
-        self.apply = QCheckBox(f"Paint the selection with it ({selected} selected)" if selected
-                               else "Paint the selection with it (nothing selected)")
+        self.apply = QCheckBox(tr("Paint the selection with it ({n} selected)", n=selected) if selected
+                               else tr("Paint the selection with it (nothing selected)"))
         self.apply.setChecked(bool(selected))
         self.apply.setEnabled(bool(selected))
         lay.addWidget(self.apply)

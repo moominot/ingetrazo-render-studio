@@ -11,6 +11,8 @@ tab found.
 """
 from __future__ import annotations
 
+from .i18n import language, tr, translate_on_show  # noqa: F401
+
 import json
 import logging
 import os
@@ -40,8 +42,8 @@ HDRI_TIP = ("An equirectangular 360° image (.hdr, .exr, .jpg). Blender's own ar
 
 
 def _lang() -> str:
-    name = QLocale().name().lower()
-    return "ca" if name.startswith("ca") else "es" if name.startswith("es") else "en"
+    lang = language()
+    return lang if lang in ("ca", "es") else "en"
 
 
 def document_lights(scene) -> list:
@@ -78,19 +80,19 @@ def blender_version_ok(command, timeout: float = 60.0):
     import re
     import subprocess
     if not command:
-        return False, "There is no program at that path."
+        return False, tr("There is no program at that path.")
     try:
         r = subprocess.run([*command, "--version"], capture_output=True, text=True, timeout=timeout,
                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except (OSError, subprocess.TimeoutExpired) as exc:
-        return False, f"That program could not be started ({exc.__class__.__name__})."
+        return False, tr("That program could not be started ({kind}).", kind=exc.__class__.__name__)
     m = re.search(r"Blender\s+(\d+)\.(\d+)", (r.stdout or "") + (r.stderr or ""))
     if not m:
-        return False, "That program is not Blender."
+        return False, tr("That program is not Blender.")
     version = (int(m.group(1)), int(m.group(2)))
     if version < MIN_BLENDER:
-        return False, (f"That is Blender {version[0]}.{version[1]}; Render Studio needs "
-                       f"{MIN_BLENDER[0]}.{MIN_BLENDER[1]} or newer.")
+        return False, tr("That is Blender {have}; Render Studio needs {need} or newer.",
+                         have=f"{version[0]}.{version[1]}", need=f"{MIN_BLENDER[0]}.{MIN_BLENDER[1]}")
     return True, ""
 
 
@@ -330,13 +332,13 @@ class StudioPanel(QWidget):
         form2 = QFormLayout(box_bg)
         self.hdri = QComboBox()
         self.hdri.setToolTip(HDRI_TIP)
-        self.hdri.addItem("None", "")
+        self.hdri.addItem(tr("None"), "")
         for path in bundled_hdris():
             self.hdri.addItem(f"{path.stem.capitalize()} (Blender, 1K)", str(path))
         for path in st.value(_SETTINGS + "hdri_recent", []) or []:
             if path and Path(path).is_file() and self.hdri.findData(path) < 0:
                 self.hdri.addItem(Path(path).name, path)
-        self.hdri.addItem("Choose a file…", _CHOOSE)
+        self.hdri.addItem(tr("Choose a file…"), _CHOOSE)
         saved = str(st.value(_SETTINGS + "hdri", "") or "")
         if saved and self.hdri.findData(saved) < 0 and Path(saved).is_file():
             self.hdri.insertItem(self.hdri.count() - 1, Path(saved).name, saved)
@@ -365,15 +367,15 @@ class StudioPanel(QWidget):
         form3 = QFormLayout(box_final)
         form3.addRow(self._caption("Only Render uses these; the preview is always a quick draft."))
         self.engine = QComboBox()
-        self.engine.addItem("EEVEE — fast", "eevee")
-        self.engine.addItem("Cycles — best quality", "cycles")
+        self.engine.addItem(tr("EEVEE — fast"), "eevee")
+        self.engine.addItem(tr("Cycles — best quality"), "cycles")
         self.engine.setCurrentIndex(max(0, self.engine.findData(st.value(_SETTINGS + "engine", "eevee"))))
         self.engine.setToolTip("EEVEE: about 3 s. Cycles: the truest light, about 5 s on an RTX card "
                                "(the Interior look needs it).")
         form3.addRow("Engine", self.engine)
         self.quality = QComboBox()
         for q in ("Draft", "Medium", "High"):
-            self.quality.addItem(q)
+            self.quality.addItem(tr(q))
         self.quality.setCurrentIndex(int(st.value(_SETTINGS + "quality", 1)))
         self.quality.setToolTip("How many samples: more is less noisy and slower.")
         form3.addRow("Quality", self.quality)
@@ -541,7 +543,7 @@ class StudioPanel(QWidget):
         QSettings().setValue(rb.SETTINGS_KEY, path)
         self._add_bundled_hdris()
         found = self.check_blender()
-        self.status.setText(f"Blender: {found.where}" if found else "")
+        self.status.setText(tr("Blender: {where}", where=found.where) if found else "")
         return found is not None
 
     def _add_bundled_hdris(self):
@@ -612,6 +614,7 @@ class StudioPanel(QWidget):
         """The preview window (made once, kept for the session)."""
         if self.window is None:
             self.window = ImageWindow(self.app.window if hasattr(self.app, "window") else None, panel=self)
+            translate_on_show(self.window)
             self._update_summary()
         return self.window
 
@@ -688,9 +691,10 @@ class StudioPanel(QWidget):
     def _update_summary(self, *_a):
         if self.window is not None:
             w, h = self.output_tab.frame()
-            self.window.set_summary(f"Render: {self.engine.currentText().split(' —')[0]} · "
-                                    f"{self.quality.currentText()} · {w} × {h} px · "
-                                    f"{output.FORMATS[self.output_tab.format.currentData()][0]}")
+            self.window.set_summary(tr("Render: {engine} · {quality} · {w} × {h} px · {format}",
+                                       engine=self.engine.currentText().split(' —')[0],
+                                       quality=self.quality.currentText(), w=w, h=h,
+                                       format=tr(output.FORMATS[self.output_tab.format.currentData()][0])))
 
     # -- the settings, in the document --------------------------------------------
     def _init_document_settings(self):
@@ -878,6 +882,7 @@ class StudioPanel(QWidget):
         from .material_editor import MaterialEditor
         if self.editor is None:
             self.editor = MaterialEditor(self.app, _lang(), self)
+            translate_on_show(self.editor)
         else:
             from .material_editor import clear_swatches
             clear_swatches()                 # a picture that changed on disk shows now
@@ -964,7 +969,7 @@ class StudioPanel(QWidget):
                 section_opts=self.section_tab.settings())
         except Exception as exc:  # noqa: BLE001 - say it, never crash the app
             _log.exception("render job failed")
-            self._set_status(f"Could not prepare the render: {exc}")
+            self._set_status(tr("Could not prepare the render: {error}", error=exc))
             self._back_to_preview_if_open()
             self.finished.emit(None)
             return
@@ -988,9 +993,9 @@ class StudioPanel(QWidget):
         if self.window is not None:
             self.window.set_mode("rendering")
         self._set_progress(0.0)
-        self._set_status("Blender is preparing the scene…" + (
-            f" ({len(missing)} prox{'y' if len(missing) == 1 else 'ies'} without its full model "
-            f"file, rendered as drawn: {', '.join(missing[:3])}{'…' if len(missing) > 3 else ''})"
+        self._set_status(tr("Blender is preparing the scene…") + (
+            " " + tr("({n} proxy/proxies without its full model file, rendered as drawn: {names})",
+                     n=len(missing), names=", ".join(missing[:3]) + ("…" if len(missing) > 3 else ""))
             if missing else ""))
         self.proc.start(argv[0], argv[1:])
 
@@ -1002,7 +1007,7 @@ class StudioPanel(QWidget):
         ext = output.extension(fmt)
         start = str(Path(QSettings().value(_SETTINGS + "save_dir", str(Path.home()))) /
                     f"render-{time.strftime('%Y%m%d-%H%M%S')}{ext}")
-        path, _f = QFileDialog.getSaveFileName(self.window or self, "Render and save", start,
+        path, _f = QFileDialog.getSaveFileName(self.window or self, tr("Render and save"), start,
                                                f"{output.FORMATS[fmt][0]} (*{ext})")
         if path and not path.lower().endswith(ext) and not (fmt == "jpeg" and path.lower().endswith(".jpeg")):
             path += ext
@@ -1033,7 +1038,7 @@ class StudioPanel(QWidget):
             if p is not None:
                 self._set_progress(p)
             if line.startswith("INGETRAZO meter"):
-                self._set_status("Exposure measured; rendering…")
+                self._set_status(tr("Exposure measured; rendering…"))
 
     def _save_as_rendered(self, path: str) -> bool:
         """The render exactly as Blender wrote it, in the Output tab's format (a JPEG is made
@@ -1085,10 +1090,10 @@ class StudioPanel(QWidget):
         failed = code != 0 or not self.output.exists()
         if self._cancelled or failed:
             if self._cancelled:
-                self._set_status("Render cancelled.")
+                self._set_status(tr("Render cancelled."))
             else:
                 tail = "\n".join(l for l in self._log_lines if "Error" in l or "INGETRAZO" in l)[-600:]
-                self._set_status(f"The render failed (code {code}).\n{tail}")
+                self._set_status(tr("The render failed (code {code}).\n{tail}", code=code, tail=tail))
             self._back_to_preview_if_open()
             self.finished.emit(None)
             return
@@ -1096,14 +1101,14 @@ class StudioPanel(QWidget):
         if save_to:
             if self._save_as_rendered(save_to):
                 QSettings().setValue(_SETTINGS + "save_dir", str(Path(save_to).parent))
-                self._set_status(f"Saved: {save_to}")
+                self._set_status(tr("Saved: {path}", path=save_to))
             else:
-                self._set_status(f"Rendered, but {save_to} could not be written (the picture is in {self.output}).")
+                self._set_status(tr("Rendered, but {path} could not be written (the picture is in {output}).", path=save_to, output=self.output))
             self._back_to_preview_if_open()
             self.finished.emit(self.output)
             return
         win = self.preview()
-        self._set_status(f"Done: {self.output.name}" + (f" · also saved in {kept}" if kept else ""))
+        self._set_status(tr("Done: {name}", name=self.output.name) + (" · " + tr("also saved in {path}", path=kept) if kept else ""))
         win.set_image(self.output)                        # the retouch tools and Save image…
         r = getattr(self, "rendered", None)
         win.set_rendered_file(r["file"] if r and not output.retouchable(r["format"]) else None,

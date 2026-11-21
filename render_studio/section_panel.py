@@ -6,6 +6,8 @@ cut is closed with a face, its colour, and whether the removed part still blocks
 """
 from __future__ import annotations
 
+from .i18n import tr, translate_on_show  # noqa: F401
+
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QLabel,
                                QVBoxLayout, QWidget)
@@ -48,8 +50,8 @@ class SectionTab(QWidget):
         self.material.currentIndexChanged.connect(self._edited)
         form.addRow("Cap material", self.material)
         self.light = QComboBox()
-        self.light.addItem("Light enters the cut (open)", "open")
-        self.light.addItem("The removed part still blocks light", "blocked")
+        self.light.addItem(tr("Light enters the cut (open)"), "open")
+        self.light.addItem(tr("The removed part still blocks light"), "blocked")
         self.light.setToolTip(
             "Open: what is cut away is gone, so sun and sky light the inside (an interior "
             "section brighter than the building really is).\nBlocked: the removed part stays "
@@ -93,9 +95,9 @@ class SectionTab(QWidget):
             names.append(self._wanted)
         self.material.blockSignals(True)
         self.material.clear()
-        self.material.addItem("None (plain grey)", None)
+        self.material.addItem(tr("None (plain grey)"), None)
         for n in names:
-            self.material.addItem(n if counts.get(n) else f"{n} (not in the model)", n)
+            self.material.addItem(n if counts.get(n) else tr("{name} (not in the model)", name=n), n)
         self.material.setCurrentIndex(max(0, self.material.findData(self._wanted)))
         self.material.blockSignals(False)
         self._counts = counts
@@ -135,13 +137,13 @@ class SectionTab(QWidget):
             has = self.app.scene.active_section() is not None
         except Exception:  # noqa: BLE001
             pass
-        self.state.setText("Active section: the render is cut." if has else
-                           "No active section plane: the render shows the whole model.")
+        self.state.setText(tr("Active section: the render is cut.") if has else
+                           tr("No active section plane: the render shows the whole model."))
         self.material.setEnabled(self.cap.isChecked())
         name = self.material.currentData()
         if name and not (getattr(self, "_counts", {}) or {}).get(name):
-            self.state.setText(self.state.text() + "\nThe cap material is in no face of the model: "
-                               "only its colour is used (no picture). Paint something with it to get it whole.")
+            self.state.setText(self.state.text() + "\n" + tr("The cap material is in no face of the model: "
+                               "only its colour is used (no picture). Paint something with it to get it whole."))
 
     def _edited(self, *_a) -> None:
         self._wanted = self.material.currentData()

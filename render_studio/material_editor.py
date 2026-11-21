@@ -9,6 +9,8 @@ the next render.
 """
 from __future__ import annotations
 
+from .i18n import tr, translate_on_show  # noqa: F401
+
 import json
 from pathlib import Path
 
@@ -135,8 +137,8 @@ class MapRow(QWidget):
         lay.setContentsMargins(0, 0, 0, 4)
         self.source = QComboBox()
         for value, label in _SOURCES[key]:
-            self.source.addItem(label, value)
-        self._first_label = _SOURCES[key][0][1]
+            self.source.addItem(tr(label), value)
+        self._first_label = tr(_SOURCES[key][0][1])
         self.source.setToolTip(_MAP_TIPS.get(key) or (
             "Where the setting varies over the surface. With a map, the slider above scales it."))
         self.source.activated.connect(self._source_chosen)
@@ -191,7 +193,7 @@ class MapRow(QWidget):
         """The map the material's texture set gives this setting: then the first
         choice («No map» / «Automatic») reads «Texture set» and the render uses it."""
         self.set_path, self.set_channel, self.set_normal = path or "", channel, bool(normal)
-        self.source.setItemText(0, f"Texture set: {what}" if path else self._first_label)
+        self.source.setItemText(0, tr("Texture set: {what}", what=what) if path else self._first_label)
         self._update()
 
     def _source_chosen(self, _i):
@@ -199,7 +201,7 @@ class MapRow(QWidget):
         if src in ("file", "normal"):
             st = QSettings()
             start = self.path or str(st.value(_SETTINGS + "map_dir", "") or "")
-            path, _f = QFileDialog.getOpenFileName(self, "Map image", start, MAP_FILTER)
+            path, _f = QFileDialog.getOpenFileName(self, tr("Map image"), start, MAP_FILTER)
             if path:
                 self.path = path
                 st.setValue(_SETTINGS + "map_dir", str(Path(path).parent))
@@ -232,14 +234,14 @@ class MapRow(QWidget):
         if not src and self.set_path:            # the texture set's own map
             pix = map_preview(self.set_path, normal=self.set_normal, channel=self.set_channel)
             self.preview.setPixmap(pix if pix is not None else QPixmap())
-            self.preview.setToolTip("From the texture set: " + Path(self.set_path).name)
+            self.preview.setToolTip(tr("From the texture set: {name}", name=Path(self.set_path).name))
             return
         path = self.picture if src == "picture" else self.path if src in ("file", "normal") else ""
         pix = map_preview(path, self.invert.isChecked(), self.contrast.value() / 100.0,
                           normal=src == "normal") if path else None
         self.preview.setPixmap(pix if pix is not None else QPixmap())
         if src == "picture" and not self.picture:
-            self.preview.setToolTip("This material has no picture: the map does nothing.")
+            self.preview.setToolTip(tr("This material has no picture: the map does nothing."))
         else:
             self.preview.setToolTip(Path(path).name if path else "")
 
@@ -368,7 +370,7 @@ class MaterialEditor(QDialog):
         form.addRow("Start from", self.preset)
         self.kind = QComboBox()
         for key in M.TYPES:
-            self.kind.addItem(M.TYPE_LABELS[key], key)
+            self.kind.addItem(tr(M.TYPE_LABELS[key]), key)
         self.kind.currentIndexChanged.connect(self._kind_changed)
         form.addRow("Type", self.kind)
         self.sliders, self.values, self.maps = {}, {}, {}
@@ -528,11 +530,11 @@ class MaterialEditor(QDialog):
         if kind in ("glass", "water"):
             ts = {"normal": ts["normal"], "normal_flip_green": ts.get("normal_flip_green")} \
                 if ts.get("normal") else {}
-        names = (("normal", "normal"), ("roughness", "roughness"), ("ao", "ambient occlusion"),
-                 ("displacement", "displacement"), ("metalness", "metal"), ("opacity", "opacity"),
-                 ("arm", "AO/roughness/metal packed"))
+        names = (("normal", tr("normal")), ("roughness", tr("roughness")), ("ao", tr("ambient occlusion")),
+                 ("displacement", tr("displacement")), ("metalness", tr("metal")), ("opacity", tr("opacity")),
+                 ("arm", tr("AO/roughness/metal packed")))
         found = [label for key, label in names if ts.get(key)]
-        self.set_label.setText(("Texture set: " + ", ".join(found) + ". The render uses these maps.")
+        self.set_label.setText(tr("Texture set: {maps}. The render uses these maps.", maps=", ".join(found))
                                if found else "")
         self.set_label.setVisible(bool(found))
         arm = ts.get("arm", "")
@@ -585,8 +587,8 @@ class MaterialEditor(QDialog):
             mark = "● " if name in specs else "◦ " if self.detected(name) else ""
             item = QListWidgetItem(_swatch(mat) if mat is not None else QIcon(), mark + name)
             item.setData(Qt.UserRole, name)
-            item.setToolTip(f"{used[name]} painted with it" if used[name]
-                            else "In the model's materials, not worn by anything yet")
+            item.setToolTip(tr("{n} painted with it", n=used[name]) if used[name]
+                            else tr("In the model's materials, not worn by anything yet"))
             self.list.addItem(item)
         self._loading = False
         if current:
@@ -679,7 +681,7 @@ class MaterialEditor(QDialog):
         if not self.select(mat.name):
             self.refresh(force=True)
             self.select(mat.name)
-        self.hint.setText(f"Chosen: {mat.name}.")
+        self.hint.setText(tr("Chosen: {name}.", name=mat.name))
         self.raise_()
         self.activateWindow()
 
@@ -690,7 +692,7 @@ class MaterialEditor(QDialog):
         if name is None:
             return
         if material_tools.arm_paint_bucket(self.app, name):
-            self.hint.setText(f"Click a face or an object in the 3D view to paint it with {name}.")
+            self.hint.setText(tr("Click a face or an object in the 3D view to paint it with {name}.", name=name))
         else:
             self.hint.setText("This material is not in the document's materials yet (paint a face with it first) "
                               "or the Paint tool is not available.")
@@ -702,7 +704,7 @@ class MaterialEditor(QDialog):
     def _made(self, name, painted, what):
         self.refresh(force=True)
         self.select(name)
-        extra = f" and painted {painted} on the selection" if painted else ""
+        extra = " " + tr("and painted {n} on the selection", n=painted) if painted else ""
         self.hint.setText(f"{what} {name}{extra}.")
 
     def new_material(self):
@@ -713,6 +715,7 @@ class MaterialEditor(QDialog):
         start = str(QSettings().value(_SETTINGS + "picture_dir", "") or "")
         dlg = NewMaterialDialog(self, material_tools.unique_name(scene, "Material", self.specs()),
                                 self._selected_count(), start)
+        translate_on_show(dlg)
         if dlg.exec() != QDialog.Accepted:
             return
         v = dlg.values()
@@ -720,7 +723,7 @@ class MaterialEditor(QDialog):
             QSettings().setValue(_SETTINGS + "picture_dir", str(Path(dlg.picture).parent))
         name, painted = material_tools.create_material(
             self.app, v["name"], color=v.get("color"), texture=v.get("texture"), apply=v["apply"])
-        self._made(name, painted, "Made")
+        self._made(name, painted, tr("Made"))
 
     def duplicate_current(self):
         """A copy of the chosen material, settings included, under a name of its own."""
@@ -733,7 +736,7 @@ class MaterialEditor(QDialog):
             self.hint.setText(f"{name} is not in the document's materials yet, so it cannot be copied "
                               "(paint a face with it first).")
             return
-        self._made(new, 0, f"Copied {name} as")
+        self._made(new, 0, tr("Copied {name} as", name=name))
 
     def pick_selection(self):
         name = M.selection_material(self.app.scene)
@@ -782,8 +785,8 @@ class MaterialEditor(QDialog):
         detected = None if own else self.detected(name)
         spec.update(own or detected or {})
         self.detected_label.setText(
-            f"Detected from the name: {M.preset_label(detected['preset'], self.lang)}. The render uses it; "
-            "change any setting to make it your own." if detected else "")
+            tr("Detected from the name: {label}. The render uses it; change any setting to make it your own.",
+               label=M.preset_label(detected['preset'], self.lang)) if detected else "")
         self.detected_label.setVisible(bool(detected))
         maps = spec.get("maps") or {}
         picture = self._picture(name)
@@ -892,7 +895,7 @@ class MaterialEditor(QDialog):
         kind = self.kind.currentData()
         label = self.form.labelForField(self._rows["bump"])
         if label is not None:                    # water's relief is its waves' height
-            label.setText("Wave height" if kind == "water" else "Relief")
+            label.setText(tr("Wave height") if kind == "water" else tr("Relief"))
         self._show_texture_set(self.current_name(), kind)
 
     def _preset(self, _i):
