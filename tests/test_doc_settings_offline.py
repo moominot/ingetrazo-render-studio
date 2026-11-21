@@ -104,4 +104,13 @@ ok(seen == [False], f"the live job is written without the ground ({seen})")
 panel.ground.setChecked(False); k_off = panel.live_key()
 panel.ground.setChecked(True); k_on = panel.live_key()
 ok(k_off != k_on and k_off[0] == k_on[0], "the ground changes the live scene's key, not the model's (the model file is kept)")
+# the 360° image's viewpoint height: kept, restored, clamped, default 2.5 m
+panel.hdri_height.setValue(int(round((8.0 - 0.5) / 29.5 * panel.hdri_height.maximum())))
+panel._save_timer.stop(); panel._save_document_settings()
+ok(abs(panel.hdri_settings()["height"] - 8.0) < 0.2, f"the viewpoint height reaches the job's 360° settings ({panel.hdri_settings()['height']:.2f})")
+ok(abs(doc.scene.plugin_data["render_studio"]["settings"]["hdri"]["height"] - 8.0) < 0.2, "and is saved in the document")
+p5 = P.StudioPanel(doc)
+ok(abs(P.apply_hdri({}, {"path": "x"})["hdri_height"] - 2.5) < 1e-6 and abs(SS.clean({"hdri": {"path": f}})["hdri"]["height"] - 2.5) < 1e-6,
+   "without it the default is 2.5 m")
+ok(SS.clean({"hdri": {"path": f, "height": 999}})["hdri"]["height"] == 30.0, "an absurd height is clamped")
 print("FAILED" if fails else "ALL OK"); sys.exit(1 if fails else 0)

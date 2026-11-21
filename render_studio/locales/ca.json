@@ -144,6 +144,8 @@
 "Brightness": "Brillantor",
 "Lights the scene": "Il·lumina l'escena",
 "Generated ground": "Terra generat",
+"Viewpoint height": "Alçada del punt de vista",
+"How high above the ground the image was taken from (a street panorama: about 2.5 m; a roof or a drone: more). It sets how the ground of the image is laid under the model: wrong, and the ground looks stretched or too close.": "A quina alçada sobre el terra es va fer la imatge (un panorama de carrer: uns 2,5 m; una teulada o un dron: més). Determina com es posa el terra de la imatge sota el model: si no és correcta, el terra es veu allargat o massa a prop.",
 "On: a ground is made under the model, with the look's colour, melting into the horizon. Off: no ground is added (the model's own terrain, or the 360° background's ground, shows).": "Activat: es fa un terra sota el model, del color de l'aspecte, que es fon amb l'horitzó. Desactivat: no s'hi afegeix cap terra (es veu el terreny del propi model, o el terra del fons 360°).",
 "On: the image lights the model (its sun casts the shadows). Off: the look lights it, the image is only seen behind it.": "Activat: la imatge il·lumina el model (el seu sol projecta les ombres). Desactivat: l'il·lumina l'aspecte, la imatge només es veu al darrere.",
 "Final render": "Render final",

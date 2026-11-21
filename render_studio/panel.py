@@ -106,7 +106,8 @@ def apply_hdri(block: dict, hdri: dict | None) -> dict:
     if light:
         block["white_balance"] = 6500
     block.update(hdri=str(hdri["path"]), hdri_rotation=float(hdri.get("rotation", 0.0)),
-                 hdri_strength=float(hdri.get("strength", 1.0)), hdri_light=light)
+                 hdri_strength=float(hdri.get("strength", 1.0)), hdri_light=light,
+                 hdri_height=float(hdri.get("height", 2.5)))
     return block
 
 
@@ -371,6 +372,13 @@ class StudioPanel(QWidget):
         self.hdri_strength_row = SliderRow(self.hdri_strength, "{:+.1f} stops",
                                            "Its brightness, against the lamps and the look's light")
         form2.addRow("Brightness", self.hdri_strength_row)
+        self.hdri_height = _slider(0.5, 30.0, float(st.value(_SETTINGS + "hdri_height", 2.5)), 295)
+        self.hdri_height_row = SliderRow(
+            self.hdri_height, "{:.1f} m",
+            "How high above the ground the image was taken from (a street panorama: about 2.5 m; a roof or "
+            "a drone: more). It sets how the ground of the image is laid under the model: wrong, and the ground "
+            "looks stretched or too close.")
+        form2.addRow("Viewpoint height", self.hdri_height_row)
         self.hdri_light = QCheckBox("Lights the scene")
         self.hdri_light.setToolTip("On: the image lights the model (its sun casts the shadows). "
                                    "Off: the look lights it, the image is only seen behind it.")
@@ -947,7 +955,7 @@ class StudioPanel(QWidget):
         self.preset.currentIndexChanged.connect(lambda _i: self.sun_tab._show_sun())
         self.hdri.currentIndexChanged.connect(lambda _i: self.sun_tab._show_sun())
         self.hdri_light.toggled.connect(lambda _on: self.sun_tab._show_sun())
-        for sl in (*self.sliders.values(), self.hdri_rotation, self.hdri_strength):
+        for sl in (*self.sliders.values(), self.hdri_rotation, self.hdri_strength, self.hdri_height):
             sl.valueChanged.connect(self._schedule_save)
         self.hdri_light.toggled.connect(self._schedule_save)
         self.ground.toggled.connect(self._schedule_save)
@@ -977,6 +985,7 @@ class StudioPanel(QWidget):
             "ground": self.ground.isChecked(),
             "hdri": ({"path": hdri, "rotation": round(_value(self.hdri_rotation), 3),
                       "brightness": round(_value(self.hdri_strength), 3),
+                      "height": round(_value(self.hdri_height), 2),
                       "light": self.hdri_light.isChecked()}
                      if hdri and hdri != _CHOOSE else None),
         }
@@ -989,7 +998,8 @@ class StudioPanel(QWidget):
             return
         self._applying = True
         widgets = [self.preset, self.engine, self.quality, self.width, self.hdri, self.ground,
-                   self.hdri_rotation, self.hdri_strength, self.hdri_light, *self.sliders.values()]
+                   self.hdri_rotation, self.hdri_strength, self.hdri_height, self.hdri_light,
+                   *self.sliders.values()]
         for w in widgets:
             w.blockSignals(True)
         try:
@@ -1014,6 +1024,7 @@ class StudioPanel(QWidget):
                 self.hdri.setCurrentIndex(i)
                 self.hdri_rotation.setValue(int(round(h["rotation"] / 360.0 * self.hdri_rotation.maximum())))
                 self.hdri_strength.setValue(int(round((h["brightness"] + 3.0) / 6.0 * self.hdri_strength.maximum())))
+                self.hdri_height.setValue(int(round((h["height"] - 0.5) / 29.5 * self.hdri_height.maximum())))
                 self.hdri_light.setChecked(h["light"])
             else:
                 self.hdri.setCurrentIndex(0)
@@ -1022,7 +1033,7 @@ class StudioPanel(QWidget):
             for w in widgets:
                 w.blockSignals(False)
             self._applying = False
-        for row in (*self.slider_rows.values(), self.hdri_rotation_row, self.hdri_strength_row):
+        for row in (*self.slider_rows.values(), self.hdri_rotation_row, self.hdri_strength_row, self.hdri_height_row):
             row.update_value()                       # their signals were blocked
         self._hdri_enable()
         self._update_summary()
@@ -1094,7 +1105,7 @@ class StudioPanel(QWidget):
 
     def _hdri_enable(self, *_a):
         on = bool(self.hdri.currentData())
-        for w in (self.hdri_rotation_row, self.hdri_strength_row, self.hdri_light):
+        for w in (self.hdri_rotation_row, self.hdri_strength_row, self.hdri_height_row, self.hdri_light):
             w.setEnabled(on)
         lit = on and self.hdri_light.isChecked()
         # The image's own sky and sun replace the look's: these do nothing then.
@@ -1107,7 +1118,8 @@ class StudioPanel(QWidget):
         if not path or path == _CHOOSE:
             return None
         return {"path": path, "rotation": _value(self.hdri_rotation),
-                "strength": 2.0 ** _value(self.hdri_strength), "light": self.hdri_light.isChecked()}
+                "strength": 2.0 ** _value(self.hdri_strength), "height": _value(self.hdri_height),
+                "light": self.hdri_light.isChecked()}
 
     def show_help(self, anchor: str = "panel"):
         from . import ui_help
@@ -1166,6 +1178,7 @@ class StudioPanel(QWidget):
         st.setValue(_SETTINGS + "hdri", data if data != _CHOOSE else "")
         st.setValue(_SETTINGS + "hdri_rotation", _value(self.hdri_rotation))
         st.setValue(_SETTINGS + "hdri_strength", _value(self.hdri_strength))
+        st.setValue(_SETTINGS + "hdri_height", _value(self.hdri_height))
         st.setValue(_SETTINGS + "hdri_light", self.hdri_light.isChecked())
 
     # -- rendering ----------------------------------------------------------------

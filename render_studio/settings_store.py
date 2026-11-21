@@ -24,7 +24,8 @@ format is a public contract; ``version`` goes up if it ever changes::
           "saturation": 1.06,            # multiple
           "vignette": 0.16 },
         "hdri": null,                    # or {"path": "...", "rotation": 0..360 degrees,
-                                         #     "brightness": stops, "light": true|false}
+                                         #     "brightness": stops, "height": metres (0.5..30, default 2.5),
+                                         #     "light": true|false}
         "output": {"size": "view", "height": 1080, "dpi": 300, "format": "png",
                    "jpeg_quality": 92, "transparent": false},      # see output.py
         "section": {"cap": true, "material": null, "light": "open"}   # see section.py
@@ -81,6 +82,7 @@ def clean(raw) -> dict | None:
         out["hdri"] = {"path": h["path"],
                        "rotation": _num(h.get("rotation"), 0.0, 360.0, 0.0),
                        "brightness": _num(h.get("brightness"), -3.0, 3.0, 0.0),
+                       "height": _num(h.get("height"), 0.5, 30.0, 2.5),
                        "light": bool(h.get("light", True))}
     return out
 

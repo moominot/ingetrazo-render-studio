@@ -496,12 +496,31 @@ def cap_albedo(cap=0.8, only=None):
         say("albedo", f"{n} materials capped at {cap}")
 
 
-def haze_ground(scene, near=120.0, far=1200.0):
+def _model_centre(ground):
+    """The middle (x, y) of the model's boxes, in the world (the ground is left out)."""
+    lo = [1e18, 1e18]
+    hi = [-1e18, -1e18]
+    for ob in bpy.data.objects:
+        if ob is ground or ob.type != "MESH" or ob.name.startswith("IngeTrazo"):
+            continue
+        for corner in ob.bound_box:
+            p = ob.matrix_world @ Vector(corner)
+            lo[0], lo[1] = min(lo[0], p.x), min(lo[1], p.y)
+            hi[0], hi[1] = max(hi[0], p.x), max(hi[1], p.y)
+    if lo[0] > hi[0]:
+        return 0.0, 0.0
+    return (lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0
+
+
+def haze_ground(scene, near=120.0, far=1200.0, eye_height=None):
     """The ground melts into the sky's own horizon colour with distance, so
     the far edge of the ground plane is no hard line against the sky (the
     atmosphere Enscape shows). The horizon colour is the world's sky looked
     up level with the horizon: the same Sky Texture, fed the view direction
-    flattened onto the horizon."""
+    flattened onto the horizon. With a 360° image and ``eye_height`` (metres) the ground shows the
+    image's own ground, projected as a dome would: each point is looked up in the direction from an
+    eye ``eye_height`` above the ground, in the middle of the model, to that point. Without it every
+    row of the ground would be the image's horizon row, stretched (vertical stripes)."""
     ground = bpy.data.objects.get("IngeTrazo ground")
     if ground is None or not ground.data.materials or scene.world is None:
         return
@@ -523,20 +542,27 @@ def haze_ground(scene, near=120.0, far=1200.0):
         # world is: the ground melts into what the image shows there.
         env = nodes.new("ShaderNodeTexEnvironment")
         env.image = whdri.image
-        geo = nodes.new("ShaderNodeNewGeometry")
-        neg = nodes.new("ShaderNodeVectorMath"); neg.operation = "SCALE"
-        neg.inputs["Scale"].default_value = -1.0
-        links.new(geo.outputs["Incoming"], neg.inputs[0])
-        sep = nodes.new("ShaderNodeSeparateXYZ")
-        links.new(neg.outputs["Vector"], sep.inputs["Vector"])
-        comb = nodes.new("ShaderNodeCombineXYZ")
-        links.new(sep.outputs["X"], comb.inputs["X"]); links.new(sep.outputs["Y"], comb.inputs["Y"])
-        comb.inputs["Z"].default_value = 0.02
         mapping = nodes.new("ShaderNodeMapping")
         wmap = wnodes.get("hdri_mapping")
         if wmap is not None:
             mapping.inputs["Rotation"].default_value = wmap.inputs["Rotation"].default_value
-        links.new(comb.outputs["Vector"], mapping.inputs["Vector"])
+        geo = nodes.new("ShaderNodeNewGeometry")
+        if eye_height:
+            ex, ey = _model_centre(ground)
+            sub = nodes.new("ShaderNodeVectorMath"); sub.operation = "SUBTRACT"
+            sub.inputs[1].default_value = (ex, ey, ground.location.z + float(eye_height))
+            links.new(geo.outputs["Position"], sub.inputs[0])
+            links.new(sub.outputs["Vector"], mapping.inputs["Vector"])
+        else:
+            neg = nodes.new("ShaderNodeVectorMath"); neg.operation = "SCALE"
+            neg.inputs["Scale"].default_value = -1.0
+            links.new(geo.outputs["Incoming"], neg.inputs[0])
+            sep = nodes.new("ShaderNodeSeparateXYZ")
+            links.new(neg.outputs["Vector"], sep.inputs["Vector"])
+            comb = nodes.new("ShaderNodeCombineXYZ")
+            links.new(sep.outputs["X"], comb.inputs["X"]); links.new(sep.outputs["Y"], comb.inputs["Y"])
+            comb.inputs["Z"].default_value = 0.02
+            links.new(comb.outputs["Vector"], mapping.inputs["Vector"])
         links.new(mapping.outputs["Vector"], env.inputs["Vector"])
         links.new(env.outputs["Color"], emit.inputs["Color"])
     elif wsky is not None:
@@ -2434,7 +2460,8 @@ def build(job):
         if st.get("haze", True):
             # A photo's horizon is near (trees, buildings): melt sooner.
             near, far = (30.0, 300.0) if st.get("hdri") else (120.0, 1200.0)
-            haze_ground(scene, float(st.get("haze_near", near)), float(st.get("haze_far", far)))
+            haze_ground(scene, float(st.get("haze_near", near)), float(st.get("haze_far", far)),
+                        eye_height=(float(st.get("hdri_height", 2.5)) if st.get("hdri") else None))
     core["set_engine"](scene, job.get("engine", "eevee"), int(job.get("samples", 64)))
     if job.get("engine") != "cycles" and st.get("hdri") and scene.world is not None:
         wld = scene.world
