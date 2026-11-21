@@ -269,6 +269,95 @@ def set_hdri(scene, path, rotation_deg=0.0, strength=1.0, light=True):
     return image
 
 
+def find_sun(image, small=(512, 256)):
+    """Where a 360° image has its sun: ``(direction, rgb, peak)``, or None when it has none.
+    ``direction`` is the unit vector, in the image's own frame (before any rotation), TOWARD the
+    brightest spot. The spot is found on a small blurred copy, so one hot pixel is not a sun, and
+    only counts as one when it stands well out of the sky around it. ``peak`` is the brightest
+    value (a radiance file, EXR/HDR, reports a huge one: its real sun carries its own light; a
+    JPEG/PNG panorama clips it to white, and that is what needs a lamp)."""
+    import numpy as np
+    w, h = image.size[:2]
+    if w < 8 or h < 4:
+        return None
+    work = image.copy()
+    try:
+        work.scale(*small)
+        sw, sh = work.size[:2]
+        px = np.empty(sw * sh * 4, np.float32)
+        work.pixels.foreach_get(px)
+    finally:
+        bpy.data.images.remove(work)
+    px = px.reshape(sh, sw, 4)[..., :3]              # row 0 is the BOTTOM of the picture
+    lum = px @ np.array([0.2126, 0.7152, 0.0722], np.float32)
+    peak = float(lum.max())
+    blur = _box_blur(_box_blur(lum, max(1, sw // 128), 1), max(1, sw // 128), 0)
+    y, x = np.unravel_index(int(np.argmax(blur)), blur.shape)
+    median = float(np.median(blur))
+    if blur[y, x] < 0.5 or blur[y, x] < 2.0 * max(median, 1e-3):
+        return None                                  # an even sky: no sun to speak of
+    # The sun's centre: the bright pixels around the peak, turned to the middle so the seam of the
+    # picture does not cut it. Their average colour is the lamp's.
+    r = max(4, sw // 40)
+    ys = np.clip(np.arange(y - r, y + r + 1), 0, sh - 1)
+    xs = np.arange(x - r, x + r + 1) % sw
+    win = lum[np.ix_(ys, xs)]
+    mask = win >= 0.85 * float(win.max())
+    if not mask.any():
+        return None
+    wy, wx = np.nonzero(mask)
+    cy = float(ys[wy].mean())
+    cx = float((x - r) + wx.mean())
+    rgb = px[np.ix_(ys, xs)][mask].mean(axis=0)
+    u, v = ((cx + 0.5) / sw) % 1.0, (cy + 0.5) / sh
+    phi, theta = (u - 0.5) * 2.0 * math.pi, (v - 0.5) * math.pi
+    # Blender's equirectangular lookup: u = 0.5 - atan2(y, x) / 2π, v = 0.5 + elevation / π.
+    d = (math.cos(phi) * math.cos(theta), -math.sin(phi) * math.cos(theta), math.sin(theta))
+    if image.is_float and image.file_format in ("HDR", "OPEN_EXR", "OPEN_EXR_MULTILAYER"):
+        peak = max(peak, 1000.0)                     # a radiance file: its sun is in it already
+    return d, tuple(float(c) for c in rgb), peak
+
+
+def _box_blur(a, r, axis):
+    """A box average of half-width ``r`` along ``axis`` (wrapping round)."""
+    import numpy as np
+    n = a.shape[axis]
+    acc = np.zeros_like(a)
+    for s in range(-r, r + 1):
+        acc += np.roll(a, s, axis=axis)
+    return acc / (2 * r + 1)
+
+
+def hdri_sun(scene, image, rotation_deg, strength, job_strength, angle=None):
+    """The sun a JPEG/PNG panorama only paints. The world lights with the whole picture, so a blue
+    sky floods the scene with blue and nothing casts a shadow: a lamp goes where the picture is
+    brightest, with that spot's colour. A real HDR already carries its sun (the renderer samples
+    it), so one is added only when the brightest pixel is not far above white. Returns the lamp."""
+    found = find_sun(image)
+    if found is None:
+        return None
+    d, rgb, peak = found
+    if peak > 4.0:
+        return None
+    a = math.radians(-float(rotation_deg))          # the mapping turns the lookup, not the picture
+    ca, sa = math.cos(a), math.sin(a)
+    world = Vector((d[0] * ca - d[1] * sa, d[0] * sa + d[1] * ca, d[2]))
+    if world.z < 0.02:
+        return None                                  # a sun under the horizon lights nothing
+    top = max(rgb) or 1.0
+    colour = tuple(0.5 + 0.5 * c / top for c in rgb)       # a warm or cool cast, kept gentle
+    light = bpy.data.lights.new("IngeTrazo hdri sun", type="SUN")
+    light.energy = float(job_strength) * float(strength)
+    light.angle = math.radians(float(angle) if angle else 1.0)
+    light.color = colour
+    sun = bpy.data.objects.new("IngeTrazo hdri sun", light)
+    scene.collection.objects.link(sun)
+    sun.rotation_euler = world.normalized().to_track_quat("Z", "Y").to_euler()
+    say("hdri sun", f"elev {math.degrees(math.asin(world.normalized().z)):.0f}°",
+        f"azim {math.degrees(math.atan2(world.y, world.x)):.0f}°", f"colour {tuple(round(c, 2) for c in colour)}")
+    return sun
+
+
 _SKY_ATTRS = ("sky_type", "sun_elevation", "sun_rotation", "sun_direction", "altitude",
               "air_density", "aerosol_density", "ozone_density", "sun_size",
               "sun_intensity", "turbidity", "ground_albedo")
@@ -2322,8 +2411,15 @@ def build(job):
                 n.sky_type = st["sky_type"]
                 say("sky type", n.sky_type)
     if st.get("hdri"):
-        set_hdri(scene, st["hdri"], float(st.get("hdri_rotation", 0.0)),
-                 float(st.get("hdri_strength", 1.0)), bool(st.get("hdri_light", True)))
+        pano = set_hdri(scene, st["hdri"], float(st.get("hdri_rotation", 0.0)),
+                        float(st.get("hdri_strength", 1.0)), bool(st.get("hdri_light", True)))
+        if pano is not None and st.get("hdri_light", True) and st.get("hdri_sun", True):
+            try:                                   # a panorama only paints its sun: give it a lamp
+                hdri_sun(scene, pano, float(st.get("hdri_rotation", 0.0)), float(st.get("hdri_strength", 1.0)),
+                         float(job.get("sun_strength", 4.0)) * float(st.get("sun_scale", 1.0)),
+                         st.get("sun_angle"))
+            except Exception as exc:               # never lose the render over it
+                say("hdri sun failed", exc)
     ground = job.get("ground")
     if ground and not (st.get("hdri") and st.get("hdri_light", True)):
         world_ground(scene, st.get("ground_color") or ground["color"],

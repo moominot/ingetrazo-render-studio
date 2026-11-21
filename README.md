@@ -347,6 +347,10 @@ Any equirectangular image (.hdr, .exr, .jpg) as the world:
 - **Lights the scene** (off): the look lights the model, and the image is
   only what the camera sees behind it.
 - **Rotation** turns the image, and **Brightness** sets it in stops.
+- A JPEG/PNG panorama only paints its sun (clipped to white), so the whole sky would light the
+  scene with its blue and cast no shadow. The extension finds the brightest spot of the image and
+  puts a sun there, with the spot's colour, following the rotation. An .hdr/.exr already carries
+  its real sun, so it gets none; an even overcast sky gets none either.
 - The ground melts into the image's horizon.
 
 Blender's own eight HDRIs (CC0, Poly Haven) are offered in the list. They
