@@ -6,7 +6,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 SRC, REPO = [os.path.abspath(a) for a in sys.argv[1:3]]
 sys.path[:0] = [SRC, REPO]
 from pathlib import Path
-from PySide6.QtCore import QObject, QSettings
+from PySide6.QtCore import QObject, QSettings, Qt
 from PySide6.QtGui import QColor, QImage, QVector3D
 from PySide6.QtWidgets import QApplication
 qa = QApplication.instance() or QApplication([])
@@ -124,6 +124,34 @@ ok(live._wanted_key() == (2, "mats-new", "look-new"), "...Update takes the model
 live._force = False
 ok(live._wanted_key() == (1, "mats-old", "look-new"), "...once (the next load keeps the new ones)")
 live._timer.stop()
+
+# ---- the cube: a click changes the colour (or the picture) ------------------------------------------------
+from PySide6.QtWidgets import QColorDialog
+f = src.scene.mesh.add_face([QVector3D(0, 0, 0), QVector3D(1, 0, 0), QVector3D(1, 1, 0), QVector3D(0, 1, 0)])
+f.attrs.update({"mat": "Paint", "color": (0.2, 0.4, 0.6)})
+g = src.scene.mesh.add_face([QVector3D(5, 0, 0), QVector3D(6, 0, 0), QVector3D(6, 1, 0), QVector3D(5, 1, 0)])
+g.attrs.update({"mat": "Brick", "texture": {"path": brick, "sw": 1.5, "sh": 0.75}})
+ed.refresh(force=True); ed.select("Paint")
+ok(ed.cube.cursor().shape() == Qt.PointingHandCursor, "the cube shows it can be clicked")
+asked = []
+real_get = QColorDialog.getColor
+QColorDialog.getColor = staticmethod(lambda *a, **k: (asked.append(a[0].name()) or QColor(240, 120, 0)))
+ed.cube.clicked.emit()
+QColorDialog.getColor = real_get
+ok(asked == [QColor.fromRgbF(0.2, 0.4, 0.6).name()], f"a material with no picture opens the colour chooser at its colour ({asked})")
+want = QColor(240, 120, 0)
+got = src.scene.materials["Paint"].color
+ok(abs(got[0] - want.redF()) < 0.01 and abs(got[1] - want.greenF()) < 0.01, f"the material has the new colour ({got})")
+ok(abs(f.attrs["color"][0] - want.redF()) < 0.01, "...and so does every face that wears it")
+src.viewport.history.undo()
+ok(tuple(f.attrs["color"]) == (0.2, 0.4, 0.6) and tuple(src.scene.materials["Paint"].color) == (0.2, 0.4, 0.6), "...in one undo step")
+ed.select("Brick")
+changed = []
+ed.change_picture = lambda: changed.append(1)
+ed.cube.clicked.emit()
+ok(changed == [1], "a material with a picture asks for another picture instead")
+ok(MT.set_material_colour(src, "Brick", (1, 0, 0)) is False and MT.set_material_colour(src, "Nobody", (1, 0, 0)) is False,
+   "the colour of a material with a picture, or of one that is not there, is not changed")
 
 print("FAILED" if fails else "ALL PASSED", len(fails))
 sys.exit(1 if fails else 0)

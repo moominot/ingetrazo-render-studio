@@ -270,3 +270,21 @@ def load_material(app, path):
     return create_material(app, data.get("name") or "Material", color=data.get("color"),
                            texture=data.get("texture"), opacity=data.get("opacity"), apply=False,
                            spec=data.get("settings"), finish=data.get("finish"))
+
+
+def set_material_colour(app, name, rgb):
+    """The flat colour of the material ``name`` changed everywhere it is worn (every face and object, nested
+    ones too), one undo step. A material with a picture is left alone. Returns True when it changed."""
+    from core.history import RestampMaterialCommand
+    mat = (getattr(app.scene, "materials", None) or {}).get(name)
+    if mat is None or mat.texture:
+        return False
+    rgb = tuple(float(c) for c in rgb[:3])
+    new = Material(name, color=rgb, opacity=mat.opacity, finish=getattr(mat, "finish", None))
+    vp = app.viewport
+    vp.history.execute(RestampMaterialCommand(name, new))
+    notify = getattr(vp, "notify_scene_changed", None)
+    if callable(notify):
+        notify()
+    vp.update()
+    return True

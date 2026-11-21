@@ -14,7 +14,7 @@ from .i18n import tr, translate_on_show  # noqa: F401
 import json
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, QSize, Qt, QTimer
+from PySide6.QtCore import QSettings, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog,
                                QFormLayout, QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
@@ -120,6 +120,16 @@ def map_preview(path, invert=False, contrast=0.0, normal=False, size=44, channel
             g = int(v * 255)
             img.setPixelColor(x, y, QColor(g, g, g))
     return QPixmap.fromImage(img)
+
+
+class ClickLabel(QLabel):
+    """A label that says when it is clicked (the material's cube: a colour or a picture to change)."""
+    clicked = Signal()
+
+    def mousePressEvent(self, ev):
+        if ev.button() == Qt.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(ev)
 
 
 class MapRow(QWidget):
@@ -336,9 +346,12 @@ class MaterialEditor(QDialog):
         self.detected_label.setVisible(False)
         form.addRow(self.detected_label)
         prev = QHBoxLayout()
-        self.cube = QLabel()
+        self.cube = ClickLabel()
+        self.cube.setCursor(Qt.PointingHandCursor)
+        self.cube.clicked.connect(self.cube_clicked)
         self.cube.setFixedSize(150, 150)
-        self.cube.setToolTip("A quick preview on a one-metre cube")
+        self.cube.setToolTip("A quick preview on a one-metre cube. Click it to change the material: its colour "
+                             "(a material with no picture) or its picture.")
         note = QLabel("Quick preview on a 1 m cube. It follows the sliders, the picture and the colour; "
                       "the maps and Blender's lighting only show in the render.")
         note.setWordWrap(True)
@@ -622,6 +635,30 @@ class MaterialEditor(QDialog):
     def _help(self):
         from . import ui_help
         ui_help.show(self, "materials")
+
+    def cube_clicked(self):
+        """The cube: a material with no picture opens the colour chooser (the colour changes everywhere it is
+        worn, one undo step); one with a picture asks for another picture."""
+        from . import material_tools
+        name = self.current_name()
+        mat = (getattr(self.app.scene, "materials", None) or {}).get(name) if name else None
+        if name is None:
+            return
+        if mat is None:
+            self.hint.setText(tr("{name} is not in the document's materials yet, so its colour cannot be "
+                                 "changed (paint a face with it first).", name=name))
+            return
+        if mat.texture:
+            self.change_picture()
+            return
+        from PySide6.QtWidgets import QColorDialog
+        start = QColor.fromRgbF(*(tuple(mat.color or (0.8, 0.8, 0.8))[:3]))
+        chosen = QColorDialog.getColor(start, self, tr("Colour of the material"))
+        if chosen.isValid() and material_tools.set_material_colour(
+                self.app, name, (chosen.redF(), chosen.greenF(), chosen.blueF())):
+            self.refresh(force=True)
+            self.select(name)
+            self.hint.setText(tr("Colour of {name} changed.", name=name))
 
     def change_picture(self):
         """Replace the material's picture in the model (see texture_swap)."""
