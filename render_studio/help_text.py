@@ -68,7 +68,7 @@ where IngeTrazo's Render tab keeps it, so both use the same Blender.</p>
 <h4>In four steps</h4>
 <ol>
 <li>Choose a <b>Look</b> and move the sliders (the scene), and set the <b>Engine</b>, <b>Quality</b> and <b>Width</b> of the final render.</li>
-<li>Press <b>Open preview…</b>: a window with a <b>live preview</b> of the 3D view that you can zoom and move.</li>
+<li>Press <b>Open preview…</b>: a window with a <b>live preview</b> of the 3D view that you can zoom and move. (To skip the preview, press <b>Render</b> in the panel.)</li>
 <li>Press <b>Render</b> for the final picture. Then the retouch sliders and <b>Save image…</b> appear. Or press
 <b>Render and save…</b> to choose a file and get the picture saved straight away, with no retouching.</li>
 <li>In the retouch tools, adjust the picture instantly and <b>Save image…</b>; <b>Back to preview</b> returns to the live view.</li>
@@ -103,8 +103,14 @@ final picture.</td></tr>
 <tr><td valign='top'><b>Width</b></td><td>The picture's width in pixels (320 to 7680). The height follows the
 proportions of the 3D view.</td></tr>
 <tr><td valign='top'><b>Materials…</b></td><td>Opens the material editor (see below).</td></tr>
+<tr><td valign='top'><b>Render</b></td><td>Makes the final picture now, with the Engine, Quality and size above, <b>without the live
+preview</b>: the window opens, shows the progress and then the picture with the retouch tools.</td></tr>
+<tr><td valign='top'><b>Render and save…</b></td><td>The same, asking for a file first and saving the picture as it is rendered.</td></tr>
 <tr><td valign='top'><b>Open preview…</b></td><td>Opens the preview window (see below). The line under it says what is
 happening, or why it could not start (for example, Blender was not found).</td></tr>
+<tr><td valign='top'><b>Open in Blender…</b></td><td>Expert mode: opens the scene, as Render would make it, in Blender with its own
+window, to work in it there. It is saved first as a .blend file (the line under the buttons says where); nothing is rendered, and
+the scene is no longer linked to the drawing.</td></tr>
 </table>
 <h4>Settings are saved in the document</h4>
 <p>The look, engine, quality, width, sliders and 360° background are kept <b>inside the IngeTrazo document</b>
@@ -257,7 +263,7 @@ double click goes between <b>Fit</b> and <b>100 %</b> (one picture pixel per scr
 <tr><td valign='top'><b>Saturation</b></td><td>0 black and white to 1.8; 1 is as rendered.</td></tr>
 <tr><td valign='top'><b>Warmth</b></td><td>-1 cooler to +1 warmer.</td></tr>
 <tr><td valign='top'><b>Vignette</b></td><td>0 to 0.8, darkens the corners.</td></tr>
-<tr><td valign='top'><b>Reset</b></td><td>Puts every slider back to neutral.</td></tr>
+<tr><td valign='top'><b>Reset retouch</b></td><td>Puts every slider back to neutral.</td></tr>
 <tr><td valign='top'><b>Save image…</b></td><td>Saves the retouched picture as PNG or JPEG.</td></tr>
 <tr><td valign='top'><b>Back to preview</b></td><td>Returns to the live view to change the scene and render again.</td></tr>
 </table>

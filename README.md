@@ -370,7 +370,7 @@ them (Materials…, Open preview…, the status) serves all. The Settings tab is
 - **Final render** (only Render uses it): the engine, EEVEE (fast, about 3 s) or Cycles (best, about 5 s
   on an RTX GPU) and the quality. The size is in the Output tab.
 
-There is no Render button in the panel: **Open preview…** opens the preview window.
+The panel has **Render** and **Render and save…** (the final picture right away, without the live preview: the window opens only to show it) and **Open preview…** (the live view).
 
 ![Panel](docs/panel.png)
 
@@ -384,7 +384,7 @@ One window to look at the scene and to make the picture, in three states:
 - **Rendering**: the progress bar and **Cancel**. The live Blender is closed meanwhile. Closing the window
   does not stop the render: the picture opens when it is ready.
 - **Final picture**: the render with the retouch sliders (exposure in EV, contrast, saturation, warmth,
-  vignette: they change the picture instantly, nothing is rendered again), **Reset**, **Save image…**
+  vignette: they change the picture instantly, nothing is rendered again), **Reset retouch**, **Save image…**
   (what you see, PNG or JPEG) and **Back to preview**.
 
 The panel's sliders and the retouch sliders share some names but not their effect: the panel's change
@@ -438,7 +438,7 @@ with its own window and the person's own Blender settings; nothing is rendered. 
 looks through the camera in Material Preview. The scene is then Blender's: it is not linked to the drawing, so a
 change of the model needs the button again. Implemented as `"expert": true` in the job (studio_scene.py).
 
-**Update** (preview window, 0.20.0): with Follow changes off, shows the model and materials as they are now, once.
+**Update preview** (preview window, 0.20.0): with Follow changes off, shows the model and materials as they are now, once.
 **Save… / Load…** (material editor): a material goes to a `.rsmat` file (JSON: colour or picture, translucency, finish
 and Render Studio settings) with its pictures and map files copied into a folder beside it, by relative paths, so it can
 be moved, shared and loaded in another drawing (one undo step; the selection is not painted). The **Glow** slider is

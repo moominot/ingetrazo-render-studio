@@ -185,5 +185,28 @@ ok(order and order[0] == ("job", "rendering", 0), f"rendering: the window shows 
 ok(order[1][1] == 42 and tr("Exporting the model… {pct} %", pct=50) in order[1][2], f"...with the export's progress ({order[1][1:]})")
 ok(panel._preparing is False, "...and a failure leaves the panel free again")
 
+# ---- Render straight from the panel ------------------------------------------------------------------
+ok(panel.render_btn.text() == "Render" and panel.render_save_btn.text().startswith("Render and save"),
+   "the panel has Render and Render and save…")
+panel.window.hide(); panel.window.set_mode("preview"); fl.active = False; fl.started = 0
+seen2 = []
+def fake_job2(*a, **k):
+    seen2.append((panel.window.isVisible(), panel.window.mode, panel._direct))
+    raise RuntimeError("stop here")
+P.write_studio_job = fake_job2
+panel.render_btn.click()
+P.write_studio_job = real_job
+ok(seen2 == [(True, "rendering", True)], f"Render from the panel opens the window in Rendering, no live preview ({seen2})")
+ok(not panel.window.isVisible() and fl.started == 0, "...and if it fails the window goes away and no live view starts")
+panel.window.show(); panel.window.set_mode("preview")
+seen3 = []
+def fake_job3(*a, **k):
+    seen3.append(panel._direct)
+    raise RuntimeError("stop here")
+P.write_studio_job = fake_job3
+panel.render()
+P.write_studio_job = real_job
+ok(seen3 == [False] and fl.started == 1, "from an open preview it goes back to the live preview, as before")
+
 print("FAILED" if fails else "ALL PASSED", len(fails))
 sys.exit(1 if fails else 0)

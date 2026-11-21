@@ -157,7 +157,8 @@ ok(solo.mode == "final" and sees(solo.bar_final) and not sees(solo.bar_preview) 
 solo.close()
 
 # ---- the panel ---------------------------------------------------------------------------------------------
-ok(not hasattr(panel, "render_btn") and not hasattr(panel, "live_box"), "the panel has no Render button and no Live view box")
+ok(hasattr(panel, "render_btn") and hasattr(panel, "render_save_btn") and not hasattr(panel, "live_box"),
+   "the panel has Render and Render and save…, and no Live view box (that is in the preview window)")
 ok(panel.preview_btn.text() == "Open preview…" and panel.preview_btn.isEnabled(), "…it opens the preview")
 ok(set(panel.slider_rows) == set(presets.SLIDERS), "every panel slider has a row with a value and a hint")
 ok(all(r.hint.text() and r.value_label.text() for r in panel.slider_rows.values()), "…each says what it does and its value")

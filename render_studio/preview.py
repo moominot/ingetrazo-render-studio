@@ -117,7 +117,7 @@ class ImageWindow(QWidget):
             box.setChecked(str(st.value(_SETTINGS + key, "true")).lower() in ("true", "1"))
             box.toggled.connect(lambda on, k=key: self.panel and self.panel._follow_toggled(k, on))
             pl.addWidget(box)
-        self.update_btn = QPushButton("Update")
+        self.update_btn = QPushButton("Update preview")
         self.update_btn.setToolTip("With Follow changes off: shows the model and materials as they are now "
                                    "(the preview keeps the ones it had until then).")
         self.update_btn.setEnabled(not self.follow_changes_box.isChecked())
@@ -169,7 +169,7 @@ class ImageWindow(QWidget):
             form.addLayout(line)
         fl.addWidget(box)
         frow = QHBoxLayout()
-        self.reset_btn = QPushButton("Reset")
+        self.reset_btn = QPushButton("Reset retouch")
         self.reset_btn.setToolTip("Puts every retouch slider back to neutral (the picture as rendered)")
         self.reset_btn.clicked.connect(self._reset)
         self.back_btn = QPushButton("Back to preview")

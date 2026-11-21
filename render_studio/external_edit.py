@@ -167,3 +167,18 @@ class PictureEdit(QObject):
             self.changed.emit(tr("{name} took {file} from the other program ({n}).", name=self.name, file=p.name, n=self.swaps))
         else:
             self.failed.emit(message)
+
+
+def editor_name(program: str = "") -> str:
+    """A short name for the program that edits pictures: «GIMP», «Krita», the file's name, or '' when the
+    system's own program is used."""
+    program = program if program else find_editor()
+    if not program:
+        return ""
+    stem = Path(program).stem
+    low = stem.lower()
+    if "gimp" in low:
+        return "GIMP"
+    if "krita" in low:
+        return "Krita"
+    return stem[:1].upper() + stem[1:]

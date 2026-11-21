@@ -306,11 +306,11 @@ class MaterialEditor(QDialog):
         tools.addWidget(self.paint_btn, 0, 1)
         tools.addWidget(self.new_btn, 1, 0)
         tools.addWidget(self.dup_btn, 1, 1)
-        self.save_btn = QPushButton("Save…")
+        self.save_btn = QPushButton("Save material…")
         self.save_btn.setToolTip("Save this material (its colour or picture, settings and finish) to a file, with its pictures, "
                                  "to use it in another drawing.")
         self.save_btn.clicked.connect(self.save_current)
-        self.load_btn = QPushButton("Load…")
+        self.load_btn = QPushButton("Load material…")
         self.load_btn.setToolTip("Bring a saved material into this drawing (it is added; nothing is painted).")
         self.load_btn.clicked.connect(self.load_from_file)
         tools.addWidget(self.save_btn, 2, 0)
@@ -378,6 +378,7 @@ class MaterialEditor(QDialog):
         self.editor_btn.setToolTip("Choose the program that edits pictures (GIMP and Krita are found by themselves; "
                                    "otherwise the system's own program for the picture is used).")
         self.editor_btn.clicked.connect(self.choose_editor)
+        self._edit_label()
         self._edits = {}                         # material name → the picture being edited outside
         picrow.addWidget(self.pic_btn)
         picrow.addWidget(self.edit_btn)
@@ -673,6 +674,12 @@ class MaterialEditor(QDialog):
             self.select(name)
             self.hint.setText(tr("Colour of {name} changed.", name=name))
 
+    def _edit_label(self):
+        """«Edit in GIMP…» once the program is known, else «Edit picture…»."""
+        from . import external_edit
+        prog = external_edit.editor_name()
+        self.edit_btn.setText(tr("Edit in {program}…", program=prog) if prog else tr("Edit picture…"))
+
     def edit_picture(self):
         """The material's picture in another program: edited as a copy, taken back whenever it is saved."""
         from . import external_edit
@@ -689,7 +696,7 @@ class MaterialEditor(QDialog):
         program = external_edit.find_editor()
         if session.start(program):
             self._edits[name] = session
-            shown = Path(program).stem if program else tr("the system's program")
+            shown = external_edit.editor_name(program) or tr("the system's program")
             self.hint.setText(tr("Opened {file} in {program}. Save it there (in GIMP: File ▸ Overwrite) and the "
                                  "material takes it.", file=session.file.name, program=shown))
 
@@ -707,7 +714,8 @@ class MaterialEditor(QDialog):
                                                tr("Programs") + " (*.exe);;" + tr("All files") + " (*)")
         if path:
             external_edit.remember_editor(path)
-            self.hint.setText(tr("Pictures will be edited with {program}.", program=Path(path).stem))
+            self._edit_label()
+            self.hint.setText(tr("Pictures will be edited with {program}.", program=external_edit.editor_name(path)))
 
     def change_picture(self):
         """Replace the material's picture in the model (see texture_swap)."""

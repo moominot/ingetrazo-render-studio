@@ -452,8 +452,21 @@ class StudioPanel(QWidget):
         self._live = None
         self._prep = None
         self._preparing = False
+        self._direct = False
         self._save_to = None
         self._cancelled = False
+        self.render_btn = QPushButton("Render")
+        self.render_btn.setToolTip("Makes the final picture now, with the Engine, Quality and size above, without the live "
+                                   "preview. It opens in a window with the retouch tools and Save image….")
+        self.render_btn.clicked.connect(lambda: self.render())
+        self.render_save_btn = QPushButton("Render and save…")
+        self.render_save_btn.setToolTip("Asks where to save, makes the final picture and saves it straight away, "
+                                        "without the live preview and without retouching.")
+        self.render_save_btn.clicked.connect(lambda: self.render_and_save())
+        rrow = QHBoxLayout()
+        rrow.addWidget(self.render_btn, 1)
+        rrow.addWidget(self.render_save_btn, 1)
+        outer.addLayout(rrow)
         self.preview_btn = QPushButton("Open preview…")
         self.preview_btn.setToolTip("Opens the preview window: a live view of the scene that you can zoom and move, "
                                     "with Render (then retouch and save) and Render and save…")
@@ -544,6 +557,8 @@ class StudioPanel(QWidget):
             found = None
         self.need_box.setVisible(found is None)
         self.preview_btn.setEnabled(found is not None)
+        self.render_btn.setEnabled(found is not None)
+        self.render_save_btn.setEnabled(found is not None)
         self.expert_btn.setEnabled(found is not None)
         return found
 
@@ -1116,6 +1131,11 @@ class StudioPanel(QWidget):
         if self._preparing:
             return
         self._remember()
+        win = self.preview()
+        self._direct = not win.isVisible()        # from the panel, no preview open: its window only shows this render
+        if self._direct:
+            win.show()
+            win.raise_()
         # Say at once that something is happening (the export of a big model and the live Blender
         # shutting down take seconds before Blender reports any progress).
         if self.window is not None:
@@ -1205,6 +1225,12 @@ class StudioPanel(QWidget):
         """After a render that gave no picture to retouch: the live preview again, if the
         window is still open."""
         win = self.window
+        if getattr(self, "_direct", False):          # the window was opened only for this render: nothing to go back to
+            self._direct = False
+            if win is not None:
+                win.set_mode("preview")
+                win.hide()
+            return
         if win is not None and win.isVisible():
             win.set_mode("preview")
             self._start_live()
@@ -1290,6 +1316,7 @@ class StudioPanel(QWidget):
             self.finished.emit(self.output)
             return
         win = self.preview()
+        self._direct = False                              # the picture stays in the window: it is the result
         self._set_status(tr("Done: {name}", name=self.output.name) + (" · " + tr("also saved in {path}", path=kept) if kept else ""))
         win.set_image(self.output)                        # the retouch tools and Save image…
         r = getattr(self, "rendered", None)
