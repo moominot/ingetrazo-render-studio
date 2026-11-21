@@ -82,4 +82,26 @@ h = doc.scene.plugin_data["render_studio"]["settings"]["hdri"]
 ok(h and h["path"] == f and h["light"] is False, "the 360° background is saved")
 p3 = P.StudioPanel(doc)
 ok(p3.hdri.currentData() == f and not p3.hdri_light.isChecked(), "and restored")
+# the generated ground: on by default, off is kept in the document and reaches every job
+ok(panel.ground.isChecked() and SS.clean({"look": "clear"})["ground"] is True, "the generated ground is on by default")
+panel.ground.setChecked(False)
+panel._save_timer.stop(); panel._save_document_settings()
+ok(doc.scene.plugin_data["render_studio"]["settings"]["ground"] is False, "switching the ground off is saved in the document")
+p4 = P.StudioPanel(doc)
+ok(not p4.ground.isChecked(), "and a new panel on that document has it off")
+seen = []; doc.viewport.camera = None
+real_write = P.write_studio_job
+P.write_studio_job = lambda *a, **k: (seen.append(k.get("ground")), (_ for _ in ()).throw(RuntimeError("stop")))[0]
+try:
+    for call in (lambda: panel.live_job(__import__("pathlib").Path(tempfile.mkdtemp()), 320, 200),):
+        try:
+            call()
+        except RuntimeError:
+            pass
+finally:
+    P.write_studio_job = real_write
+ok(seen == [False], f"the live job is written without the ground ({seen})")
+panel.ground.setChecked(False); k_off = panel.live_key()
+panel.ground.setChecked(True); k_on = panel.live_key()
+ok(k_off != k_on and k_off[0] == k_on[0], "the ground changes the live scene's key, not the model's (the model file is kept)")
 print("FAILED" if fails else "ALL OK"); sys.exit(1 if fails else 0)

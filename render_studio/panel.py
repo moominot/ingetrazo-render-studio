@@ -335,6 +335,13 @@ class StudioPanel(QWidget):
             row = SliderRow(s, presets.SLIDER_FORMATS[key], presets.SLIDER_HINTS[key])
             self.sliders[key], self.slider_rows[key] = s, row
             form.addRow(label, row)
+        self.ground = QCheckBox("Generated ground")
+        self.ground.setToolTip(
+            "On: a ground is made under the model, with the look's colour, melting into the horizon. "
+            "Off: no ground is added (the model's own terrain, or the 360° background's ground, shows).")
+        self.ground.setChecked(str(st.value(_SETTINGS + "ground", "true")).lower() != "false")
+        self.ground.toggled.connect(lambda on: QSettings().setValue(_SETTINGS + "ground", "true" if on else "false"))
+        form.addRow("", self.ground)
         self.preset.currentIndexChanged.connect(self._preset_changed)
         col.addWidget(box_look)
 
@@ -668,7 +675,7 @@ class StudioPanel(QWidget):
         return write_studio_job(
             self.app.scene, self.app.viewport.camera, work, self.preset.currentData(),
             self.slider_values(), engine=self.live_engine(), quality=0, width=width,
-            height=height, hdri=self.hdri_settings(),
+            height=height, hdri=self.hdri_settings(), ground=self.ground.isChecked(),
             materials=self.material_specs() if materials is None else materials, serve=True,
             live=True, reuse_model=reuse_model, doc_path=self.doc_path(),
             section_opts=self.section_tab.settings(), progress=self._export_progress())
@@ -735,7 +742,8 @@ class StudioPanel(QWidget):
             job, script = write_studio_job(
                 self.app.viewport.scene, self.render_camera(), work, self.preset.currentData(),
                 self.slider_values(), engine=self.engine.currentData(), quality=self.quality.currentIndex(),
-                width=width, height=height, hdri=self.hdri_settings(), materials=self.material_specs(),
+                width=width, height=height, hdri=self.hdri_settings(), ground=self.ground.isChecked(),
+                materials=self.material_specs(),
                 output=self.output_tab.settings(), doc_path=self.doc_path(),
                 section_opts=self.section_tab.settings(), progress=self._export_progress())
             data = json.loads(job.read_text(encoding="utf-8"))
@@ -942,6 +950,7 @@ class StudioPanel(QWidget):
         for sl in (*self.sliders.values(), self.hdri_rotation, self.hdri_strength):
             sl.valueChanged.connect(self._schedule_save)
         self.hdri_light.toggled.connect(self._schedule_save)
+        self.ground.toggled.connect(self._schedule_save)
         self._scene_id = id(self.app.scene) if hasattr(self.app, "scene") else None
         self._known = self._stored_settings()
         if self._known is not None:
@@ -965,6 +974,7 @@ class StudioPanel(QWidget):
             "output": self.output_tab.settings(),
             "section": self.section_tab.settings(),
             "sliders": {k: round(_value(s), 4) for k, s in self.sliders.items()},
+            "ground": self.ground.isChecked(),
             "hdri": ({"path": hdri, "rotation": round(_value(self.hdri_rotation), 3),
                       "brightness": round(_value(self.hdri_strength), 3),
                       "light": self.hdri_light.isChecked()}
@@ -978,7 +988,7 @@ class StudioPanel(QWidget):
         if data is None:
             return
         self._applying = True
-        widgets = [self.preset, self.engine, self.quality, self.width, self.hdri,
+        widgets = [self.preset, self.engine, self.quality, self.width, self.hdri, self.ground,
                    self.hdri_rotation, self.hdri_strength, self.hdri_light, *self.sliders.values()]
         for w in widgets:
             w.blockSignals(True)
@@ -987,6 +997,7 @@ class StudioPanel(QWidget):
             self.engine.setCurrentIndex(max(0, self.engine.findData(data["engine"])))
             self.quality.setCurrentIndex(data["quality"])
             self.width.setValue(data["width"])
+            self.ground.setChecked(bool(data.get("ground", True)))
             self.output_tab.apply(data.get("output"))
             self.section_tab.apply(data.get("section"))
             block, _amb = presets.studio(self.preset.currentData())
@@ -1217,7 +1228,7 @@ class StudioPanel(QWidget):
                 self.app.viewport.scene, camera or self.app.viewport.camera, self.work,
                 self.preset.currentData(), self.slider_values(),
                 engine=self.engine.currentData(), quality=self.quality.currentIndex(),
-                width=width, height=height, hdri=self.hdri_settings(),
+                width=width, height=height, hdri=self.hdri_settings(), ground=self.ground.isChecked(),
                 materials=self.material_specs(), output=out, doc_path=self.doc_path(),
                 section_opts=self.section_tab.settings(), progress=self._export_status)
         except Exception as exc:  # noqa: BLE001 - say it, never crash the app

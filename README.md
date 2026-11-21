@@ -351,7 +351,7 @@ Any equirectangular image (.hdr, .exr, .jpg) as the world:
   scene with its blue and cast no shadow. The extension finds the brightest spot of the image and
   puts a sun there, with the spot's colour, following the rotation. An .hdr/.exr already carries
   its real sun, so it gets none; an even overcast sky gets none either.
-- The ground melts into the image's horizon.
+- The ground melts into the image's horizon. Untick **Generated ground** (Look and light) to render\n  without it: the model's own terrain, or the image's ground, shows.
 
 Blender's own eight HDRIs (CC0, Poly Haven) are offered in the list. They
 are 1K: good light, but soft behind the model. For a sharp background,

@@ -143,6 +143,8 @@
 "Rotation": "Rotació",
 "Brightness": "Brillantor",
 "Lights the scene": "Il·lumina l'escena",
+"Generated ground": "Terra generat",
+"On: a ground is made under the model, with the look's colour, melting into the horizon. Off: no ground is added (the model's own terrain, or the 360° background's ground, shows).": "Activat: es fa un terra sota el model, del color de l'aspecte, que es fon amb l'horitzó. Desactivat: no s'hi afegeix cap terra (es veu el terreny del propi model, o el terra del fons 360°).",
 "On: the image lights the model (its sun casts the shadows). Off: the look lights it, the image is only seen behind it.": "Activat: la imatge il·lumina el model (el seu sol projecta les ombres). Desactivat: l'il·lumina l'aspecte, la imatge només es veu al darrere.",
 "Final render": "Render final",
 "EEVEE: about 3 s. Cycles: the truest light, about 5 s on an RTX card (the Interior look needs it).": "EEVEE: uns 3 s. Cycles: la llum més certa, uns 5 s en una targeta RTX (l'aspecte Interior el necessita).",
