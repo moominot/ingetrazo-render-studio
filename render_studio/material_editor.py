@@ -368,7 +368,20 @@ class MaterialEditor(QDialog):
         self.keep_ratio.setChecked(True)
         self.keep_ratio.setToolTip("The tile height follows the new image's proportions. Off: the "
                                    "tile size stays and a different shape is stretched.")
+        self.edit_btn = QPushButton("Edit picture…")
+        self.edit_btn.setToolTip("Open the picture in another program (GIMP, Krita, the system's own…) and take it back "
+                                 "into the material when it is saved there. The original file is not touched: it is edited "
+                                 "as a copy. In GIMP save with File ▸ Overwrite (or Export As). Each save is one undo step.")
+        self.edit_btn.clicked.connect(self.edit_picture)
+        self.editor_btn = QToolButton()
+        self.editor_btn.setText("…")
+        self.editor_btn.setToolTip("Choose the program that edits pictures (GIMP and Krita are found by themselves; "
+                                   "otherwise the system's own program for the picture is used).")
+        self.editor_btn.clicked.connect(self.choose_editor)
+        self._edits = {}                         # material name → the picture being edited outside
         picrow.addWidget(self.pic_btn)
+        picrow.addWidget(self.edit_btn)
+        picrow.addWidget(self.editor_btn)
         picrow.addWidget(self.keep_ratio)
         picrow.addStretch(1)
         form.addRow(picrow)
@@ -660,6 +673,42 @@ class MaterialEditor(QDialog):
             self.select(name)
             self.hint.setText(tr("Colour of {name} changed.", name=name))
 
+    def edit_picture(self):
+        """The material's picture in another program: edited as a copy, taken back whenever it is saved."""
+        from . import external_edit
+        name = self.current_name()
+        if name is None:
+            return
+        old = self._edits.pop(name, None)
+        if old is not None:
+            old.stop()
+            old.deleteLater()
+        session = external_edit.PictureEdit(self.app, name, self)
+        session.changed.connect(lambda msg, n=name: self._edited(n, msg))
+        session.failed.connect(self.hint.setText)
+        program = external_edit.find_editor()
+        if session.start(program):
+            self._edits[name] = session
+            shown = Path(program).stem if program else tr("the system's program")
+            self.hint.setText(tr("Opened {file} in {program}. Save it there (in GIMP: File ▸ Overwrite) and the "
+                                 "material takes it.", file=session.file.name, program=shown))
+
+    def _edited(self, name, message):
+        self.refresh(force=True)
+        self.select(name)
+        self.hint.setText(message)
+
+    def choose_editor(self):
+        """The program that edits pictures, remembered."""
+        from . import external_edit
+        current = external_edit.find_editor()
+        path, _f = QFileDialog.getOpenFileName(self, tr("Program to edit pictures"),
+                                               str(Path(current).parent) if current else "",
+                                               tr("Programs") + " (*.exe);;" + tr("All files") + " (*)")
+        if path:
+            external_edit.remember_editor(path)
+            self.hint.setText(tr("Pictures will be edited with {program}.", program=Path(path).stem))
+
     def change_picture(self):
         """Replace the material's picture in the model (see texture_swap)."""
         from . import texture_swap
@@ -857,7 +906,7 @@ class MaterialEditor(QDialog):
         self._flush()
         name = item.data(Qt.UserRole) if item is not None else None
         enabled = name is not None
-        for w in (self.paint_btn, self.dup_btn, self.save_btn):
+        for w in (self.paint_btn, self.dup_btn, self.save_btn, self.edit_btn):
             w.setEnabled(name is not None)
         for w in (self.preset, self.kind, self.reset_btn, self.map_size, self.image_adj,
                   *self.sliders.values(), *self.maps.values()):
@@ -1091,4 +1140,7 @@ class MaterialEditor(QDialog):
 
     def closeEvent(self, ev):
         self._flush()
+        for session in list(self._edits.values()):
+            session.stop()
+        self._edits.clear()
         super().closeEvent(ev)

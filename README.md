@@ -451,6 +451,13 @@ longer builds the scene again in the live Blender: the lights are replaced in pl
 the one of a scene built from scratch (0.00/255) and the change takes 0.01 s (0.2 s with auto exposure) on the test
 scene. The sky, the sun, the Render tab's lights and glowing, glass or water changes still build the scene again.
 
+**Edit picture…** (material editor, 0.22.0): opens the material's picture in another program (GIMP or Krita when
+they are installed, the one chosen with the **…** button, or the system's own) and takes it back into the material
+whenever it is saved there. It is edited as a COPY in a working folder (the original file is never touched); the folder
+is watched, so File ▸ Overwrite, or Export As with another name or format, both count. Each save replaces the picture
+in the model with the same reach and undo step as «Change picture…» (every face and object that wears it; the live
+preview and the render follow).
+
 **Quicker export of a big model** (0.18.0): while the model file is written, the quick path of
 `fast_export.py` triangulates convex faces with plain floats (the same triangles as IngeTrazo's function,
 which still takes every concave or holed face) and the cyclic garbage collector sleeps (it walked millions of
