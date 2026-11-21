@@ -1974,7 +1974,7 @@ def place_proxies(scene, entries, section=None):
 # section, grass, a change that moves the light) builds the scene again, as before.
 
 PRISTINE_KEY = "studio_pristine"
-_STATE = {"pristine": {}, "sig": None, "specs": None, "pbr": None, "figures": None}
+_STATE = {"pristine": {}, "sig": None, "specs": None, "pbr": None, "figures": None, "lights": None}
 
 
 def _live_materials(only=None):
@@ -2100,7 +2100,10 @@ def finishes_for(only):
 def _rest_signature(job):
     """What a scene depends on besides its materials, the camera and the picture's size."""
     j = {k: v for k, v in job.items() if k not in ("camera", "output", "width", "height", "samples", "studio")}
-    s = {k: v for k, v in (job.get("studio") or {}).items() if k not in ("materials", "pbr")}
+    st = job.get("studio") or {}
+    # Render Studio's lights (a list) are changed in place by :func:`update`; the Render tab's are not.
+    skip = ("materials", "pbr") + (("lights",) if isinstance(st.get("lights"), list) else ())
+    s = {k: v for k, v in st.items() if k not in skip}
     return json.dumps([j, s], sort_keys=True, default=str)
 
 
@@ -2151,6 +2154,42 @@ def _patch_names(job):
     return names
 
 
+def _expose(scene, job):
+    """The scene's exposure (measured on what it shows now, or the job's) and the compositor made from it.
+    Again after a change of the lights: what a light adds moves the exposure."""
+    st = job.get("studio") or {}
+    if st.get("auto_exposure", True):
+        scene.view_settings.exposure = measure_exposure(
+            scene, target=float(st.get("exposure_target", 0.2)),
+            bias=float(st.get("exposure_bias", 0.0)),
+            samples=16 if job.get("engine") == "cycles" else 8,
+            white=float(st.get("exposure_white", 1.6)),
+            max_ev=float(st.get("exposure_max", 8.0)))
+        core["set_samples"](scene, int(job.get("samples", 64)))
+    else:
+        scene.view_settings.exposure = float(job.get("exposure", -0.6)) + float(st.get("exposure_bias", 0.0))
+    if hasattr(scene, "compositing_node_group"):          # the one made before goes (build_compositor makes it anew)
+        scene.compositing_node_group = None
+    for g in [g for g in bpy.data.node_groups if g.name.startswith("IngeTrazo studio")]:
+        bpy.data.node_groups.remove(g)
+    build_compositor(scene, float(st.get("saturation", 1.0)), float(st.get("bloom", 0.0)),
+                     float(st.get("vignette", 0.0)), scene.view_settings.exposure)
+    say("exposure", round(scene.view_settings.exposure, 2))
+
+
+def replace_studio_lights(scene, lights):
+    """Render Studio's lights changed in place: the old ones (and their data) go, the new ones are made."""
+    col = bpy.data.collections.get("Render Studio lights")
+    if col is not None:
+        for obj in list(col.objects):
+            data = obj.data
+            bpy.data.objects.remove(obj, do_unlink=True)
+            if data is not None and data.users == 0:
+                bpy.data.lights.remove(data)
+        bpy.data.collections.remove(col)
+    return add_studio_lights(scene, lights)
+
+
 def update(job):
     """The scene of ``job`` from the one that is built: when only some materials changed, those are
     made again in place (a slider costs a few hundred milliseconds, not the whole scene); otherwise
@@ -2178,6 +2217,12 @@ def update(job):
         cap_albedo(float(st.get("albedo_cap", 0.8)), names)
     _STATE["specs"] = json.loads(json.dumps(specs))
     _STATE["pbr"] = json.loads(json.dumps(st.get("pbr") or {}))
+    lights = st.get("lights")
+    if isinstance(lights, list) and not _same(_STATE.get("lights") or [], lights):
+        replace_studio_lights(bpy.context.scene, lights)     # the lights, in place: the model stays
+        _STATE["lights"] = json.loads(json.dumps(lights))
+        _expose(bpy.context.scene, job)                      # what they add moves the exposure
+        say("patch", f"{len(lights)} lights in place")
     say("patch", f"{len(names)} materials in place, {time.perf_counter() - t0:.2f} s")
     return bpy.context.scene, _STATE["figures"]
 
@@ -2187,7 +2232,7 @@ def build(job):
     engine, look and exposure. Returns (scene, figures). Called again, in the
     same Blender, when the live view sends a new job (no restart)."""
     st = job.get("studio") or {}
-    _STATE.update(pristine={}, sig=None, specs=None, pbr=None, figures=None)
+    _STATE.update(pristine={}, sig=None, specs=None, pbr=None, figures=None, lights=None)
     if job.get("expert") and not bpy.app.background:
         # A Blender with a window: reading the factory settings would leave it without the window's
         # context (no active object); the scene it started with is emptied instead.
@@ -2345,19 +2390,7 @@ def build(job):
     r.film_transparent = False
     set_look(scene, st.get("looks") or ["AgX - Medium High Contrast", "Medium High Contrast"],
              st.get("white_balance"), st.get("tint"))
-    if st.get("auto_exposure", True):
-        scene.view_settings.exposure = measure_exposure(
-            scene, target=float(st.get("exposure_target", 0.2)),
-            bias=float(st.get("exposure_bias", 0.0)),
-            samples=16 if job.get("engine") == "cycles" else 8,
-            white=float(st.get("exposure_white", 1.6)),
-            max_ev=float(st.get("exposure_max", 8.0)))
-        core["set_samples"](scene, int(job.get("samples", 64)))
-    else:
-        scene.view_settings.exposure = float(job.get("exposure", -0.6)) + float(st.get("exposure_bias", 0.0))
-    build_compositor(scene, float(st.get("saturation", 1.0)), float(st.get("bloom", 0.0)),
-                     float(st.get("vignette", 0.0)), scene.view_settings.exposure)
-    say("exposure", round(scene.view_settings.exposure, 2))
+    _expose(scene, job)
     last = {"text": None}
 
     def _stats(text, *_a):
@@ -2369,7 +2402,8 @@ def build(job):
     if hasattr(bpy.app.handlers, "render_stats"):        # (a new file clears it: added each build)
         bpy.app.handlers.render_stats.append(_stats)
     _STATE.update(sig=_rest_signature(job), specs=json.loads(json.dumps(st.get("materials") or {})),
-                  pbr=json.loads(json.dumps(st.get("pbr") or {})), figures=figures)
+                  pbr=json.loads(json.dumps(st.get("pbr") or {})), figures=figures,
+                  lights=json.loads(json.dumps(st["lights"])) if isinstance(st.get("lights"), list) else None)
     return scene, figures
 
 

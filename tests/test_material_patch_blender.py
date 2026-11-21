@@ -58,11 +58,13 @@ BASE = {"Wall": spec(roughness=0.9), "Steel": spec(roughness=0.3, metallic=1.0)}
 black = out / "black.png"
 img = QImage(8, 8, QImage.Format_RGB32); img.fill(QColor(0, 0, 0)); img.save(str(black))
 
-def write_job(materials, preset="clear", reuse=False, dest=None):
+def write_job(materials, preset="clear", reuse=False, dest=None, lights=None, auto=False):
     job, script = P.write_studio_job(scene, cam, dest or work, preset, {}, engine="eevee", quality=0, width=320, height=200,
                                      materials=copy.deepcopy(materials), live=True, serve=True, reuse_model=reuse)
     data = json.loads(job.read_text(encoding="utf-8"))
-    data["studio"]["auto_exposure"] = False; data["exposure"] = -0.6      # the same exposure on both sides
+    data["studio"]["auto_exposure"] = auto; data["exposure"] = -0.6      # the same exposure on both sides
+    if lights is not None:
+        data["studio"]["lights"] = lights
     job.write_text(json.dumps(data, indent=2), encoding="utf-8")
     return job, script, data
 
@@ -98,9 +100,9 @@ class Live:
         try: self.p.wait(timeout=20)
         except Exception: self.p.kill()
 
-def fresh(materials, name, preset="clear"):
+def fresh(materials, name, preset="clear", lights=None, auto=False):
     d = out / ("fresh_" + name)
-    job, script, data = write_job(materials, preset, dest=d)
+    job, script, data = write_job(materials, preset, dest=d, lights=lights, auto=auto)
     data["serve"] = False; data["output"] = str(d / "render.png")
     job.write_text(json.dumps(data, indent=2), encoding="utf-8")
     subprocess.run([BLENDER, "-b", "--factory-startup", "--python", str(script), "--", str(job)],
@@ -159,5 +161,40 @@ try:
     ok("INGETRAZO patch 0 materials" in "\n".join(got), f"a job with nothing changed changes no material ({secs:.1f} s)")
 finally:
     live.close()
+
+# ---- the lights, in place ---------------------------------------------------------------------------
+def lamp(name, pos, energy, color=(1.0, 1.0, 1.0)):
+    return {"type": "point", "name": name, "pos": list(pos), "energy": energy, "color": list(color), "radius": 0.1,
+            "shadow": True, "basis": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]}
+for auto in (False, True):
+    LIGHTS = [
+        ("a lamp is added", [lamp("Lamp A", (0, -3, 2.5), 2500)]),
+        ("the lamp is moved, warmer and stronger", [lamp("Lamp A", (2.5, -3, 1.5), 9000, (1.0, 0.7, 0.4))]),
+        ("a second lamp", [lamp("Lamp A", (2.5, -3, 1.5), 9000, (1.0, 0.7, 0.4)), lamp("Lamp B", (-2.5, -3, 2.5), 6000, (0.5, 0.7, 1.0))]),
+        ("the lamps are removed", []),
+    ]
+    mats = dict(Steel=STEEL)
+    job, script, data = write_job(mats, auto=auto, lights=[])
+    live = Live(job, script)
+    try:
+        before = live.image(data, f"lights_before_{auto}.png")
+        for k, (label, lts) in enumerate(LIGHTS):
+            job, script, data = write_job(mats, reuse=True, auto=auto, lights=lts)
+            got, secs = live.update(job)
+            text = "\n".join(got)
+            ok("INGETRAZO patch" in text and "INGETRAZO imported" not in text,
+               f"{'auto exposure, ' if auto else ''}{label}: changed in place, the model not imported again ({secs:.2f} s)")
+            print("      ", next((l for l in got if "lights in place" in l), "(no lights line)")[:110], flush=True)
+            img_live = live.image(data, f"lights_live_{auto}_{k}.png")
+            img_new = fresh(mats, f"lights_{auto}_{k}", lights=lts, auto=auto)
+            d = diff(img_live, img_new)
+            ok(d < 1.5, f"...and the picture is the one of a scene built from scratch (mean difference {d:.2f}/255)")
+            moved = diff(before, img_new)
+            ok(moved > 0.2, f"...and the change is visible ({moved:.2f}/255 from the picture before)")
+            before = img_live
+        got, secs = live.update(job)
+        ok("lights in place" not in "\n".join(got), "the same lights again: nothing is done to them")
+    finally:
+        live.close()
 print("FAILED" if fails else "ALL PASSED", len(fails))
 sys.exit(1 if fails else 0)

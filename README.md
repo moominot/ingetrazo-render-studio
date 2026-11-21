@@ -445,6 +445,12 @@ be moved, shared and loaded in another drawing (one undo step; the selection is 
 finer at the low end (the value goes as the slider's position cubed: 1 is a third of the way up) and the Light panel
 preset starts at 4. The **Opacity map** can use the material's own picture in black and white, as the other maps do.
 
+**Lights in place** (0.21.0): a change of Render Studio's lights (a new one, moved, its power or colour, removed) no
+longer builds the scene again in the live Blender: the lights are replaced in place and the exposure is measured again
+(what they add moves it), neither the model nor the materials are touched. Measured with a real Blender, the picture is
+the one of a scene built from scratch (0.00/255) and the change takes 0.01 s (0.2 s with auto exposure) on the test
+scene. The sky, the sun, the Render tab's lights and glowing, glass or water changes still build the scene again.
+
 **Quicker export of a big model** (0.18.0): while the model file is written, the quick path of
 `fast_export.py` triangulates convex faces with plain floats (the same triangles as IngeTrazo's function,
 which still takes every concave or holed face) and the cyclic garbage collector sleeps (it walked millions of
