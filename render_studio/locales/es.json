@@ -467,6 +467,8 @@
 "Loaded": "Cargado",
 "Edit picture…": "Editar la imagen…",
 "Edit in {program}…": "Editar con {program}…",
+"That surface wears no named material (it is the default one).": "Esta superficie no lleva ningún material con nombre (es la pintura por defecto).",
+"{name} is not in the list of materials (paint a face with it first).": "{name} no está en la lista de materiales (pinta una cara con él antes).",
 "New scene from this view…": "Nueva escena desde esta vista…",
 "Saves the view this preview shows (the camera it keeps while Follow the camera is off, else the 3D view's) as a scene of the drawing, to come back to it or render it later.": "Guarda la vista que muestra esta previsualización (la cámara que conserva con Seguir la cámara desactivado, si no la de la vista 3D) como escena del dibujo, para volver a ella o renderizarla más tarde.",
 "This IngeTrazo cannot make a scene from here.": "Este IngeTrazo no puede hacer una escena desde aquí.",

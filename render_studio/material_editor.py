@@ -779,13 +779,21 @@ class MaterialEditor(QDialog):
         self.pipette_btn.setChecked(False)
         self.pipette_btn.blockSignals(False)
         mat = PaintTool.current_material
-        if PaintTool.current_is_default or mat is None or not getattr(mat, "name", None):
-            self.hint.setText("That surface wears no named material (it is the default one).")
+        name = getattr(mat, "name", None) if not PaintTool.current_is_default else None
+        if not name and not PaintTool.current_is_default:
+            # The sampler found a paint but no named material (one inside a component can wear it through
+            # the component, or through a name the document's registry does not hold): what is selected may.
+            # (A face the sampler calls default is default: nothing is looked for.)
+            name = M.selection_material(self.app.scene)
+        if not name:
+            self.hint.setText(tr("That surface wears no named material (it is the default one)."))
             return
-        if not self.select(mat.name):
+        if not self.select(name):
             self.refresh(force=True)
-            self.select(mat.name)
-        self.hint.setText(tr("Chosen: {name}.", name=mat.name))
+            if not self.select(name):
+                self.hint.setText(tr("{name} is not in the list of materials (paint a face with it first).", name=name))
+                return
+        self.hint.setText(tr("Chosen: {name}.", name=name))
         self.raise_()
         self.activateWindow()
 

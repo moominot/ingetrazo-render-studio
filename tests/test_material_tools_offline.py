@@ -126,7 +126,8 @@ ok(ed.current_name() == "Concrete" and not ed.pipette_btn.isChecked() and not ed
 ed.pick_from_view(); PaintTool.sample_armed = False; PaintTool.current_is_default = True; PaintTool.current_material = None
 app.window._act_eyedropper.blockSignals(True); app.window._act_eyedropper.setChecked(False); app.window._act_eyedropper.blockSignals(False)
 ed._poll_pick()
-ok("no named material" in ed.hint.text(), "a face with the default paint says so")
+from render_studio.i18n import tr
+ok(ed.hint.text() == tr("That surface wears no named material (it is the default one)."), "a face with the default paint says so")
 
 # the dialog's values
 dlg = NewMaterialDialog(None, "Paint", 2, "")
@@ -138,6 +139,43 @@ v = dlg.values()
 ok(v["texture"] == {"path": pic, "sw": 2.0, "sh": 1.0} and "color" not in v, "a picture keeps its proportions (a 2:1 image 2 m wide is 1 m high)")
 empty = NewMaterialDialog(None, "x", 0, "")
 ok(not empty.apply.isEnabled(), "with nothing selected there is nothing to paint")
+
+# ---- a material taken from an element inside a component ----------------------------------------------------
+from render_studio import materials as M
+def mesh_with(name, mat):
+    m = Mesh(); fc = m.add_face([QVector3D(0, 0, 0), QVector3D(1, 0, 0), QVector3D(1, 1, 0), QVector3D(0, 1, 0)])
+    fc.attrs["mat"] = mat; return m, fc
+top = Group(Mesh(), name="House")
+mid_mesh, _f = mesh_with("mid", "Stone"); mid = Group(mid_mesh, name="Wall")
+leaf_mesh, leaf_face = mesh_with("leaf", "Moss"); leaf = Group(leaf_mesh, name="Plant")
+mid.adopt([leaf]); top.adopt([mid])
+scene.groups.append(top)
+scene.materials["Stone"] = Material("Stone", color=(0.5, 0.5, 0.5)); scene.materials["Moss"] = Material("Moss", color=(0.2, 0.5, 0.2))
+scene.selection.clear(); scene.selection.add(top)
+ok(M.selection_material(scene) == "Stone", "a selected component gives the first material inside it, nested placements included")
+scene.selection.clear(); scene.selection.add(leaf)
+ok(M.selection_material(scene) == "Moss", "a component two levels down gives its own")
+scene.selection.clear(); scene.selection.add(leaf_face)
+ok(M.selection_material(scene) == "Moss", "a face inside gives its material")
+painted = Group(Mesh(), name="Painted"); painted.material = {"mat": "Wood", "color": (0.6, 0.4, 0.2)}
+scene.groups.append(painted); scene.materials["Wood"] = Material("Wood", color=(0.6, 0.4, 0.2))
+scene.selection.clear(); scene.selection.add(painted)
+ok(M.selection_material(scene) == "Wood", "a component painted whole gives that paint")
+
+scene.version += 1                                                                # (a drawing changed by hand: the list's cache is told)
+ed.refresh(force=True)
+ed.pick_from_view(); PaintTool.sample_armed = False
+PaintTool.current_is_default = False; PaintTool.current_material = None           # the sampler found no name...
+scene.selection.clear(); scene.selection.add(top)                                  # ...but the component is selected
+app.window._act_eyedropper.blockSignals(True); app.window._act_eyedropper.setChecked(False); app.window._act_eyedropper.blockSignals(False)
+ed._poll_pick()
+ok(ed.current_name() == "Stone" and "Stone" in ed.hint.text(), f"the eyedropper falls back to what is selected ({ed.current_name()})")
+ed.pick_from_view(); PaintTool.sample_armed = False
+PaintTool.current_is_default = False; PaintTool.current_material = Material("Ghost", color=(1, 0, 0))
+scene.selection.clear()
+app.window._act_eyedropper.blockSignals(True); app.window._act_eyedropper.setChecked(False); app.window._act_eyedropper.blockSignals(False)
+ed._poll_pick()
+ok("Ghost" in ed.hint.text() and ed.hint.text() == tr("{name} is not in the list of materials (paint a face with it first).", name="Ghost"), f"a name the list does not hold is said, not ignored ({ed.hint.text()[:60]})")
 
 print("FAILED" if fails else "ALL PASSED", len(fails))
 sys.exit(1 if fails else 0)

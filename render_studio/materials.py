@@ -302,23 +302,37 @@ def _used_materials(scene) -> dict:
 
 def selection_material(scene):
     """The material of what is selected: a face's, a group or component's own
-    paint, or the first painted face inside it (nested ones included); None
-    when nothing selected wears a named material."""
+    paint, or the first painted face inside it (every nested placement, a mesh
+    not built yet read from the document); None when nothing selected wears a
+    named material."""
+    from core.group import iter_placements
+    from core.mesh import face_attrs
+
     def first_in(g, seen):
         if g is None or id(g) in seen:
             return None
         seen.add(id(g))
-        name = _paint_name(g)
-        if name:
-            return name
-        for f in getattr(getattr(g, "mesh", None), "faces", ()) or ():
-            name = (getattr(f, "attrs", None) or {}).get("mat")
+        try:
+            placements = list(iter_placements(g))
+        except Exception:  # noqa: BLE001 - not a group: its own paint only
+            placements = [(g, None)]
+        for p, _m in placements:
+            name = _paint_name(p) or (getattr(p, "attrs", None) or {}).get("mat")
             if name:
                 return name
-        for c in getattr(g, "children", None) or ():
-            name = first_in(c, seen)
-            if name:
-                return name
+            mesh = getattr(p, "mesh", None)
+            if mesh is None:
+                continue
+            try:
+                for attrs in face_attrs(mesh):
+                    name = (attrs or {}).get("mat")
+                    if name:
+                        return name
+            except Exception:  # noqa: BLE001 - a mesh that cannot be read this way
+                for f in getattr(mesh, "faces", ()) or ():
+                    name = (getattr(f, "attrs", None) or {}).get("mat")
+                    if name:
+                        return name
         return None
 
     for ent in list(getattr(scene, "selection", ()) or ()):
