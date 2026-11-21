@@ -18,6 +18,7 @@ from core.group import Group
 from core.mesh import Mesh
 from core.scene import Scene
 from render_studio import fast_export as FE, panel as P
+from render_studio.i18n import tr
 
 fails = []
 def ok(c, w):
@@ -130,15 +131,15 @@ ok(panel.live_engine() == "eevee", "EEVEE chosen: always EEVEE")
 from render_studio.prep_dialog import PrepDialog
 d = PrepDialog(None)
 d.exporting(0.5)
-ok(d.maximum() == 100 and 40 <= d.value() <= 45 and "50 %" in d.labelText(), f"the modal's bar fills with the export ({d.value()})")
+ok(d.maximum() == 100 and 40 <= d.value() <= 45 and tr("Exporting the model… {pct} %", pct=50) == d.labelText(), f"the modal's bar fills with the export ({d.value()})")
 d.waiting("Starting Blender…")
-ok(d.maximum() == 0 and d.labelText() == "Starting Blender…", "...then waits while Blender starts")
+ok(d.maximum() == 0 and d.labelText() == tr("Starting Blender…"), "...then waits while Blender starts")
 d.exporting(1.0)
 ok(d.maximum() == 100, "...and measures again if asked")
 panel._prep = PrepDialog(None); got = []
 panel._prep.canceled.connect(lambda: got.append(1))
 panel._set_status("Blender: the model is in; applying the look…")
-ok(panel._prep.labelText().startswith("Blender:"), "Blender's stages reach the modal")
+ok(panel._prep.labelText() == tr("Blender: the model is in; applying the look…"), "Blender's stages reach the modal")
 panel._prep_close()
 ok(panel._prep is None and not got, "closing it when the picture arrives is not Cancel")
 ok(panel._export_progress() is None, "no modal, no progress callback")
@@ -181,7 +182,7 @@ panel.window.set_mode("preview"); panel.window.show()
 panel.render()
 P.write_studio_job = real_job
 ok(order and order[0] == ("job", "rendering", 0), f"rendering: the window shows it is working before the model is exported ({order[:1]})")
-ok(order[1][1] == 42 and "Exporting the model… 50 %" in order[1][2], f"...with the export's progress ({order[1][1:]})")
+ok(order[1][1] == 42 and tr("Exporting the model… {pct} %", pct=50) in order[1][2], f"...with the export's progress ({order[1][1:]})")
 ok(panel._preparing is False, "...and a failure leaves the panel free again")
 
 print("FAILED" if fails else "ALL PASSED", len(fails))
