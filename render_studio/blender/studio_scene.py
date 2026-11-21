@@ -2429,9 +2429,38 @@ def save_final(scene, out):
     say("saved", out["path"])
 
 
+def expert_open(scene, job):
+    """Expert mode: the scene is built and left open for the person to work in (Blender runs with its window):
+    the model, materials, sky, lights, camera and engine of the final render, no picture made. Its pictures are
+    packed in the file, which is saved first (job «blend») so it can be opened again."""
+    try:
+        bpy.ops.file.pack_all()
+    except Exception as exc:  # noqa: BLE001 - a picture that cannot be packed stays a link
+        say("warning", "pictures not packed:", exc)
+    if job.get("blend"):
+        bpy.ops.wm.save_as_mainfile(filepath=job["blend"])
+        say("blend", job["blend"])
+
+    def look_through_camera():
+        wm = bpy.context.window_manager
+        for win in wm.windows if wm else ():
+            for area in win.screen.areas:
+                if area.type == "VIEW_3D":
+                    space = area.spaces[0]
+                    space.shading.type = "MATERIAL"
+                    space.region_3d.view_perspective = "CAMERA"
+        return None
+    if not bpy.app.background:
+        bpy.app.timers.register(look_through_camera, first_interval=0.5)
+    say("expert", "ready")
+
+
 def main():
     job = core["load_job"]()
     scene, figures = build(job)
+    if job.get("expert"):
+        expert_open(scene, job)
+        return
     if job.get("serve"):
         serve(scene, figures)
         return

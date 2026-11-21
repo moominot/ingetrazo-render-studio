@@ -431,6 +431,13 @@ waits while Blender starts and builds the scene, with what it is doing) until th
 Cancel stops it. **Render** says it is working at once (the window changes to Rendering before the model is
 exported) and shows the export's progress.
 
+**Expert mode: Open in Blender…** (button in the panel and in the preview window, 0.19.0): exports the model and
+opens the scene, as Render would make it (the panel's Engine, Quality and size, full-density grass), in a Blender
+with its own window and the person's own Blender settings; nothing is rendered. The file is saved first as
+`scene.blend` in `render-studio/expert-<date>/` (the pictures packed in it) and the status says where; the 3D view
+looks through the camera in Material Preview. The scene is then Blender's: it is not linked to the drawing, so a
+change of the model needs the button again. Implemented as `"expert": true` in the job (studio_scene.py).
+
 **Quicker export of a big model** (0.18.0): while the model file is written, the quick path of
 `fast_export.py` triangulates convex faces with plain floats (the same triangles as IngeTrazo's function,
 which still takes every concave or holed face) and the cyclic garbage collector sleeps (it walked millions of

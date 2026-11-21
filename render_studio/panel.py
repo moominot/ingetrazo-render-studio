@@ -460,6 +460,11 @@ class StudioPanel(QWidget):
         self.preview_btn.setDefault(True)
         self.preview_btn.clicked.connect(self.open_preview)
         outer.addWidget(self.preview_btn)
+        self.expert_btn = QPushButton("Open in Blender…")
+        self.expert_btn.setToolTip("Expert mode: opens the scene, as Render would make it, in a Blender with its own window "
+                                   "to work in it. The file is saved first; nothing is rendered.")
+        self.expert_btn.clicked.connect(self.open_in_blender)
+        outer.addWidget(self.expert_btn)
         self.status = QLabel("")
         self.status.setWordWrap(True)
         outer.addWidget(self.status)
@@ -539,6 +544,7 @@ class StudioPanel(QWidget):
             found = None
         self.need_box.setVisible(found is None)
         self.preview_btn.setEnabled(found is not None)
+        self.expert_btn.setEnabled(found is not None)
         return found
 
     def _browse_blender(self):
@@ -690,6 +696,65 @@ class StudioPanel(QWidget):
         if self.proc is None:
             win.set_mode("preview")
             self._start_live(prep=True)
+
+    def open_in_blender(self):
+        """Expert mode: export the model and open the scene (as Render would make it) in a Blender with its
+        window, to work in it. The file is saved first; a modal says what is happening."""
+        from core import render_blender as rb
+        found = self.check_blender()
+        if found is None:
+            self.status.setText(tr("Blender was not found: choose it above."))
+            return None
+        if self._preparing or self._prep is not None:
+            return None
+        from .prep_dialog import PrepDialog
+        self._preparing = True
+        self._prep = PrepDialog(self.window if self.window is not None and self.window.isVisible() else self,
+                                "Preparing the model…")
+        self._prep.canceled.connect(self._prep_cancelled_expert)
+        self._cancel_expert = False
+        try:
+            self._remember()
+            work = rb.work_base().parent / "render-studio" / ("expert-" + time.strftime("%Y%m%d-%H%M%S"))
+            width, height = self.output_tab.frame()
+            job, script = write_studio_job(
+                self.app.viewport.scene, self.app.viewport.camera, work, self.preset.currentData(),
+                self.slider_values(), engine=self.engine.currentData(), quality=self.quality.currentIndex(),
+                width=width, height=height, hdri=self.hdri_settings(), materials=self.material_specs(),
+                output=self.output_tab.settings(), doc_path=self.doc_path(),
+                section_opts=self.section_tab.settings(), progress=self._export_progress())
+            data = json.loads(job.read_text(encoding="utf-8"))
+            blend = work / "scene.blend"
+            data["expert"], data["blend"] = True, str(blend)
+            job.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            if self._cancel_expert:
+                return None
+            self._prep.waiting("Starting Blender…")
+            proc = QProcess(self)
+            env = QProcessEnvironment()
+            for k, v in rb.clean_env().items():
+                env.insert(k, v)
+            proc.setProcessEnvironment(env)
+            # Its own window and the person's own Blender settings (no --factory-startup, no -b).
+            proc.setProgram(found.command[0])
+            proc.setArguments([*found.command[1:], "--python", str(script), "--", str(job)])
+            res = proc.startDetached()                  # (bool, pid) or bool, by the binding
+            started = res[0] if isinstance(res, tuple) else bool(res)
+            if not started:
+                raise RuntimeError("Blender did not start")
+            self._set_status(tr("Opened in Blender. The scene is saved in {path}", path=str(blend)))
+            return blend
+        except Exception as exc:  # noqa: BLE001 - say it, never crash the app
+            _log.exception("could not open Blender")
+            self._set_status(tr("Could not open Blender: {error}", error=str(exc)))
+            return None
+        finally:
+            self._preparing = False
+            self._prep_close()
+
+    def _prep_cancelled_expert(self):
+        self._cancel_expert = True
+        self._prep = None
 
     def _preview_open(self) -> bool:
         """The preview window is on screen and its live view runs."""

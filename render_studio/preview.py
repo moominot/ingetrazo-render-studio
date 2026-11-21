@@ -123,6 +123,11 @@ class ImageWindow(QWidget):
         self.summary.setToolTip("The engine, quality and width set in the panel: Render uses them "
                                 "(the preview is always a quick draft).")
         pl.addWidget(self.summary)
+        self.expert_btn = QPushButton("Open in Blender…")
+        self.expert_btn.setToolTip("Expert mode: opens this scene, as Render would make it, in a Blender with its own "
+                                   "window to work in it. Nothing is rendered; the file is saved first.")
+        self.expert_btn.clicked.connect(lambda: self.panel and self.panel.open_in_blender())
+        pl.addWidget(self.expert_btn)
         self.render_save_btn = QPushButton("Render and save…")
         self.render_save_btn.setToolTip("Asks where to save, makes the final picture and saves it straight away, "
                                         "without retouching.")

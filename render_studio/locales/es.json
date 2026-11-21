@@ -447,5 +447,10 @@
 "Cycles — like the final render": "Cycles — como el render final",
 "Preview engine": "Motor de la previsualización",
 "Engine and Quality are for Render; the preview has its own engine.": "El motor y la calidad son para el Render; la previsualización tiene su propio motor.",
-"Automatic: EEVEE while the preview follows the camera, and Cycles on a big model once it is still (Follow the camera and Follow changes both off: nothing is sent to Blender again, and a big model looks like the final render). EEVEE or Cycles: always that one.": "Automático: EEVEE mientras la previsualización sigue la cámara y Cycles en un modelo grande cuando está quieta (Seguir la cámara y Seguir los cambios desactivados: no se envía nada nuevo a Blender y un modelo grande se parece al render final). EEVEE o Cycles: siempre ese."
+"Automatic: EEVEE while the preview follows the camera, and Cycles on a big model once it is still (Follow the camera and Follow changes both off: nothing is sent to Blender again, and a big model looks like the final render). EEVEE or Cycles: always that one.": "Automático: EEVEE mientras la previsualización sigue la cámara y Cycles en un modelo grande cuando está quieta (Seguir la cámara y Seguir los cambios desactivados: no se envía nada nuevo a Blender y un modelo grande se parece al render final). EEVEE o Cycles: siempre ese.",
+"Open in Blender…": "Abrir en Blender…",
+"Expert mode: opens the scene, as Render would make it, in a Blender with its own window to work in it. The file is saved first; nothing is rendered.": "Modo experto: abre la escena, tal como la haría el Render, en un Blender con su propia ventana para trabajar en ella. El archivo se guarda antes; no se renderiza nada.",
+"Expert mode: opens this scene, as Render would make it, in a Blender with its own window to work in it. Nothing is rendered; the file is saved first.": "Modo experto: abre esta escena, tal como la haría el Render, en un Blender con su propia ventana para trabajar en ella. No se renderiza nada; el archivo se guarda antes.",
+"Opened in Blender. The scene is saved in {path}": "Abierto en Blender. La escena está guardada en {path}",
+"Could not open Blender: {error}": "No se ha podido abrir Blender: {error}"
 }

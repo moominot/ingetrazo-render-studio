@@ -447,5 +447,10 @@
 "Cycles — like the final render": "Cycles — com el render final",
 "Preview engine": "Motor de la previsualització",
 "Engine and Quality are for Render; the preview has its own engine.": "El motor i la qualitat són per al Render; la previsualització té el seu propi motor.",
-"Automatic: EEVEE while the preview follows the camera, and Cycles on a big model once it is still (Follow the camera and Follow changes both off: nothing is sent to Blender again, and a big model looks like the final render). EEVEE or Cycles: always that one.": "Automàtic: EEVEE mentre la previsualització segueix la càmera i Cycles en un model gran quan està quieta (Seguir la càmera i Seguir els canvis desactivats: no s'envia res nou al Blender i un model gran s'assembla al render final). EEVEE o Cycles: sempre aquest."
+"Automatic: EEVEE while the preview follows the camera, and Cycles on a big model once it is still (Follow the camera and Follow changes both off: nothing is sent to Blender again, and a big model looks like the final render). EEVEE or Cycles: always that one.": "Automàtic: EEVEE mentre la previsualització segueix la càmera i Cycles en un model gran quan està quieta (Seguir la càmera i Seguir els canvis desactivats: no s'envia res nou al Blender i un model gran s'assembla al render final). EEVEE o Cycles: sempre aquest.",
+"Open in Blender…": "Obrir al Blender…",
+"Expert mode: opens the scene, as Render would make it, in a Blender with its own window to work in it. The file is saved first; nothing is rendered.": "Mode expert: obre l'escena, tal com la faria el Render, en un Blender amb la seva pròpia finestra per treballar-hi. El fitxer es desa abans; no es renderitza res.",
+"Expert mode: opens this scene, as Render would make it, in a Blender with its own window to work in it. Nothing is rendered; the file is saved first.": "Mode expert: obre aquesta escena, tal com la faria el Render, en un Blender amb la seva pròpia finestra per treballar-hi. No es renderitza res; el fitxer es desa abans.",
+"Opened in Blender. The scene is saved in {path}": "Obert al Blender. L'escena està desada a {path}",
+"Could not open Blender: {error}": "No s'ha pogut obrir el Blender: {error}"
 }
