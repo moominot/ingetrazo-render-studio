@@ -53,6 +53,20 @@ DRAFT_SAMPLES = 8
 CYCLES_SAMPLES = {"motion": 2, "quick": 4, "draft": 32}
 
 
+def _copy_camera(cam):
+    """A copy of the viewport camera that does not move with it."""
+    import copy
+    try:
+        return copy.deepcopy(cam)
+    except Exception:  # noqa: BLE001 - a shallow copy with its own vectors
+        out = copy.copy(cam)
+        for attr in ("target",):
+            v = getattr(cam, attr, None)
+            if v is not None:
+                setattr(out, attr, type(v)(v))
+        return out
+
+
 class LiveSession(QObject):
     image = Signal(object)          # Path of a new image
     state = Signal(str)             # what it is doing, for the status line
@@ -73,6 +87,7 @@ class LiveSession(QObject):
         self._model_key = None
         self._kept_specs = None                # the materials' settings the live scene has
         self._frozen = None                    # the camera kept while Follow the camera is off
+        self.frozen_camera = None              # ...as a camera object (Render and New scene use it)
         self._still_since = 0.0
         self._work = None
         self._count = 0
@@ -110,11 +125,15 @@ class LiveSession(QObject):
         self.follow_camera = on
         if not on:
             try:
-                self._frozen = rb.camera_dict(self.panel.app.viewport.camera)
+                cam = self.panel.app.viewport.camera
+                self._frozen = rb.camera_dict(cam)
+                self.frozen_camera = _copy_camera(cam)
             except Exception:  # noqa: BLE001
                 self._frozen = None
+                self.frozen_camera = None
         else:
             self._frozen = None
+            self.frozen_camera = None
         self._seen_key = None
 
     def set_follow_changes(self, on: bool) -> None:

@@ -733,7 +733,7 @@ class StudioPanel(QWidget):
             work = rb.work_base().parent / "render-studio" / ("expert-" + time.strftime("%Y%m%d-%H%M%S"))
             width, height = self.output_tab.frame()
             job, script = write_studio_job(
-                self.app.viewport.scene, self.app.viewport.camera, work, self.preset.currentData(),
+                self.app.viewport.scene, self.render_camera(), work, self.preset.currentData(),
                 self.slider_values(), engine=self.engine.currentData(), quality=self.quality.currentIndex(),
                 width=width, height=height, hdri=self.hdri_settings(), materials=self.material_specs(),
                 output=self.output_tab.settings(), doc_path=self.doc_path(),
@@ -826,6 +826,55 @@ class StudioPanel(QWidget):
     def _stop_live(self):
         if self._live is not None and self._live.active:
             self._live.stop()
+
+    def render_camera(self):
+        """The camera a render (or a new scene) takes: the one the preview window keeps while Follow the
+        camera is off (that view is what is wanted: it is what the preview shows), else the 3D view's."""
+        live, win = self._live, self.window
+        if (live is not None and not live.follow_camera and live.frozen_camera is not None
+                and win is not None and win.isVisible()):
+            return live.frozen_camera
+        return self.app.viewport.camera
+
+    def scene_from_preview(self):
+        """A scene (IngeTrazo's saved view) from the preview's view: the camera it shows now (the one it keeps
+        while Follow the camera is off, else the 3D view's) with the drawing's layers, section and style as they
+        are. One undo step. Returns the scene made, or None."""
+        from PySide6.QtWidgets import QInputDialog
+        try:
+            from core.history import AddSceneCommand
+            from core.saved_views import SavedView
+        except ImportError:
+            self._set_status(tr("This IngeTrazo cannot make a scene from here."))
+            return None
+        scene = self.app.scene
+        taken = {v.name for v in getattr(scene, "saved_views", None) or ()}
+        n = 1
+        while f"{tr('Scene')} {n}" in taken:
+            n += 1
+        parent = self.window if self.window is not None and self.window.isVisible() else self
+        name, ok = QInputDialog.getText(parent, tr("New scene from this view"), tr("Name of the scene"),
+                                        text=f"{tr('Scene')} {n}")
+        name = (name or "").strip()
+        if not ok or not name:
+            return None
+        if name in taken:
+            n = 2
+            while f"{name} {n}" in taken:
+                n += 1
+            name = f"{name} {n}"
+        try:
+            view = SavedView.capture(name, scene, self.render_camera())
+            self.app.viewport.history.execute(AddSceneCommand(view))
+        except Exception as exc:  # noqa: BLE001 - say it, never crash the app
+            _log.exception("scene not made")
+            self._set_status(tr("Could not make the scene: {error}", error=exc))
+            return None
+        notify = getattr(self.app.viewport, "notify_scene_changed", None)
+        if callable(notify):
+            notify()
+        self._set_status(tr("Scene «{name}» made from the preview's view (undo removes it).", name=name))
+        return view
 
     def update_preview(self):
         """The Update button (Follow changes off): the live view takes the model and materials as they are now."""
@@ -1131,6 +1180,7 @@ class StudioPanel(QWidget):
         if self._preparing:
             return
         self._remember()
+        camera = self.render_camera()             # the preview's view when it keeps one (Follow the camera off)
         win = self.preview()
         self._direct = not win.isVisible()        # from the panel, no preview open: its window only shows this render
         if self._direct:
@@ -1146,7 +1196,7 @@ class StudioPanel(QWidget):
         self._preparing = True
         try:
             self._stop_live()              # a final render and the live Blender should not run together
-            self._render_job(found, save_to)
+            self._render_job(found, save_to, camera)
         finally:
             self._preparing = False
 
@@ -1156,7 +1206,7 @@ class StudioPanel(QWidget):
         self._set_progress(fraction * 0.85)
         QApplication.processEvents()
 
-    def _render_job(self, found, save_to):
+    def _render_job(self, found, save_to, camera=None):
         from core import render_blender as rb
         stamp = time.strftime("%Y%m%d-%H%M%S")
         self.work = rb.work_base().parent / "render-studio" / stamp
@@ -1164,7 +1214,7 @@ class StudioPanel(QWidget):
         out = self.output_tab.settings()
         try:
             job, script = write_studio_job(
-                self.app.viewport.scene, self.app.viewport.camera, self.work,
+                self.app.viewport.scene, camera or self.app.viewport.camera, self.work,
                 self.preset.currentData(), self.slider_values(),
                 engine=self.engine.currentData(), quality=self.quality.currentIndex(),
                 width=width, height=height, hdri=self.hdri_settings(),

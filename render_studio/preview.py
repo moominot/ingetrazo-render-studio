@@ -130,6 +130,11 @@ class ImageWindow(QWidget):
         self.summary.setToolTip("The engine, quality and width set in the panel: Render uses them "
                                 "(the preview is always a quick draft).")
         pl.addWidget(self.summary)
+        self.scene_btn = QPushButton("New scene from this view…")
+        self.scene_btn.setToolTip("Saves the view this preview shows (the camera it keeps while Follow the camera is off, "
+                                  "else the 3D view's) as a scene of the drawing, to come back to it or render it later.")
+        self.scene_btn.clicked.connect(lambda: self.panel and self.panel.scene_from_preview())
+        pl.addWidget(self.scene_btn)
         self.expert_btn = QPushButton("Open in Blender…")
         self.expert_btn.setToolTip("Expert mode: opens this scene, as Render would make it, in a Blender with its own "
                                    "window to work in it. Nothing is rendered; the file is saved first.")

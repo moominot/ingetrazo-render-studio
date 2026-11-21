@@ -458,6 +458,12 @@ is watched, so File ▸ Overwrite, or Export As with another name or format, bot
 in the model with the same reach and undo step as «Change picture…» (every face and object that wears it; the live
 preview and the render follow).
 
+**The preview's view** (0.23.1): with **Follow the camera** off, the preview keeps the camera it had, and that is the
+view **Render**, **Render and save…** and **Open in Blender…** now use (they took the 3D view's before). The preview
+window's **New scene from this view…** saves that view as a scene of the drawing (IngeTrazo's saved view, with the
+drawing's layers, section and style as they are; one undo step) to come back to it or render it later. The model and
+materials a render uses are still the drawing's current ones, whatever Follow changes says.
+
 **Quicker export of a big model** (0.18.0): while the model file is written, the quick path of
 `fast_export.py` triangulates convex faces with plain floats (the same triangles as IngeTrazo's function,
 which still takes every concave or holed face) and the cyclic garbage collector sleeps (it walked millions of

@@ -148,7 +148,7 @@ ok(panel._export_progress() is None, "no modal, no progress callback")
 # ---- opening the preview and rendering: the feedback comes first ----------------------------------
 from pathlib import Path
 class FakeLive:
-    def __init__(self): self.active = False; self.started = 0; self.stopped = 0; self.follow_camera = True; self.follow_changes = True
+    def __init__(self): self.active = False; self.started = 0; self.stopped = 0; self.follow_camera = True; self.follow_changes = True; self.frozen_camera = None
     def set_follow_camera(self, on): self.follow_camera = on
     def set_follow_changes(self, on): self.follow_changes = on
     def start(self):
@@ -207,6 +207,67 @@ P.write_studio_job = fake_job3
 panel.render()
 P.write_studio_job = real_job
 ok(seen3 == [False] and fl.started == 1, "from an open preview it goes back to the live preview, as before")
+
+# ---- the preview's kept camera: Render and New scene use it ----------------------------------------------
+import math
+from core.camera import OrbitCamera as _OC
+from core.history import History as _H
+from PySide6.QtWidgets import QInputDialog
+panel.app.viewport.history = _H(scene)
+panel.app.viewport.camera.yaw = math.radians(10.0)
+kept = _OC(); kept.yaw = math.radians(80.0); kept.target = QVector3D(1, 2, 3); kept.distance = 7.0
+fl.follow_camera = True; fl.frozen_camera = None
+panel.window.show(); panel.window.set_mode("preview")
+got_cam = []
+def fake_job4(*a, **k):
+    got_cam.append(a[1]); raise RuntimeError("stop here")
+P.write_studio_job = fake_job4
+panel.render()
+ok(got_cam and got_cam[-1] is panel.app.viewport.camera, "following the camera: Render takes the 3D view's camera")
+panel.window.show(); panel.window.set_mode("preview")
+fl.follow_camera = False; fl.frozen_camera = kept
+panel.render()
+ok(got_cam[-1] is kept and abs(got_cam[-1].yaw - math.radians(80.0)) < 1e-9,
+   "Follow the camera off: Render takes the camera the preview keeps, not the 3D view's")
+panel.window.hide(); panel.window.set_mode("preview")
+panel.render()
+ok(got_cam[-1] is panel.app.viewport.camera, "from the panel with no preview open: the 3D view's camera")
+P.write_studio_job = real_job
+
+# the camera is kept as a copy that does not move with the 3D view
+from render_studio.live import LiveSession
+from PySide6.QtCore import QObject as _QO
+class Holder(_QO):
+    def __init__(self): super().__init__(); self.app = panel.app
+ls = LiveSession(Holder())
+ls.set_follow_camera(False)
+before = ls.frozen_camera.yaw
+panel.app.viewport.camera.yaw += 1.0
+ok(ls.frozen_camera is not panel.app.viewport.camera and abs(ls.frozen_camera.yaw - before) < 1e-9,
+   "Follow the camera off keeps a copy of the camera")
+ls.set_follow_camera(True)
+ok(ls.frozen_camera is None, "...and lets it go when the camera is followed again")
+
+# New scene from this view
+panel.window.show()
+fl.follow_camera = False; fl.frozen_camera = kept
+real_get = QInputDialog.getText
+QInputDialog.getText = staticmethod(lambda *a, **k: ("Facade view", True))
+view = panel.scene_from_preview()
+ok(view is not None and view.name == "Facade view" and view in scene.saved_views, "New scene from this view makes a scene")
+ok(abs(view.yaw - math.radians(80.0)) < 1e-9 and abs(view.distance - 7.0) < 1e-9 and tuple(round(c, 3) for c in view.target) == (1.0, 2.0, 3.0),
+   "...of the camera the preview keeps")
+panel.app.viewport.history.undo()
+ok(view not in scene.saved_views, "...in one undo step")
+fl.follow_camera = True
+view2 = panel.scene_from_preview()
+ok(abs(view2.yaw - panel.app.viewport.camera.yaw) < 1e-9, "following the camera: the scene takes the 3D view's")
+view3 = panel.scene_from_preview()
+ok(view3.name == "Facade view 2", f"a name in use gets a number ({view3.name})")
+QInputDialog.getText = staticmethod(lambda *a, **k: ("", False))
+ok(panel.scene_from_preview() is None, "cancelling the name makes nothing")
+QInputDialog.getText = real_get
+ok(hasattr(panel.window, "scene_btn") and "scene" in panel.window.scene_btn.text().lower(), "the preview window has the button")
 
 print("FAILED" if fails else "ALL PASSED", len(fails))
 sys.exit(1 if fails else 0)
