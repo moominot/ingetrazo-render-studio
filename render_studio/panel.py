@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QFormLayout, Q
                                QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSpinBox, QTabWidget,
                                QToolButton, QVBoxLayout, QWidget)
 
-from . import lights as studio_lights, materials as mats, output, pbr, presets, proxies, section, settings_store, studio_data, widgets
+from . import lights as studio_lights, materials as mats, output, pbr, presets, proxies, section, settings_store, studio_data, visibility, widgets
 from .live import LiveSession
 from .preview import ImageWindow  # noqa: F401 - re-exported: panel.ImageWindow
 from .widgets import SliderRow
@@ -175,7 +175,7 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
         _log.exception("light symbols not read")
         symbols = []
     with _model_kept(work if reuse_model else None), proxies.left_out(out_of_file + symbols), \
-            _shared_copies(scene):
+            _shared_copies(scene), visibility.hidden_left_out(scene):
         job = rb.write_job(scene, camera, work, engine=engine, quality=quality, width=width,
                            height=height, ground=ground, ambience=ambience,
                            lights=tab_lights, serve=serve)

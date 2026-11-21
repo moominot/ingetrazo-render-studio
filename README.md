@@ -303,6 +303,13 @@ only clips it on screen, so Render Studio cuts the meshes in Blender, proxies in
 - Meshes that are not closed get no cap (a single surface has no section to fill).
 - Kept in the document under `settings["section"]`.
 
+## What is hidden
+
+Whatever is hidden in the drawing stays out of the render and of the preview, and out of the model
+file sent to Blender (so it is smaller and exports faster): objects hidden inside other objects,
+objects on a hidden tag, and faces hidden with Hide. IngeTrazo's own export only left out the
+loose faces and the top-level objects.
+
 ## Proxies
 
 A **proxy** is a light stand-in in the drawing (an envelope, a box…) for a heavy model — a tree, a sofa, a car —
