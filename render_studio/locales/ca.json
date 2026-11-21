@@ -435,5 +435,17 @@
 "Final picture. The sliders retouch it instantly (the scene is not rendered again); Save image… saves what you see.": "Imatge final. Els controls lliscants la retoquen a l'instant (l'escena no es torna a renderitzar); Desa la imatge… desa el que veus.",
 "Could not change the transparency: {error}": "No s'ha pogut canviar la transparència: {error}",
 "Interior": "Interior",
-"Night": "Nit"
+"Night": "Nit",
+"Preview cancelled.": "Previsualització cancel·lada.",
+"Preparing the model…": "Preparant el model…",
+"Exporting the model… {pct} %": "Exportant el model… {pct} %",
+"Starting Blender…": "Iniciant el Blender…",
+"Blender: the model is in; applying the look…": "Blender: el model ja hi és; aplicant l'aspecte…",
+"Drawing the first image…": "Dibuixant la primera imatge…",
+"Automatic": "Automàtic",
+"EEVEE — fast": "EEVEE — ràpid",
+"Cycles — like the final render": "Cycles — com el render final",
+"Preview engine": "Motor de la previsualització",
+"Engine and Quality are for Render; the preview has its own engine.": "El motor i la qualitat són per al Render; la previsualització té el seu propi motor.",
+"Automatic: EEVEE while the preview follows the camera, and Cycles on a big model once it is still (Follow the camera and Follow changes both off: nothing is sent to Blender again, and a big model looks like the final render). EEVEE or Cycles: always that one.": "Automàtic: EEVEE mentre la previsualització segueix la càmera i Cycles en un model gran quan està quieta (Seguir la càmera i Seguir els canvis desactivats: no s'envia res nou al Blender i un model gran s'assembla al render final). EEVEE o Cycles: sempre aquest."
 }

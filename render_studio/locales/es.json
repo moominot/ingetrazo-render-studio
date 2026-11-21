@@ -435,5 +435,17 @@
 "Final picture. The sliders retouch it instantly (the scene is not rendered again); Save image… saves what you see.": "Imagen final. Los controles deslizantes la retocan al instante (la escena no se vuelve a renderizar); Guardar la imagen… guarda lo que ves.",
 "Could not change the transparency: {error}": "No se pudo cambiar la transparencia: {error}",
 "Interior": "Interior",
-"Night": "Noche"
+"Night": "Noche",
+"Preview cancelled.": "Previsualización cancelada.",
+"Preparing the model…": "Preparando el modelo…",
+"Exporting the model… {pct} %": "Exportando el modelo… {pct} %",
+"Starting Blender…": "Iniciando Blender…",
+"Blender: the model is in; applying the look…": "Blender: el modelo ya está; aplicando el aspecto…",
+"Drawing the first image…": "Dibujando la primera imagen…",
+"Automatic": "Automático",
+"EEVEE — fast": "EEVEE — rápido",
+"Cycles — like the final render": "Cycles — como el render final",
+"Preview engine": "Motor de la previsualización",
+"Engine and Quality are for Render; the preview has its own engine.": "El motor y la calidad son para el Render; la previsualización tiene su propio motor.",
+"Automatic: EEVEE while the preview follows the camera, and Cycles on a big model once it is still (Follow the camera and Follow changes both off: nothing is sent to Blender again, and a big model looks like the final render). EEVEE or Cycles: always that one.": "Automático: EEVEE mientras la previsualización sigue la cámara y Cycles en un modelo grande cuando está quieta (Seguir la cámara y Seguir los cambios desactivados: no se envía nada nuevo a Blender y un modelo grande se parece al render final). EEVEE o Cycles: siempre ese."
 }

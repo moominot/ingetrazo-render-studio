@@ -198,7 +198,13 @@ class ImageWindow(QWidget):
         self.status.setText(text)
 
     def set_progress(self, fraction: float) -> None:
+        if self.bar.maximum() == 0:
+            self.bar.setRange(0, 100)
         self.bar.setValue(int(max(0.0, min(1.0, fraction)) * 100))
+
+    def set_busy(self) -> None:
+        """A bar that waits (nothing to measure yet: Blender is starting or building the scene)."""
+        self.bar.setRange(0, 0)
 
     def set_summary(self, text: str) -> None:
         self.summary.setText(text)

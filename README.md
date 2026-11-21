@@ -419,6 +419,23 @@ interactive viewport, which a Blender running in the background does not have. I
 of IngeTrazo's own «Sync with the view» (Blender in `serve` mode), extended with `reload`. **Render**
 closes the live Blender first and leaves the live view off, so the draft does not cover the final image; **Back to preview** brings it back.
 
+**Preview engine** (panel, Final render group; 0.18.0): **Automatic** (the default), **EEVEE** or **Cycles**.
+On a big model EEVEE looks nothing like the final render, so Automatic keeps EEVEE while the view follows
+the camera or the changes (it must be quick) and switches to **Cycles** once both switches are off: nothing
+is sent to Blender again, the scene is rebuilt in place (the model is not exported again) and the picture
+is the one Render would give. "Big" is the same size as the shared export below (150 000 faces counting
+every copy). The Interior look is always Cycles.
+
+**Opening the preview** shows a small modal (a bar that fills while the model is exported, then one that
+waits while Blender starts and builds the scene, with what it is doing) until the first picture comes;
+Cancel stops it. **Render** says it is working at once (the window changes to Rendering before the model is
+exported) and shows the export's progress.
+
+**Quicker export of a big model** (0.18.0): while the model file is written, the quick path of
+`fast_export.py` triangulates convex faces with plain floats (the same triangles as IngeTrazo's function,
+which still takes every concave or holed face) and the cyclic garbage collector sleeps (it walked millions of
+live objects for nothing). On the 588 000-face test model the export went from 33.5 s to 26.7 s.
+
 ## Settings in the document
 
 The panel's settings are saved in the IngeTrazo document (a moment after each change, one undo

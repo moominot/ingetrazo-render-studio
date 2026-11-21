@@ -22,11 +22,11 @@ from pathlib import Path
 
 from PySide6.QtCore import QLocale, QProcess, QProcessEnvironment, QSettings, Qt, QTimer, Signal
 from PySide6.QtGui import QImage
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame, QGroupBox,
+from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame, QGroupBox,
                                QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSpinBox, QTabWidget,
                                QToolButton, QVBoxLayout, QWidget)
 
-from . import lights as studio_lights, materials as mats, output, pbr, presets, proxies, section, settings_store, studio_data, visibility, widgets
+from . import lights as studio_lights, materials as mats, fast_export, output, pbr, presets, proxies, section, settings_store, studio_data, visibility, widgets
 from .live import LiveSession
 from .preview import ImageWindow  # noqa: F401 - re-exported: panel.ImageWindow
 from .widgets import SliderRow
@@ -114,7 +114,8 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
                      engine: str, quality: int, width: int, height: int, ground: bool = True,
                      hdri: dict | None = None, materials: dict | None = None,
                      serve: bool = False, live: bool = False, reuse_model: bool = False,
-                     output: dict | None = None, doc_path=None, section_opts: dict | None = None):
+                     output: dict | None = None, doc_path=None, section_opts: dict | None = None,
+                     progress=None):
     """Export the model (IngeTrazo's own job writer) and add the look (and
     the 360° background, if any). ``serve``: Blender builds the scene and then
     waits for cameras on its input (the live view). ``live``: a draft scene
@@ -122,7 +123,8 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
     already in ``work`` instead of exporting it again (only the settings
     changed). ``doc_path``: the drawing's file, where proxies keep their
     originals relative to it (proxies.py: each proxy is rendered as its full
-    model, placed by Blender as an instance). Returns (job path, studio
+    model, placed by Blender as an instance). ``progress``: ``callback(fraction)`` while the model is
+    exported (a big model takes a while). Returns (job path, studio
     script path)."""
     from core import render_blender as rb
     block, ambience = presets.studio(preset_key)
@@ -176,8 +178,17 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
     except Exception:  # noqa: BLE001 - never stops a render: the symbols, as drawn
         _log.exception("light symbols not read")
         symbols = []
+    shared = _shared_copies(scene)
+    total = 0
+    if progress is not None and not reuse_model:
+        try:
+            total = fast_export.unique_faces(scene) if shared.on else expanded_faces(scene)
+        except Exception:  # noqa: BLE001 - no bar, nothing else
+            _log.exception("faces not counted")
     with _model_kept(work if reuse_model else None), proxies.left_out(out_of_file + symbols), \
-            _shared_copies(scene), visibility.hidden_left_out(scene):
+            shared, visibility.hidden_left_out(scene), fast_export.fast_triangles(), \
+            fast_export.gc_paused(), \
+            fast_export.export_progress(total, progress if total else None):
         job = rb.write_job(scene, camera, work, engine=engine, quality=quality, width=width,
                            height=height, ground=ground, ambience=ambience,
                            lights=tab_lights, serve=serve)
@@ -365,7 +376,18 @@ class StudioPanel(QWidget):
         # What only the final render uses.
         box_final = QGroupBox("Final render")
         form3 = QFormLayout(box_final)
-        form3.addRow(self._caption("Only Render uses these; the preview is always a quick draft."))
+        form3.addRow(self._caption("Engine and Quality are for Render; the preview has its own engine."))
+        self.preview_engine = QComboBox()
+        self.preview_engine.addItem(tr("Automatic"), "auto")
+        self.preview_engine.addItem(tr("EEVEE — fast"), "eevee")
+        self.preview_engine.addItem(tr("Cycles — like the final render"), "cycles")
+        self.preview_engine.setCurrentIndex(max(0, self.preview_engine.findData(st.value(_SETTINGS + "preview_engine", "auto"))))
+        self.preview_engine.setToolTip(
+            "Automatic: EEVEE while the preview follows the camera, and Cycles on a big model once it is "
+            "still (Follow the camera and Follow changes both off: nothing is sent to Blender again, "
+            "and a big model looks like the final render). EEVEE or Cycles: always that one.")
+        self.preview_engine.currentIndexChanged.connect(lambda _i: QSettings().setValue(_SETTINGS + "preview_engine", self.preview_engine.currentData()))
+        form3.addRow("Preview engine", self.preview_engine)
         self.engine = QComboBox()
         self.engine.addItem(tr("EEVEE — fast"), "eevee")
         self.engine.addItem(tr("Cycles — best quality"), "cycles")
@@ -428,6 +450,8 @@ class StudioPanel(QWidget):
         outer.addLayout(mrow)
         self.editor = None
         self._live = None
+        self._prep = None
+        self._preparing = False
         self._save_to = None
         self._cancelled = False
         self.preview_btn = QPushButton("Open preview…")
@@ -573,18 +597,44 @@ class StudioPanel(QWidget):
             from . import sun_site
             doc = (json.dumps(self.settings_dict(), sort_keys=True) + studio_lights.signature(self.app.scene)
                    + section.signature(self.app.scene, self.section_tab.settings())
-                                      + json.dumps(sun_site.site(self.app.scene), sort_keys=True))
+                                      + json.dumps(sun_site.site(self.app.scene), sort_keys=True)
+                   + self.live_engine())
             mats_ = json.dumps(self.material_specs(), sort_keys=True, default=str)
         except Exception:  # noqa: BLE001
             doc = mats_ = ""
         return (self.live_model_key(), mats_, (doc, round(self._aspect(), 3)))
 
+    def _big_model(self) -> bool:
+        """The model is big enough for the preview to prefer Cycles when it is still (counted once per
+        version of the drawing: this is asked at every poll of the live view)."""
+        scene = self.app.scene
+        key = (id(scene), getattr(scene, "content_version", 0))
+        if getattr(self, "_big_key", None) != key:
+            try:
+                self._big_val = expanded_faces(scene) > INSTANCED_FROM_FACES
+            except Exception:  # noqa: BLE001
+                self._big_val = False
+            self._big_key = key
+        return self._big_val
+
     def live_engine(self) -> str:
-        """The live view's engine: EEVEE, lightened — but Cycles for a look that
-        needs it (Interior: EEVEE can't fill a room lit through a window, so its
-        preview would not look like the render). The panel's Engine is for Render."""
+        """The live view's engine. The Interior look needs Cycles (EEVEE can't fill a room lit
+        through a window). Otherwise the panel's Preview engine: EEVEE, Cycles, or Automatic = EEVEE
+        while the view follows the camera or the changes (it must be quick), Cycles on a big model once
+        it follows neither (nothing is sent to Blender again, and EEVEE looks nothing like the final
+        render there). The panel's Engine is for Render."""
         block, _amb = presets.studio(self.preset.currentData())
-        return "cycles" if block.get("engine_hint") == "cycles" else "eevee"
+        if block.get("engine_hint") == "cycles":
+            return "cycles"
+        choice = self.preview_engine.currentData()
+        if choice == "cycles":
+            return "cycles"
+        if choice == "auto":
+            live = self._live
+            if (live is not None and not live.follow_camera and not live.follow_changes
+                    and self._big_model()):
+                return "cycles"
+        return "eevee"
 
     def live_job(self, work: Path, width: int, height: int, reuse_model: bool = False,
                  materials: dict | None = None):
@@ -600,7 +650,7 @@ class StudioPanel(QWidget):
             height=height, hdri=self.hdri_settings(),
             materials=self.material_specs() if materials is None else materials, serve=True,
             live=True, reuse_model=reuse_model, doc_path=self.doc_path(),
-            section_opts=self.section_tab.settings())
+            section_opts=self.section_tab.settings(), progress=self._export_progress())
 
     def doc_path(self):
         """The drawing's file (None until it is saved): proxies keep their originals
@@ -631,7 +681,7 @@ class StudioPanel(QWidget):
         win.raise_()
         win.activateWindow()
         if self.proc is None and win.mode == "preview":
-            self._start_live()
+            self._start_live(prep=True)
         return win
 
     def back_to_preview(self):
@@ -639,7 +689,7 @@ class StudioPanel(QWidget):
         win = self.preview()
         if self.proc is None:
             win.set_mode("preview")
-            self._start_live()
+            self._start_live(prep=True)
 
     def _preview_open(self) -> bool:
         """The preview window is on screen and its live view runs."""
@@ -652,7 +702,9 @@ class StudioPanel(QWidget):
         way goes on, and shows its picture when it is ready.)"""
         self._stop_live()
 
-    def _start_live(self):
+    def _start_live(self, prep: bool = False):
+        """Start the live view. ``prep``: a modal says what is happening until the first picture
+        (opening the window; a big model takes a minute to export)."""
         if self._live is None:
             self._live = LiveSession(self)
             self._live.image.connect(self._live_image)
@@ -660,8 +712,36 @@ class StudioPanel(QWidget):
         win = self.preview()
         self._live.set_follow_camera(win.follow_camera_box.isChecked())
         self._live.set_follow_changes(win.follow_changes_box.isChecked())
-        self._live.start()
+        if prep and not self._live.active and self._prep is None:
+            from .prep_dialog import PrepDialog
+            self._prep = PrepDialog(win)
+            self._prep.canceled.connect(self._prep_cancelled)
+        try:
+            self._live.start()
+        except Exception:  # noqa: BLE001 - say it, never crash the app
+            self._prep_close()
+            raise
         self.section_tab.document_changed()       # it follows the model from here on
+
+    def _prep_close(self):
+        dlg, self._prep = self._prep, None
+        if dlg is not None:
+            dlg.blockSignals(True)               # closing it is not Cancel
+            dlg.close()
+            dlg.deleteLater()
+
+    def _prep_cancelled(self):
+        """Cancel in the modal: no live view, no window."""
+        self._prep = None
+        self._preparing = False
+        self._stop_live()
+        if self.window is not None:
+            self.window.hide()
+        self.status.setText(tr("Preview cancelled."))
+
+    def _export_progress(self):
+        """The callback the model export reports to (the modal's bar), or None."""
+        return self._prep.exporting if self._prep is not None else None
 
     def _stop_live(self):
         if self._live is not None and self._live.active:
@@ -675,14 +755,23 @@ class StudioPanel(QWidget):
 
     def _live_image(self, path):
         """A frame of the live view: into the window while it shows the preview."""
+        self._prep_close()                        # the first picture: the modal is no longer needed
         if not Path(path).is_file() or self.window is None or self.window.mode != "preview":
             return
         self.window.show_draft(path)
 
     def _set_status(self, text: str):
-        self.status.setText(text)
+        shown = tr(text)
+        self.status.setText(shown)
         if self.window is not None:
-            self.window.set_status(text)
+            self.window.set_status(shown)
+        if self._prep is not None:
+            if text.startswith(("Starting Blender", "Blender:")):
+                self._prep.waiting(text)
+            elif text == "Live view: in sync":
+                self._prep.waiting("Drawing the first image…")
+            elif text.startswith(("Live view stopped", "Blender stopped")):
+                self._prep_close()
 
     def _set_progress(self, fraction: float):
         if self.window is not None:
@@ -953,8 +1042,31 @@ class StudioPanel(QWidget):
             self.status.setText("Blender was not found: choose it above.")
             self.finished.emit(None)
             return
+        if self._preparing:
+            return
         self._remember()
-        self._stop_live()                  # a final render and the live Blender should not run together
+        # Say at once that something is happening (the export of a big model and the live Blender
+        # shutting down take seconds before Blender reports any progress).
+        if self.window is not None:
+            self.window.set_mode("rendering")
+            self.window.set_busy()
+        self._set_status(tr("Preparing the model…"))
+        QApplication.processEvents()
+        self._preparing = True
+        try:
+            self._stop_live()              # a final render and the live Blender should not run together
+            self._render_job(found, save_to)
+        finally:
+            self._preparing = False
+
+    def _export_status(self, fraction: float):
+        """The model's export is ``fraction`` done: the window's status and bar say so."""
+        self._set_status(tr("Exporting the model… {pct} %", pct=int(fraction * 100)))
+        self._set_progress(fraction * 0.85)
+        QApplication.processEvents()
+
+    def _render_job(self, found, save_to):
+        from core import render_blender as rb
         stamp = time.strftime("%Y%m%d-%H%M%S")
         self.work = rb.work_base().parent / "render-studio" / stamp
         width, height = self.output_tab.frame()
@@ -966,7 +1078,7 @@ class StudioPanel(QWidget):
                 engine=self.engine.currentData(), quality=self.quality.currentIndex(),
                 width=width, height=height, hdri=self.hdri_settings(),
                 materials=self.material_specs(), output=out, doc_path=self.doc_path(),
-                section_opts=self.section_tab.settings())
+                section_opts=self.section_tab.settings(), progress=self._export_status)
         except Exception as exc:  # noqa: BLE001 - say it, never crash the app
             _log.exception("render job failed")
             self._set_status(tr("Could not prepare the render: {error}", error=exc))
@@ -991,8 +1103,7 @@ class StudioPanel(QWidget):
         self.rendered = {"format": out["format"], "file": Path(extra) if extra else self.output,
                          "jpeg_quality": out["jpeg_quality"]}
         if self.window is not None:
-            self.window.set_mode("rendering")
-        self._set_progress(0.0)
+            self.window.set_busy()          # Blender builds the scene: nothing to measure until it renders
         self._set_status(tr("Blender is preparing the scene…") + (
             " " + tr("({n} proxy/proxies without its full model file, rendered as drawn: {names})",
                      n=len(missing), names=", ".join(missing[:3]) + ("…" if len(missing) > 3 else ""))

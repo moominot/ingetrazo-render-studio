@@ -224,6 +224,7 @@ class LiveSession(QObject):
             self.state.emit(f"Live view stopped: {exc}")
             self._timer.stop()
             return
+        self.state.emit("Starting Blender…")
         proc = QProcess(self)
         env = QProcessEnvironment()
         for k, v in rb.clean_env().items():
@@ -284,6 +285,8 @@ class LiveSession(QObject):
             if line.startswith("INGETRAZO ready"):
                 self._ready = True
                 self.state.emit("Live view: in sync")
+            elif line.startswith("INGETRAZO imported"):
+                self.state.emit("Blender: the model is in; applying the look…")
             elif line.startswith("INGETRAZO done "):
                 self._busy = False
                 self.image.emit(Path(line[len("INGETRAZO done "):].strip()))
