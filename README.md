@@ -230,7 +230,10 @@ deletes them.
   axes (`group.ext["render_studio"]["lights"]`): moving, turning or copying the object takes it along.
   **Every copy of the component** sends a change to the light on every copy (each keeps its place unless it
   is moved inside the object). **Put on selected object** / **Free it** move a light on and off an object
-  where it stands. Hidden objects and hidden tags give no light.
+  where it stands. Hidden objects and hidden tags give no light. An object that holds
+  `group.ext["render_studio"]["hide_in_render"] = true` (the symbol of an Enscape light that
+  `skp_dc_import` 0.7.0 imported) stays in the drawing and is left out of the render, while its
+  lights shine.
 - **Power** in lumens or Blender watts (radiant, not electrical); switching keeps the brightness. Lumens
   become watts at 381 lm/W, the figure of Blender's manual for an 800 lm bulb (2.1 W): a starting point,
   the automatic exposure still sets the picture's brightness. A spot's lumens go into its cone, because a
