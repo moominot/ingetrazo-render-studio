@@ -93,5 +93,21 @@ if BLENDER:
     ok(lines.get("CAM") == "True", "...and the camera of the preview")
     ok(lines.get("PACKED") == "True", "...with its pictures packed inside")
 
+    # ...and with its window (a window opens for a few seconds and closes by itself): the scene is built once
+    # Blender's loop runs and its 3D view looks through the camera.
+    probe = work / "probe.txt"
+    if probe.exists():
+        probe.unlink()
+    d2 = dict(d); d2["blend"] = str(work / "gui.blend"); d2["expert_probe"] = str(probe)
+    (work / "job_gui.json").write_text(json.dumps(d2, indent=2), encoding="utf-8")
+    try:
+        subprocess.run([BLENDER, "--python", str(script), "--", str(work / "job_gui.json")],
+                       capture_output=True, text=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        pass
+    got = probe.read_text(encoding="utf-8").strip() if probe.is_file() else "(nothing)"
+    ok(got == "looking 1", f"with a window: the scene is built and the 3D view looks through the camera ({got})")
+    ok((work / "gui.blend").is_file(), "...and the .blend is saved")
+
 print("FAILED" if fails else "ALL PASSED", len(fails))
 sys.exit(1 if fails else 0)

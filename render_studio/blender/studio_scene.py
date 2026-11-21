@@ -2188,7 +2188,19 @@ def build(job):
     same Blender, when the live view sends a new job (no restart)."""
     st = job.get("studio") or {}
     _STATE.update(pristine={}, sig=None, specs=None, pbr=None, figures=None)
-    bpy.ops.wm.read_factory_settings(use_empty=True)
+    if job.get("expert") and not bpy.app.background:
+        # A Blender with a window: reading the factory settings would leave it without the window's
+        # context (no active object); the scene it started with is emptied instead.
+        for coll in (bpy.data.objects, bpy.data.collections, bpy.data.meshes, bpy.data.materials,
+                     bpy.data.images, bpy.data.lights, bpy.data.cameras, bpy.data.worlds,
+                     bpy.data.node_groups, bpy.data.curves):
+            for item in list(coll):
+                try:
+                    coll.remove(item)
+                except Exception:  # noqa: BLE001 - what cannot go stays
+                    pass
+    else:
+        bpy.ops.wm.read_factory_settings(use_empty=True)
     scene = bpy.context.scene
     core["import_model"](job["glb"])
     place_proxies(scene, st.get("proxies") or [], st.get("section"))
@@ -2441,22 +2453,74 @@ def expert_open(scene, job):
         bpy.ops.wm.save_as_mainfile(filepath=job["blend"])
         say("blend", job["blend"])
 
+    tries = {"n": 0}
+
     def look_through_camera():
-        wm = bpy.context.window_manager
-        for win in wm.windows if wm else ():
-            for area in win.screen.areas:
-                if area.type == "VIEW_3D":
-                    space = area.spaces[0]
+        """Once the window is there: every 3D view looks through the scene's camera, in Material Preview.
+        Tried again every half second (the window may not be ready yet) and said, so a failure shows."""
+        tries["n"] += 1
+        found = looking = 0
+        try:
+            wm = bpy.context.window_manager
+            for win in wm.windows if wm else ():
+                for area in win.screen.areas:
+                    if area.type != "VIEW_3D":
+                        continue
+                    space = next((s for s in area.spaces if s.type == "VIEW_3D"), None)
+                    region = next((r for r in area.regions if r.type == "WINDOW"), None)
+                    if space is None or region is None:
+                        continue
+                    found += 1
+                    if scene.camera is not None and bpy.context.scene.camera is None:
+                        bpy.context.window.scene.camera = scene.camera
                     space.shading.type = "MATERIAL"
                     space.region_3d.view_perspective = "CAMERA"
-        return None
+                    if space.region_3d.view_perspective != "CAMERA":
+                        with bpy.context.temp_override(window=win, area=area, region=region):
+                            bpy.ops.view3d.view_camera()
+                    looking += space.region_3d.view_perspective == "CAMERA"
+        except Exception as exc:  # noqa: BLE001 - said, tried again
+            say("warning", "3D view not set:", exc)
+        if found and looking == found:
+            say("expert", "looking through the camera")
+            if job.get("expert_probe"):                 # tests: say it in a file and leave
+                with open(job["expert_probe"], "w", encoding="utf-8") as fh:
+                    fh.write(f"looking {looking}\n")
+                bpy.ops.wm.quit_blender()
+            return None
+        if tries["n"] >= 40:
+            say("warning", "no 3D view found to look through the camera")
+            if job.get("expert_probe"):
+                with open(job["expert_probe"], "w", encoding="utf-8") as fh:
+                    fh.write(f"no view: found {found}\n")
+                bpy.ops.wm.quit_blender()
+            return None
+        return 0.5
     if not bpy.app.background:
-        bpy.app.timers.register(look_through_camera, first_interval=0.5)
+        bpy.app.timers.register(look_through_camera, first_interval=0.5, persistent=True)
     say("expert", "ready")
 
 
 def main():
     job = core["load_job"]()
+    if job.get("expert") and not bpy.app.background:
+        # With a window the script runs before Blender's main loop, where the context is cut down
+        # (no active object: the ground and others fail): the scene is built once the loop runs.
+        def build_open():
+            try:
+                scene, _figures = build(job)
+                expert_open(scene, job)
+            except Exception as exc:  # noqa: BLE001 - said, the window stays
+                import traceback
+                say("error", exc)
+                traceback.print_exc()
+                if job.get("expert_probe"):
+                    with open(job["expert_probe"], "w", encoding="utf-8") as fh:
+                        fh.write(f"error {exc}\n")
+                    bpy.ops.wm.quit_blender()
+            return None
+        bpy.app.timers.register(build_open, first_interval=1.0, persistent=True)
+        return
     scene, figures = build(job)
     if job.get("expert"):
         expert_open(scene, job)
