@@ -89,14 +89,14 @@ def _run(app, cmds, name, spec):
     vp.update()
 
 
-def create_material(app, name, *, color=None, texture=None, opacity=None, apply=True, spec=None):
+def create_material(app, name, *, color=None, texture=None, opacity=None, apply=True, spec=None, finish=None):
     """A new material in the document, one undo step; painted on the selection when ``apply``.
     ``texture``: ``{"path", "sw", "sh"}`` (a picture), else ``color`` (RGB floats). Returns
     ``(final name, how many faces and objects it was painted on)``."""
     scene = app.scene
     name = unique_name(scene, name, _specs(app))
     mat = Material(name, color=None if texture else tuple(color or (0.8, 0.8, 0.8)),
-                   texture=dict(texture) if texture else None, opacity=opacity)
+                   texture=dict(texture) if texture else None, opacity=opacity, finish=finish)
     cmds = [SetFaceMaterialTagCommand([], name, mat)]        # an empty stamp only registers it
     painted = 0
     if apply:
@@ -162,3 +162,111 @@ def arm_paint_bucket(app, name):
     if callable(sync):
         sync()
     return True
+
+
+# ---- a material in a file of its own -------------------------------------------------------------------
+
+FILE_FORMAT = "render-studio-material"
+EXTENSION = ".rsmat"
+FILTER = f"Render Studio material (*{EXTENSION})"
+
+
+def _file_refs(spec) -> list:
+    """The image files a material's Render Studio settings point to: ``[(holder dict, key)]``."""
+    refs = []
+    for m in ((spec or {}).get("maps") or {}).values():
+        if isinstance(m, dict) and m.get("path"):
+            refs.append((m, "path"))
+    return refs
+
+
+def _copy_beside(src, folder, stem, used):
+    """Copy the image ``src`` into ``folder`` and return the file name it has there ('' when it cannot be)."""
+    from pathlib import Path
+    import shutil
+    src = Path(str(src))
+    if not src.is_file():
+        return ""
+    name = f"{stem}{src.suffix.lower()}"
+    n = 2
+    while name in used:
+        name = f"{stem}-{n}{src.suffix.lower()}"
+        n += 1
+    used.add(name)
+    shutil.copyfile(src, Path(folder) / name)
+    return name
+
+
+def save_material(app, name, path) -> str:
+    """Write the material ``name`` (its colour or picture, translucency, finish and Render Studio settings) to
+    ``path`` (``.rsmat``, JSON), with its pictures copied beside it in a folder of the same name so the file can
+    be moved, shared and loaded in another drawing. Returns the file written, or '' when the document has no
+    such material."""
+    from pathlib import Path
+    mat = (getattr(app.scene, "materials", None) or {}).get(name)
+    if mat is None:
+        return ""
+    path = Path(path)
+    if path.suffix.lower() != EXTENSION:
+        path = path.with_suffix(EXTENSION)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pics = path.with_suffix("")                      # <file>/ : the pictures
+    used: set = set()
+    spec = json.loads(json.dumps(_specs(app).get(name) or {}))
+    data = {"format": FILE_FORMAT, "version": 1, "name": name, "opacity": mat.opacity,
+            "finish": getattr(mat, "finish", None)}
+    if mat.color is not None:
+        data["color"] = [float(c) for c in mat.color[:3]]
+    texture = copy.deepcopy(mat.texture) if mat.texture else None
+
+    def keep(src, stem):
+        if not Path(str(src)).is_file():
+            return ""
+        pics.mkdir(exist_ok=True)
+        got = _copy_beside(src, pics, stem, used)
+        return f"{pics.name}/{got}" if got else ""
+    if texture and texture.get("path"):
+        rel = keep(texture["path"], "picture")
+        if rel:
+            texture["path"] = rel
+        data["texture"] = texture
+    for i, (holder, key) in enumerate(_file_refs(spec)):
+        rel = keep(holder[key], f"map-{i + 1}")
+        if rel:
+            holder[key] = rel
+    if spec:
+        data["settings"] = spec
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    return str(path)
+
+
+def read_material(path) -> dict | None:
+    """The material file ``path`` as a dict with its pictures' paths made absolute; None when it is not one."""
+    from pathlib import Path
+    path = Path(path)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or data.get("format") != FILE_FORMAT:
+        return None
+
+    def absolute(p):
+        p = Path(str(p))
+        return str(p if p.is_absolute() else (path.parent / p))
+    if isinstance(data.get("texture"), dict) and data["texture"].get("path"):
+        data["texture"]["path"] = absolute(data["texture"]["path"])
+    for holder, key in _file_refs(data.get("settings")):
+        holder[key] = absolute(holder[key])
+    return data
+
+
+def load_material(app, path):
+    """Bring the material in the file ``path`` into the document, under a name of its own (one undo step; the
+    selection is not painted). Returns ``(name, 0)`` or ``(None, 0)`` when it is not a material file."""
+    data = read_material(path)
+    if data is None:
+        return None, 0
+    return create_material(app, data.get("name") or "Material", color=data.get("color"),
+                           texture=data.get("texture"), opacity=data.get("opacity"), apply=False,
+                           spec=data.get("settings"), finish=data.get("finish"))

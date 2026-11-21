@@ -117,6 +117,13 @@ class ImageWindow(QWidget):
             box.setChecked(str(st.value(_SETTINGS + key, "true")).lower() in ("true", "1"))
             box.toggled.connect(lambda on, k=key: self.panel and self.panel._follow_toggled(k, on))
             pl.addWidget(box)
+        self.update_btn = QPushButton("Update")
+        self.update_btn.setToolTip("With Follow changes off: shows the model and materials as they are now "
+                                   "(the preview keeps the ones it had until then).")
+        self.update_btn.setEnabled(not self.follow_changes_box.isChecked())
+        self.update_btn.clicked.connect(lambda: self.panel and self.panel.update_preview())
+        self.follow_changes_box.toggled.connect(lambda on: self.update_btn.setEnabled(not on))
+        pl.addWidget(self.update_btn)
         pl.addStretch(1)
         self.summary = QLabel("")
         self.summary.setStyleSheet("color: gray")

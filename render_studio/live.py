@@ -78,6 +78,7 @@ class LiveSession(QObject):
         self._count = 0
         self.follow_camera = True
         self.follow_changes = True
+        self._force = False                    # «Update»: take the model and materials as they are now, once
         self.loads = 0                         # how many times the scene was loaded (for tests)
         self.starts = 0                        # how many times a Blender was started (for tests)
         self.frames = 0                        # how many frames were asked while moving (for tests)
@@ -120,6 +121,12 @@ class LiveSession(QObject):
         """Off: the live scene keeps its model and materials (look and sliders still apply)."""
         self.follow_changes = bool(on)
 
+    def update_now(self) -> None:
+        """With Follow changes off: take the model and the materials as they are now, once (the scene
+        is rebuilt as soon as the camera rests; the model is exported again only if it changed)."""
+        if self.active:
+            self._force = True
+
     # ---- watching the camera and the model ------------------------------------
     def _rest(self) -> float:
         return self._rest_ms if self._rest_ms is not None else QUICK_REST_MS
@@ -134,7 +141,7 @@ class LiveSession(QObject):
         """What the live scene should be: (model, materials, settings) — with the
         model and materials it has when Follow changes is off."""
         model, mats_, settings = self.panel.live_key()
-        if not self.follow_changes and self._scene_key is not None:
+        if not self.follow_changes and not self._force and self._scene_key is not None:
             model, mats_ = self._scene_key[0], self._scene_key[1]
         return (model, mats_, settings)
 
@@ -183,7 +190,8 @@ class LiveSession(QObject):
                 _log.info("live Blender restarted (ready %s, state %s)", self._ready, self._proc.state())
                 self.restarts_why = (self._ready, str(self._proc.state()), list(self.tail[-6:]))
             self._shutdown()
-        follow =self.follow_changes or self._kept_specs is None or not running
+        follow = self.follow_changes or self._force or self._kept_specs is None or not running
+        self._force = False
         model_key = key[0]
         reuse = running and (model_key == self._model_key or not follow)
         specs = self.panel.material_specs() if follow else self._kept_specs

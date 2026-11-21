@@ -438,6 +438,13 @@ with its own window and the person's own Blender settings; nothing is rendered. 
 looks through the camera in Material Preview. The scene is then Blender's: it is not linked to the drawing, so a
 change of the model needs the button again. Implemented as `"expert": true` in the job (studio_scene.py).
 
+**Update** (preview window, 0.20.0): with Follow changes off, shows the model and materials as they are now, once.
+**Save… / Load…** (material editor): a material goes to a `.rsmat` file (JSON: colour or picture, translucency, finish
+and Render Studio settings) with its pictures and map files copied into a folder beside it, by relative paths, so it can
+be moved, shared and loaded in another drawing (one undo step; the selection is not painted). The **Glow** slider is
+finer at the low end (the value goes as the slider's position cubed: 1 is a third of the way up) and the Light panel
+preset starts at 4. The **Opacity map** can use the material's own picture in black and white, as the other maps do.
+
 **Quicker export of a big model** (0.18.0): while the model file is written, the quick path of
 `fast_export.py` triangulates convex faces with plain floats (the same triangles as IngeTrazo's function,
 which still takes every concave or holed face) and the cyclic garbage collector sleeps (it walked millions of

@@ -35,7 +35,7 @@ spec = lambda: (app.data.get("materials") or {}).get("Fence") or {}
 ok("map:opacity" in M.shown_controls("generic") and "map:opacity" in M.shown_controls("glass"),
    "the opacity map is offered with the Transparency slider")
 ok("map:opacity" not in M.shown_controls("grass"), "…and not on grass (the blades cover the face)")
-ok("opacity" in ed.maps and ed.maps["opacity"].source.count() == 2, "the editor has an Opacity map row (none / file)")
+ok("opacity" in ed.maps and ed.maps["opacity"].source.count() == 3, "the editor has an Opacity map row (none / picture / file)")
 ok(not ed.maps["opacity"].isHidden(), "…shown for a generic material")
 
 ed.maps["opacity"].set_file(mask); ed._flush()

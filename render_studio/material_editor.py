@@ -32,7 +32,8 @@ _FIELDS = (  # key, label, lo, hi, tip
     ("bump", "Relief", 0.0, 1.0, "Surface relief. Automatic: from the picture's light and dark "
                                  "when it has one (joints, grain), else a fine grain. Water: the "
                                  "height of the waves."),
-    ("glow", "Glow", 0.0, 50.0, "How bright it shines by itself (Glowing type): screens, light panels."),
+    ("glow", "Glow", 0.0, 50.0, "How bright it shines by itself (Glowing type): screens, light panels. "
+                                "The scale is finer at the low end: 1 is already a lot of light in a dim room."),
 )
 
 #: Map sources per setting: (value, label). "" = no map (relief: automatic).
@@ -43,7 +44,7 @@ _SOURCES = {
              ("file", "Height map file…"), ("normal", "Normal map file…")),
     "glow": (("", "No map"), ("picture", "Picture (B/W)"), ("file", "Mask file…")),
     # white = opaque, black = transparent (a cut-out: leaves, a fence, a lace)
-    "opacity": (("", "No map"), ("file", "Image file… (black = transparent)")),
+    "opacity": (("", "No map"), ("picture", "Picture (B/W)"), ("file", "Image file…")),
 }
 _MAP_TIPS = {
     "opacity": "A picture that says where the material is see-through: white is opaque, black is transparent, "
@@ -295,6 +296,15 @@ class MaterialEditor(QDialog):
         tools.addWidget(self.paint_btn, 0, 1)
         tools.addWidget(self.new_btn, 1, 0)
         tools.addWidget(self.dup_btn, 1, 1)
+        self.save_btn = QPushButton("Save…")
+        self.save_btn.setToolTip("Save this material (its colour or picture, settings and finish) to a file, with its pictures, "
+                                 "to use it in another drawing.")
+        self.save_btn.clicked.connect(self.save_current)
+        self.load_btn = QPushButton("Load…")
+        self.load_btn.setToolTip("Bring a saved material into this drawing (it is added; nothing is painted).")
+        self.load_btn.clicked.connect(self.load_from_file)
+        tools.addWidget(self.save_btn, 2, 0)
+        tools.addWidget(self.load_btn, 2, 1)
         left.addLayout(tools)
         self._pick_timer = QTimer(self)
         self._pick_timer.setInterval(150)
@@ -738,6 +748,40 @@ class MaterialEditor(QDialog):
             return
         self._made(new, 0, tr("Copied {name} as", name=name))
 
+    def save_current(self):
+        """The chosen material to a file of its own (``.rsmat``) with its pictures, to use in another drawing."""
+        from . import material_tools
+        name = self.current_name()
+        if name is None:
+            return
+        self._flush()
+        start = str(Path(str(QSettings().value(_SETTINGS + "materials_dir", "") or Path.home()))
+                    / (name.replace("/", "-").replace("\\", "-") + material_tools.EXTENSION))
+        path, _f = QFileDialog.getSaveFileName(self, tr("Save the material"), start, material_tools.FILTER)
+        if not path:
+            return
+        done = material_tools.save_material(self.app, name, path)
+        if done:
+            QSettings().setValue(_SETTINGS + "materials_dir", str(Path(done).parent))
+            self.hint.setText(tr("Saved {name} in {path}", name=name, path=done))
+        else:
+            self.hint.setText(tr("{name} is not in the document's materials yet, so it cannot be saved "
+                                 "(paint a face with it first).", name=name))
+
+    def load_from_file(self):
+        """A saved material into this drawing, under a name of its own (the selection is not painted)."""
+        from . import material_tools
+        start = str(QSettings().value(_SETTINGS + "materials_dir", "") or Path.home())
+        path, _f = QFileDialog.getOpenFileName(self, tr("Load a material"), start, material_tools.FILTER)
+        if not path:
+            return
+        name, _n = material_tools.load_material(self.app, path)
+        if name is None:
+            self.hint.setText(tr("That file is not a Render Studio material."))
+            return
+        QSettings().setValue(_SETTINGS + "materials_dir", str(Path(path).parent))
+        self._made(name, 0, tr("Loaded"))
+
     def pick_selection(self):
         name = M.selection_material(self.app.scene)
         if not name or not self.select(name):
@@ -745,23 +789,30 @@ class MaterialEditor(QDialog):
                                "(Paint tool) so it can be edited here.")
 
     # -- the settings ------------------------------------------------------------------
+    #: Sliders whose scale is not a straight line: the value goes as the slider's position to this power, so the
+    #: low end (where a glow of 1 is already a lot of light) has room to be set finely.
+    _CURVES = {"glow": 3.0}
+
     def _set_slider(self, key, value):
         s = self.sliders[key]
         lo, hi = float(s.property("lo")), float(s.property("hi"))
-        s.setValue(int(round((float(value) - lo) / (hi - lo) * 100)))
+        t = max(0.0, min(1.0, (float(value) - lo) / (hi - lo)))
+        t = t ** (1.0 / self._CURVES.get(key, 1.0))
+        s.setValue(int(round(t * 100)))
         self._label(key)
 
     def _get(self, key):
         s = self.sliders[key]
         lo, hi = float(s.property("lo")), float(s.property("hi"))
-        return round(lo + (hi - lo) * s.value() / 100.0, 3)
+        t = (s.value() / 100.0) ** self._CURVES.get(key, 1.0)
+        return round(lo + (hi - lo) * t, 3)
 
     def _label(self, key):
         v = self._get(key)
         self.values[key].setText(f"{v * 100:.0f}%" if key == "transparency"
                                  else f"{v * 100:.0f} cm" if key == "grass_height"
                                  else f"{v:.0f}/m²" if key == "grass_density"
-                                 else f"{v:.0f}" if key == "glow" else f"{v:.2f}")
+                                 else (f"{v:.2f}" if v < 10 else f"{v:.1f}") if key == "glow" else f"{v:.2f}")
 
     def _show(self, item, _prev=None):
         if self._loading:
@@ -769,7 +820,7 @@ class MaterialEditor(QDialog):
         self._flush()
         name = item.data(Qt.UserRole) if item is not None else None
         enabled = name is not None
-        for w in (self.paint_btn, self.dup_btn):
+        for w in (self.paint_btn, self.dup_btn, self.save_btn):
             w.setEnabled(name is not None)
         for w in (self.preset, self.kind, self.reset_btn, self.map_size, self.image_adj,
                   *self.sliders.values(), *self.maps.values()):

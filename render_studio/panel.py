@@ -812,6 +812,12 @@ class StudioPanel(QWidget):
         if self._live is not None and self._live.active:
             self._live.stop()
 
+    def update_preview(self):
+        """The Update button (Follow changes off): the live view takes the model and materials as they are now."""
+        if self._live is not None:
+            self._live.update_now()
+            self._set_status(tr("Updating the scene in Blender…"))
+
     def _follow_toggled(self, key: str, on: bool):
         QSettings().setValue(_SETTINGS + key, bool(on))
         if self._live is not None and self.window is not None:

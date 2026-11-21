@@ -452,5 +452,18 @@
 "Expert mode: opens the scene, as Render would make it, in a Blender with its own window to work in it. The file is saved first; nothing is rendered.": "Modo experto: abre la escena, tal como la haría el Render, en un Blender con su propia ventana para trabajar en ella. El archivo se guarda antes; no se renderiza nada.",
 "Expert mode: opens this scene, as Render would make it, in a Blender with its own window to work in it. Nothing is rendered; the file is saved first.": "Modo experto: abre esta escena, tal como la haría el Render, en un Blender con su propia ventana para trabajar en ella. No se renderiza nada; el archivo se guarda antes.",
 "Opened in Blender. The scene is saved in {path}": "Abierto en Blender. La escena está guardada en {path}",
-"Could not open Blender: {error}": "No se ha podido abrir Blender: {error}"
+"Could not open Blender: {error}": "No se ha podido abrir Blender: {error}",
+"Update": "Actualizar",
+"With Follow changes off: shows the model and materials as they are now (the preview keeps the ones it had until then).": "Con Seguir los cambios desactivado: muestra el modelo y los materiales tal como están ahora (la previsualización conserva los que tenía hasta entonces).",
+"Save…": "Guardar…",
+"Load…": "Cargar…",
+"Save this material (its colour or picture, settings and finish) to a file, with its pictures, to use it in another drawing.": "Guarda este material (color o imagen, ajustes y acabado) en un archivo, con sus imágenes, para usarlo en otro dibujo.",
+"Bring a saved material into this drawing (it is added; nothing is painted).": "Trae un material guardado a este dibujo (se añade; no se pinta nada).",
+"Save the material": "Guardar el material",
+"Saved {name} in {path}": "{name} guardado en {path}",
+"{name} is not in the document's materials yet, so it cannot be saved (paint a face with it first).": "{name} aún no está en los materiales del documento, así que no se puede guardar (pinta una cara con él antes).",
+"Load a material": "Cargar un material",
+"That file is not a Render Studio material.": "Ese archivo no es un material de Render Studio.",
+"Loaded": "Cargado",
+"How bright it shines by itself (Glowing type): screens, light panels. The scale is finer at the low end: 1 is already a lot of light in a dim room.": "Cuánto brilla por sí mismo (tipo Brillante): pantallas, paneles de luz. La escala es más fina al principio: 1 ya es mucha luz en una habitación oscura."
 }

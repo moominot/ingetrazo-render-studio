@@ -77,7 +77,7 @@ PRESETS = {
                {"type": "grass", "roughness": 0.9, "metallic": 0.0, "bump": 0.0, "grass_height": 0.30,
                "grass_density": 90.0}),
     "light": ({"en": "Light panel (glows)", "ca": "Panell de llum (brilla)", "es": "Panel de luz (brilla)"},
-              {"type": "glow", "roughness": 0.5, "metallic": 0.0, "bump": 0.0, "glow": 12.0}),
+              {"type": "glow", "roughness": 0.5, "metallic": 0.0, "bump": 0.0, "glow": 4.0}),
 }
 
 #: What an untouched material shows in the editor (IngeTrazo's finish rules).

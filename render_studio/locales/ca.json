@@ -452,5 +452,18 @@
 "Expert mode: opens the scene, as Render would make it, in a Blender with its own window to work in it. The file is saved first; nothing is rendered.": "Mode expert: obre l'escena, tal com la faria el Render, en un Blender amb la seva pròpia finestra per treballar-hi. El fitxer es desa abans; no es renderitza res.",
 "Expert mode: opens this scene, as Render would make it, in a Blender with its own window to work in it. Nothing is rendered; the file is saved first.": "Mode expert: obre aquesta escena, tal com la faria el Render, en un Blender amb la seva pròpia finestra per treballar-hi. No es renderitza res; el fitxer es desa abans.",
 "Opened in Blender. The scene is saved in {path}": "Obert al Blender. L'escena està desada a {path}",
-"Could not open Blender: {error}": "No s'ha pogut obrir el Blender: {error}"
+"Could not open Blender: {error}": "No s'ha pogut obrir el Blender: {error}",
+"Update": "Actualitza",
+"With Follow changes off: shows the model and materials as they are now (the preview keeps the ones it had until then).": "Amb Seguir els canvis desactivat: mostra el model i els materials tal com són ara (la previsualització conserva els que tenia fins aleshores).",
+"Save…": "Desa…",
+"Load…": "Carrega…",
+"Save this material (its colour or picture, settings and finish) to a file, with its pictures, to use it in another drawing.": "Desa aquest material (color o imatge, ajustos i acabat) en un fitxer, amb les seves imatges, per fer-lo servir en un altre dibuix.",
+"Bring a saved material into this drawing (it is added; nothing is painted).": "Porta un material desat a aquest dibuix (s'afegeix; no es pinta res).",
+"Save the material": "Desa el material",
+"Saved {name} in {path}": "{name} desat a {path}",
+"{name} is not in the document's materials yet, so it cannot be saved (paint a face with it first).": "{name} encara no és als materials del document, així que no es pot desar (pinta-hi una cara abans).",
+"Load a material": "Carrega un material",
+"That file is not a Render Studio material.": "Aquest fitxer no és un material del Render Studio.",
+"Loaded": "Carregat",
+"How bright it shines by itself (Glowing type): screens, light panels. The scale is finer at the low end: 1 is already a lot of light in a dim room.": "Com de fort brilla per ell mateix (tipus Brillant): pantalles, panells de llum. L'escala és més fina al començament: 1 ja és molta llum en una habitació fosca."
 }
