@@ -528,6 +528,20 @@ window (with search) at the right section: how Render Studio works, every contro
 the 360° background, the image adjustments, the material editor with its maps and starting
 points, and a few tips.
 
+
+## Companion extensions
+
+Render Studio is one of four IngeTrazo extensions by the same author. They install independently (none imports
+another, and Render Studio works on its own), and they share data stored in the drawing, so together they cover a
+`.skp` file from import to picture. The other three live in
+[ingetrazo-skp-dc-import](https://github.com/moominot/ingetrazo-skp-dc-import):
+
+| Extension | What it does | How it meets Render Studio |
+|---|---|---|
+| **SketchUp files** (`skp_dc_import`) | Imports a `.skp` keeping its components and dynamic data; exports one back. | A light in the file (point, spot, linear, rectangular, disk) comes in as a **Render Studio light** on its component, and the component's symbol is left out of the render (`hide_in_render`, Render Studio 0.17.0 or later). |
+| **Dynamic components** (`dc_tools`) | Component Options and Attributes, and the formula engine. | None directly: a component redrawn by its options is simply geometry the render sees. |
+| **Components manager** (`asset_manager`) | The drawing's components, your catalogs and free online assets (Poly Haven, ambientCG). | Its **HDRIs** are 360° backgrounds, its **materials** arrive with a `.pbr.json` manifest naming every map (see *Full texture sets*), its **proxies** are rendered as their full model (see *Proxies*), and a **stand-in** is left out of the render. |
+
 ## Releases
 
 The packaged extension of each version is in `releases/` and tagged (`v0.9.1` → `releases/render_studio-0.9.1.zip`),
