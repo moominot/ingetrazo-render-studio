@@ -124,10 +124,8 @@ class ImageWindow(QWidget):
         self.update_btn = QPushButton("Update preview")
         self.update_btn.setToolTip("With Follow changes off: shows the model and materials as they are now "
                                    "(the preview keeps the ones it had until then).")
-        self.update_btn.setEnabled(not self.follow_changes_box.isChecked())
         self.update_btn.clicked.connect(lambda: self.panel and self.panel.update_preview())
-        self.follow_changes_box.toggled.connect(lambda on: self.update_btn.setEnabled(not on))
-        pl.addWidget(self.update_btn)
+        self.follow_changes_box.toggled.connect(lambda on: self.update_btn.setVisible(not on))
         pl.addStretch(1)
         self.summary = QLabel("")
         self.summary.setStyleSheet("color: gray")
@@ -137,34 +135,35 @@ class ImageWindow(QWidget):
         self.scene_btn.setToolTip("Saves the view this preview shows (the camera it keeps while Follow the camera is off, "
                                   "else the 3D view's) as a scene of the drawing, to come back to it or render it later.")
         self.scene_btn.clicked.connect(lambda: self.panel and self.panel.scene_from_preview())
-        pl.addWidget(self.scene_btn)
         self.expert_btn = QPushButton("Open in Blender…")
         self.expert_btn.setToolTip("Expert mode: opens this scene, as Render would make it, in a Blender with its own "
                                    "window to work in it. Nothing is rendered; the file is saved first.")
         self.expert_btn.clicked.connect(lambda: self.panel and self.panel.open_in_blender())
         pl.addWidget(self.expert_btn)
-        self.render_save_btn = QPushButton("Render and save…")
+        from PySide6.QtGui import QAction
+        from .widgets import split_button
+        self.render_save_btn = QAction("Render and save…", self)
         self.render_save_btn.setToolTip("Asks where to save, makes the final picture and saves it straight away, "
                                         "without retouching.")
-        self.render_save_btn.clicked.connect(lambda: self.panel and self.panel.render_and_save())
-        self.render_btn = QPushButton("Render")
-        self.render_btn.setDefault(True)
-        self.render_btn.setToolTip("Makes the final picture with the panel's engine, quality and width, then "
-                                   "shows the retouch tools and Save image….")
-        self.render_btn.clicked.connect(lambda: self.panel and self.panel.render())
+        self.render_save_btn.triggered.connect(lambda: self.panel and self.panel.render_and_save())
+        self.render_btn = split_button(
+            "Render", lambda: self.panel and self.panel.render_main(),
+            "Makes the final picture with the panel's engine, quality and width, then shows the retouch tools and "
+            "Save image…. The arrow: Render and save….", [self.render_save_btn])
         main = QHBoxLayout()
         self.more_btn = QToolButton()
         self.more_btn.setText("More")
         self.more_btn.setCheckable(True)
         self.more_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.more_btn.setStyleSheet("QToolButton { border: none; }")
-        self.more_btn.setToolTip("Live view options (follow the camera, follow changes), a new scene from this view, "
-                                 "and opening the scene in Blender")
+        self.more_btn.setToolTip("Live view options (follow the camera, follow changes) and opening the scene in Blender")
         self.more_btn.toggled.connect(self._more_toggled)
         main.addWidget(self.more_btn)
         main.addWidget(self.summary, 1)
-        main.addWidget(self.render_save_btn)
+        main.addWidget(self.scene_btn)               # always in view
+        main.addWidget(self.update_btn)              # only when Follow changes is off
         main.addWidget(self.render_btn)
+        self.update_btn.setVisible(not self.follow_changes_box.isChecked())
         pv.addLayout(main)
         pv.addWidget(self.more_row)
         self.more_btn.setChecked(str(st.value(_SETTINGS + "preview_more", "false")).lower() == "true")

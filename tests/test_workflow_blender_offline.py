@@ -88,7 +88,7 @@ ok(win.original is None, "no final picture yet, so nothing to retouch")
 t0 = time.time()
 win.render_btn.click(); qa.processEvents()
 ok(which() == "rendering" and win.bar.isVisibleTo(win) and win.cancel_btn.isVisibleTo(win), "Render: the window shows the progress and Cancel")
-ok(not panel._live.active, "…and the live Blender is stopped")
+ok(not panel._live.active, "…and the live view is not following the camera meanwhile (its Blender may wait, with its scene)")
 ok(wait(lambda: len(finished) == 1), "the render finishes")
 print(f"   Render took {time.time() - t0:.1f} s")
 ok(finished and finished[0] is not None and Path(finished[0]).is_file(), "…with a picture")
@@ -114,7 +114,7 @@ def ask(parent, caption, start, filt):
 asks = [str(Path(tmp) / "saved.png")]
 P.QFileDialog.getSaveFileName = staticmethod(ask)
 n = len(finished); t0 = time.time()
-win.render_save_btn.click(); qa.processEvents()
+win.render_save_btn.trigger(); qa.processEvents()
 ok(len(asked) == 1 and asked[0][0] == "Render and save" and "PNG" in asked[0][2], "Render and save…: it asks where to save first")
 ok(which() == "rendering", "…then renders")
 ok(wait(lambda: len(finished) == n + 1), "…and finishes")
@@ -129,13 +129,15 @@ ok(win.status.text() == panel.status.text() or "Saved" in win.status.text(), "�
 ok(wait(lambda: panel._live.active), "…with the live view resumed")
 ok(win.original is not None and win.mode == "preview", "(the earlier final picture is not shown over the preview)")
 
+panel.output_tab.format.setCurrentIndex(panel.output_tab.format.findData("jpeg"))       # the file type is the Output tab's
 asks.append(str(Path(tmp) / "saved.jpg")); n = len(finished)
-win.render_save_btn.click(); qa.processEvents()
+win.render_save_btn.trigger(); qa.processEvents()
 ok(wait(lambda: len(finished) == n + 1), "a JPEG: renders")
 jpg = QImage(str(Path(tmp) / "saved.jpg"))
 ok(not jpg.isNull() and jpg.width() == 320 and (Path(tmp) / "saved.jpg").read_bytes()[:3] == b"\xff\xd8\xff", "…and saves a real JPEG")
+panel.output_tab.format.setCurrentIndex(panel.output_tab.format.findData("png"))
 asks.append(""); n = len(finished)
-win.render_save_btn.click(); qa.processEvents()
+win.render_save_btn.trigger(); qa.processEvents()
 ok(which() == "preview" and panel.proc is None and len(finished) == n, "cancelling the file dialog renders nothing")
 
 # ---- Cancel -------------------------------------------------------------------------------------------------

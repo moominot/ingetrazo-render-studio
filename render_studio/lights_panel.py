@@ -26,7 +26,7 @@ import os
 
 from PySide6.QtCore import QSettings, Qt, QTimer
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QColorDialog, QComboBox,
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QColorDialog, QComboBox, QDialog,
                                QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGridLayout, QHBoxLayout,
                                QLabel, QLineEdit, QPushButton, QSizePolicy, QSlider, QSpinBox, QToolButton,
                                QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
@@ -79,6 +79,123 @@ def kelvin_name(k: int) -> str:
     return ""
 
 
+class LightPreview(QWidget):
+    """A small drawing of the chosen light: its kind, its colour, how bright and how wide it shines,
+    over a wall and a floor. Not a render: just enough to see what the settings do."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(130)
+        self.setToolTip(tr("A sketch of the light: its kind, colour, brightness and beam. The render shows the real thing."))
+        self._lt = None
+
+    def set_light(self, lt) -> None:
+        self._lt = dict(lt) if lt else None
+        self.update()
+
+    def paintEvent(self, ev):  # noqa: N802
+        from PySide6.QtCore import QPointF, QRectF
+        from PySide6.QtGui import QBrush, QColor, QLinearGradient, QPainter, QPen, QPolygonF, QRadialGradient
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        w, h = self.width(), self.height()
+        p.fillRect(0, 0, w, h, QColor(34, 36, 40))
+        floor = int(h * 0.78)
+        p.fillRect(0, floor, w, h - floor, QColor(52, 54, 58))
+        lt = self._lt
+        if not lt:
+            p.end()
+            return
+        r, g, b = lt.get("color") or (1.0, 1.0, 1.0)
+        base = QColor.fromRgbF(min(1, r), min(1, g), min(1, b))
+        try:
+            watts = L.blender_watts(lt)
+        except Exception:  # noqa: BLE001
+            watts = 100.0
+        # brightness on a soft log scale: a candle to a floodlight
+        import math
+        level = max(0.15, min(1.0, 0.25 + 0.2 * math.log10(max(watts, 1e-3) + 1.0))) if lt["type"] != "sun" \
+            else max(0.25, min(1.0, 0.3 + 0.25 * math.log10(max(lt["power"], 1e-3) + 1.0)))
+        kind = lt["type"]
+        cx = w / 2
+        if kind == "sun":
+            top = QPointF(cx, 14)
+            beam = QPolygonF([QPointF(cx - 46, 14), QPointF(cx + 46, 14), QPointF(cx + 86, floor), QPointF(cx - 86, floor)])
+            grad = QLinearGradient(0, 14, 0, floor)
+            c1, c2 = QColor(base), QColor(base)
+            c1.setAlphaF(0.55 * level)
+            c2.setAlphaF(0.12 * level)
+            grad.setColorAt(0, c1)
+            grad.setColorAt(1, c2)
+            p.setPen(Qt.NoPen)
+            p.setBrush(QBrush(grad))
+            p.drawPolygon(beam)
+            p.setBrush(base)
+            p.drawEllipse(top, 9, 9)
+        elif kind == "spot":
+            half = max(6.0, min(80.0, lt.get("spot_angle", 45.0) / 2.0))
+            spread = (floor - 26) * math.tan(math.radians(half))
+            spread = min(spread, w * 0.46)
+            grad = QLinearGradient(0, 26, 0, floor)
+            c1, c2 = QColor(base), QColor(base)
+            c1.setAlphaF(0.6 * level)
+            c2.setAlphaF(0.1 * level)
+            grad.setColorAt(0, c1)
+            grad.setColorAt(1, c2)
+            p.setPen(Qt.NoPen)
+            p.setBrush(QBrush(grad))
+            p.drawPolygon(QPolygonF([QPointF(cx, 26), QPointF(cx - spread, floor), QPointF(cx + spread, floor)]))
+            p.setBrush(QColor(200, 200, 205))
+            p.drawRoundedRect(QRectF(cx - 11, 14, 22, 12), 3, 3)
+        elif kind == "area":
+            wide = max(24.0, min(w * 0.7, 30 + 60 * math.sqrt(max(lt.get("size", 0.5), 0.05))))
+            grad = QLinearGradient(0, 24, 0, floor)
+            c1, c2 = QColor(base), QColor(base)
+            c1.setAlphaF(0.5 * level)
+            c2.setAlphaF(0.08 * level)
+            grad.setColorAt(0, c1)
+            grad.setColorAt(1, c2)
+            p.setPen(Qt.NoPen)
+            p.setBrush(QBrush(grad))
+            p.drawPolygon(QPolygonF([QPointF(cx - wide / 2, 24), QPointF(cx + wide / 2, 24),
+                                     QPointF(cx + wide / 2 + 26, floor), QPointF(cx - wide / 2 - 26, floor)]))
+            p.setBrush(base)
+            if lt.get("shape") in ("disc", "ellipse"):
+                p.drawEllipse(QRectF(cx - wide / 2, 16, wide, 9))
+            else:
+                p.drawRect(QRectF(cx - wide / 2, 16, wide, 8))
+        else:                                                  # point
+            y = floor * 0.42
+            rad = floor * 0.7
+            glow = QRadialGradient(QPointF(cx, y), rad)
+            c1, c2 = QColor(base), QColor(base)
+            c1.setAlphaF(0.65 * level)
+            c2.setAlphaF(0.0)
+            glow.setColorAt(0, c1)
+            glow.setColorAt(1, c2)
+            p.setPen(Qt.NoPen)
+            p.setBrush(QBrush(glow))
+            p.drawEllipse(QPointF(cx, y), rad, rad)
+            p.setBrush(base)
+            p.drawEllipse(QPointF(cx, y), 7, 7)
+        p.setPen(QPen(QColor(150, 150, 155)))
+        label = {"point": "Point light", "spot": "Spot", "area": "Area light", "sun": "Sun"}.get(kind, "")
+        p.drawText(8, h - 8, tr(label))
+        p.end()
+
+
+class LightEditor(QDialog):
+    """The lights window, like the materials one: the list on the left, the chosen light on the right."""
+
+    def __init__(self, tab, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Render Studio — lights")
+        self.resize(900, 620)
+        lay = QVBoxLayout(self)
+        lay.addWidget(tab, 1)
+        self.tab = tab
+
+
 class LightsTab(QWidget):
     """The tab. ``app`` is IngeTrazo's ExtensionApp."""
 
@@ -94,7 +211,13 @@ class LightsTab(QWidget):
         self._timer.setInterval(350)
         self._timer.timeout.connect(self._commit)
         st = QSettings()
-        lay = QVBoxLayout(self)
+        root = QHBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        leftw = QWidget()
+        leftw.setMinimumWidth(200)
+        leftw.setMaximumWidth(290)
+        root.addWidget(leftw, 2)
+        lay = QVBoxLayout(leftw)
         lay.setContentsMargins(0, 0, 0, 0)
 
         top = QHBoxLayout()
@@ -114,10 +237,9 @@ class LightsTab(QWidget):
         self.tree.setHeaderHidden(True)
         self.tree.setSelectionMode(QAbstractItemView.SingleSelection)
         self.tree.setMinimumHeight(110)
-        self.tree.setMaximumHeight(200)
         self.tree.currentItemChanged.connect(self._chosen)
         self.tree.itemChanged.connect(self._ticked)
-        lay.addWidget(self.tree)
+        lay.addWidget(self.tree, 1)
 
         add = QGridLayout()
         for i, kind in enumerate(L.TYPES):
@@ -147,24 +269,76 @@ class LightsTab(QWidget):
                                   "it moves, turns and is copied with it. Off: it stays where it is put.")
         self.on_object.setChecked(str(st.value(_SETTINGS + "on_object", "false")).lower() in ("true", "1"))
         self.on_object.toggled.connect(lambda on: QSettings().setValue(_SETTINGS + "on_object", bool(on)))
-        lay.addWidget(self.on_object)
+        # Duplicate and Delete go here, between the list and what is folded (see below); «More» holds the rare ones.
+        self._left = lay
+        from .widgets import Collapsible
+        self.more = Collapsible(tr("More"), "lights_more")
+        self.more.form.setContentsMargins(0, 0, 0, 0)
+        self.more.form.addRow(self.on_object)
+        lay.addWidget(self.more)
+        self.find_blender = None            # set by the panel: the Blender to open (or None)
+        self.edit_scene = None              # set by the panel: opens the whole scene in Blender, to edit the lights in it
+        self.blender_btn = QPushButton("Edit in Blender…")
+        self.blender_btn.setToolTip("For experts: open the lights in Blender, over a floor and a cube, and work "
+                                    "there; each time you save (Ctrl+S) they come back here. A light that gets "
+                                    "something Render Studio's lights do not have (nodes, other settings) comes back "
+                                    "as a Blender light, kept whole and locked in the list. Only Render Studio's own "
+                                    "lights (those not on objects, not the Render tab's).")
+        self.blender_btn.clicked.connect(self.edit_in_blender)
+        self.more.form.addRow(self.blender_btn)
+        self.blender_note = QLabel("")
+        self.blender_note.setWordWrap(True)
+        self.blender_note.setStyleSheet("color: gray; font-size: 11px")
+        self.blender_note.setVisible(False)
+        lay.addWidget(self.blender_note)
+        self._session = None
 
         # -- the chosen light ------------------------------------------------------------
-        # The chosen light (a plain frame: the Settings tab's boxes are its groups).
+        # The chosen light: on the right, like the materials window. What most lights need is in
+        # view; the rest (bulb size, soft edge, exact place and aim, IES, objects) is under «Advanced».
+        rightw = QWidget()
+        lay = QVBoxLayout(rightw)
+        lay.setContentsMargins(8, 0, 22, 0)                 # clear of the scroll bar
         self.editor_title = QLabel("Light")
         f = self.editor_title.font()
         f.setBold(True)
         self.editor_title.setFont(f)
         lay.addWidget(self.editor_title)
+        self.preview = LightPreview()
+        lay.addWidget(self.preview)
         self.editor = QFrame()
         self.editor.setFrameShape(QFrame.StyledPanel)
         ef = QFormLayout(self.editor)
         ef.setContentsMargins(6, 6, 6, 6)
-        ef.setRowWrapPolicy(QFormLayout.WrapLongRows)       # a narrow tray: labels above their fields
+        ef.setRowWrapPolicy(QFormLayout.WrapLongRows)       # a narrow window: labels above their fields
+        from .widgets import Collapsible
+        self.adv = Collapsible(tr("Advanced"), "lights_adv")
+        af = self.adv.form
+        af.setContentsMargins(0, 0, 0, 0)
+        af.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        self.forms = (ef, af)
         self.where = QLabel("")
         self.where.setWordWrap(True)
         self.where.setStyleSheet("color: gray; font-size: 11px")
         ef.addRow(self.where)
+        # a proxy (a light edited in Blender): kept whole; here only its place, its name and its switch
+        self.lock_box = QWidget()
+        lbx = QVBoxLayout(self.lock_box)
+        lbx.setContentsMargins(0, 0, 0, 0)
+        self.lock_label = QLabel(tr("A light edited in Blender: the render uses it exactly as you left it, so its "
+                                    "settings are locked. Only its name and its place can change here."))
+        self.lock_label.setWordWrap(True)
+        self.lock_label.setStyleSheet("color: #8a5a00")
+        self.unlock_btn = QPushButton("Unlock (back to a Render Studio light)")
+        self.unlock_btn.setToolTip("Drop the Blender light and go back to the settings of this window (the kind, power, "
+                                   "colour… it had when it came back). What only Blender had (its nodes) is lost; Undo "
+                                   "brings it back.")
+        self.unlock_btn.clicked.connect(self.unlock)
+        lbx.addWidget(self.lock_label)
+        lbx.addWidget(self.unlock_btn)
+        self.lock_box.setVisible(False)
+        ef.addRow(self.lock_box)
+        self._proxy = False
         self.name = QLineEdit()
         self.name.setPlaceholderText("(no name)")
         self.name.editingFinished.connect(self._changed)
@@ -240,13 +414,13 @@ class LightsTab(QWidget):
 
         self.radius = _spin(0.0, 10.0, 3, 0.01, " m", "The bulb's size: bigger gives softer shadows.")
         self.radius.valueChanged.connect(self._changed)
-        ef.addRow("Bulb size", self.radius)
+        af.addRow("Bulb size", self.radius)
         self.spot_angle = _spin(1.0, 180.0, 1, 5.0, "°", "How wide the cone opens.")
         self.spot_angle.valueChanged.connect(self._changed)
         ef.addRow("Beam angle", self.spot_angle)
         self.spot_blend = _spin(0.0, 1.0, 2, 0.05, "", "0 = a hard edge, 1 = it fades from the centre.")
         self.spot_blend.valueChanged.connect(self._changed)
-        ef.addRow("Soft edge", self.spot_blend)
+        af.addRow("Soft edge", self.spot_blend)
         self.shape = QComboBox()
         for s in L.SHAPES:
             self.shape.addItem(tr(s.capitalize()), s)
@@ -261,11 +435,11 @@ class LightsTab(QWidget):
         self.spread = _spin(1.0, 180.0, 1, 5.0, "°", "How widely it spreads its light: 180° all over, less "
                             "like a grid louvre (Cycles only).")
         self.spread.valueChanged.connect(self._changed)
-        ef.addRow("Spread", self.spread)
+        af.addRow("Spread", self.spread)
         self.sun_angle = _spin(0.0, 90.0, 2, 0.1, "°", "The sun's disc: bigger gives softer shadows "
                                "(the real sun: 0.53°).")
         self.sun_angle.valueChanged.connect(self._changed)
-        ef.addRow("Disc", self.sun_angle)
+        af.addRow("Disc", self.sun_angle)
 
         arow = QHBoxLayout()
         arow.setContentsMargins(0, 0, 0, 0)
@@ -279,10 +453,10 @@ class LightsTab(QWidget):
         arow.addWidget(self.tilt)
         self.aim_row = QWidget()
         self.aim_row.setLayout(arow)
-        ef.addRow("Aim: heading, tilt", self.aim_row)
+        af.addRow("Aim: heading, tilt", self.aim_row)
         self.spin = _spin(-360.0, 360.0, 1, 15.0, "°", "Turns an area light about the way it faces.")
         self.spin.valueChanged.connect(self._changed)
-        ef.addRow("Turn", self.spin)
+        af.addRow("Turn", self.spin)
 
         prow2 = QHBoxLayout()
         prow2.setContentsMargins(0, 0, 0, 0)
@@ -294,7 +468,7 @@ class LightsTab(QWidget):
             prow2.addWidget(w)
         self.pos_row = QWidget()
         self.pos_row.setLayout(prow2)
-        ef.addRow("Place X Y Z (m)", self.pos_row)
+        af.addRow("Place X Y Z (m)", self.pos_row)
         mrow = QHBoxLayout()
         mrow.setContentsMargins(0, 0, 0, 0)
         self.move_btn = QPushButton("Move…")
@@ -330,17 +504,17 @@ class LightsTab(QWidget):
         irow.addWidget(ies_clear)
         self.ies_row = QWidget()
         self.ies_row.setLayout(irow)
-        ef.addRow("IES profile", self.ies_row)
+        af.addRow("IES profile", self.ies_row)
         self.ies_note = QLabel("Cycles only (EEVEE lights it evenly). The power set here stays the total; "
                                "the profile gives its shape.")
         self.ies_note.setWordWrap(True)
         self.ies_note.setStyleSheet("color: gray; font-size: 11px")
-        ef.addRow("", self.ies_note)
+        af.addRow("", self.ies_note)
         self.all_copies = QCheckBox("Every copy of the component")
         self.all_copies.setToolTip("A change reaches this light on every copy of the component (each keeps its "
                                    "own place unless you move it inside the object).")
         self.all_copies.setChecked(True)
-        ef.addRow("", self.all_copies)
+        af.addRow("", self.all_copies)
 
         brow = QGridLayout()
         brow.setContentsMargins(0, 0, 0, 0)
@@ -360,19 +534,53 @@ class LightsTab(QWidget):
         self.del_btn.clicked.connect(self.delete)
         brow.addWidget(self.dup_btn, 0, 0)
         brow.addWidget(self.del_btn, 0, 1)
-        brow.addWidget(self.attach_btn, 1, 0, 1, 2)
-        brow.addWidget(self.detach_btn, 2, 0, 1, 2)
-        brow.addWidget(self.convert_btn, 3, 0, 1, 2)
         self.buttons = QWidget()
         self.buttons.setLayout(brow)
-        ef.addRow(self.buttons)
+        ef.addRow(self.adv)
+        self._left.insertWidget(self._left.indexOf(self.more), self.buttons)       # on the left, like the materials
+        obrow = QVBoxLayout()
+        obrow.setContentsMargins(0, 0, 0, 0)
+        for b in (self.attach_btn, self.detach_btn, self.convert_btn):
+            obrow.addWidget(b)
+        self.object_buttons = QWidget()
+        self.object_buttons.setLayout(obrow)
+        af.addRow(self.object_buttons)
         lay.addWidget(self.editor)
         lay.addStretch(1)
+        from PySide6.QtWidgets import QScrollArea
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setWidget(rightw)
+        root.addWidget(scroll, 3)
         self.refresh()
 
     def _help(self):
         from . import ui_help
         ui_help.show(self, "lights")
+
+    def edit_in_blender(self):
+        if callable(getattr(self, "edit_scene", None)):        # the panel opens the render's scene, the model in it
+            return self.edit_scene()
+        from .blender_session import BlenderSession
+        found = self.find_blender() if callable(self.find_blender) else None
+        if found is None:
+            self._say(tr("Blender was not found: choose it in the Render Studio panel."))
+            return None
+        if self._session is not None:
+            self._session.stop()
+        self._session = BlenderSession(self.app, "lights", found, self)
+        self._session.changed.connect(self._say)
+        self._session.failed.connect(self._say)
+        if self._session.start():
+            self._say(tr("Opened in Blender. Edit the lights there and save (Ctrl+S): they come back here."))
+        return self._session
+
+    def _say(self, text):
+        self.blender_note.setText(text)
+        self.blender_note.setVisible(bool(text))
+        self.refresh()
 
     # ---- the list ------------------------------------------------------------------------
     def show_in_view(self) -> bool:
@@ -486,6 +694,7 @@ class LightsTab(QWidget):
         if e is None:
             self.editor_title.setText("Light")
             self.where.setText("Choose a light in the list, or click one in the 3D view.")
+            self.preview.set_light(None)
             return
         lt = e["world"]
         self._filling = True
@@ -534,16 +743,39 @@ class LightsTab(QWidget):
                       "can change (place, aim, power, colour, beam); make it a Render Studio light for the rest."),
         }[src])
         self._layout_for(lt, src, e)
+        self._set_proxy(bool(lt.get("blender")))
+
+    def _set_proxy(self, on: bool) -> None:
+        """A light edited in Blender: every setting is locked but the name and the place."""
+        self._proxy = bool(on)
+        self.lock_box.setVisible(self._proxy)
+        locked = (self.kind, self.power, self.unit, self.kelvin, self.kelvin_spin, self.colour_btn, self.radius,
+                  self.spot_angle, self.spot_blend, self.shape, self.size, self.size_y, self.spread, self.sun_angle,
+                  self.heading, self.tilt, self.spin, self.shadow, self.ies_row, self.aim_btn, self.all_copies,
+                  self.convert_btn)
+        for w in locked:
+            w.setEnabled(not self._proxy)
+
+    def unlock(self) -> None:
+        """Back to a light of Render Studio's: the Blender light is dropped, its numbers stay."""
+        e = ops.entry(self.app.scene, self._key)
+        if e is None or not e["world"].get("blender") or e["source"] != "free":
+            return
+        lt = dict(e["world"])
+        lt.pop("blender", None)
+        self._flush()
+        ops.update(self.app, self._key, L.clean_light(lt))
+        self.refresh(select=self._key)
 
     def _layout_for(self, lt, src, e) -> None:
         kind = lt["type"]
-        form = self.editor.layout()
 
         def show(widget, on):
             widget.setVisible(on)
-            label = form.labelForField(widget)
-            if label is not None:
-                label.setVisible(on)
+            for form in self.forms:
+                label = form.labelForField(widget)
+                if label is not None:
+                    label.setVisible(on)
 
         tab = src == "tab"
         show(self.kind, not tab)
@@ -579,6 +811,7 @@ class LightsTab(QWidget):
         self.detach_btn.setVisible(on_obj)
         self.convert_btn.setVisible(tab)
         self.dup_btn.setVisible(not tab)
+        self.preview.set_light(lt)
 
     def _kelvin_named(self, k):
         if self.custom is not None:

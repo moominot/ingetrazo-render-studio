@@ -41,7 +41,8 @@ def _tint(light) -> QColor:
 
 def _label(light, n: int) -> str:
     kinds = {"point": "Point light", "spot": "Spot", "area": "Area light", "sun": "Sun"}
-    return f"{light['name'] or tr(kinds[light['type']]) + ' ' + str(n)} · {L.power_label(light)}"
+    tag = " · " + tr("Blender") if light.get("blender") else ""
+    return f"{light['name'] or tr(kinds[light['type']]) + ' ' + str(n)} · {L.power_label(light)}{tag}"
 
 
 def draw(tab, viewport, painter) -> None:

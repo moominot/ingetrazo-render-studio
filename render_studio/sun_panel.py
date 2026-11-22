@@ -12,7 +12,7 @@ from .i18n import tr, translate_on_show  # noqa: F401
 
 import math
 
-from PySide6.QtCore import QDate, Qt, QTime, QTimer
+from PySide6.QtCore import QDate, QLocale, Qt, QTime, QTimer
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDateEdit, QDoubleSpinBox, QFormLayout, QGridLayout,
                                QHBoxLayout, QLabel, QPushButton, QSizePolicy, QSlider, QTimeEdit, QToolButton,
                                QVBoxLayout, QWidget)
@@ -44,11 +44,190 @@ def _note() -> QLabel:
     return lab
 
 
+def season_of(doy: int, lat: float) -> str:
+    """The season of a day of the year (1-365) at latitude ``lat``: from each equinox or solstice to the next, as
+    the place lives them (summer is June in the north, December in the south)."""
+    starts = sorted((QDate(2026, m, d).dayOfYear(), key) for key, (m, d) in S.seasons(lat).items())
+    name = starts[-1][1]                                   # before the first start of the year: the last season
+    for start, key in starts:
+        if doy >= start:
+            name = key
+    return name
+
+
+def hour_marks(info) -> list:
+    """The photographers' hours of a day as (minute, label): night, dawn, the golden hour, midday, the golden hour, dusk, night
+    (from the sunrise, sunset and solar noon in ``info``, see sun_site.info). Nothing but the night when the sun does not rise."""
+    day = info.get("daylight")
+    marks = [(0, tr("Night"))]
+    if day:
+        rise, sset = day
+        noon = info["noon"]
+        marks += [(max(1, rise - 30), tr("Dawn")), (rise + 45, tr("Golden hour")), (noon, tr("Midday")),
+                  (sset - 45, tr("Golden hour")), (min(1438, sset + 30), tr("Dusk")), (1439, tr("Night"))]
+    return marks
+
+
+def part_of_day(minute: int, day, noon: int) -> str:
+    """A word for the hour: «night» when the sun has not risen or has set, else dawn, morning, midday, afternoon, dusk
+    (from the sunrise, sunset and solar noon of that day)."""
+    if not day:
+        return "Night"
+    rise, sset = day
+    if minute < rise - 30 or minute > sset + 30:
+        return "Night"
+    if minute < rise + 30:
+        return "Dawn"
+    if minute < noon - 90:
+        return "Morning"
+    if minute <= noon + 90:
+        return "Midday"
+    if minute < sset - 60:
+        return "Afternoon"
+    return "Dusk"
+
+
+class MarkedSlider(QSlider):
+    """A horizontal slider with named marks under its groove (the seasons, the photographers' hours): a mark's label is drawn
+    when there is room, and the handle clicks onto a mark when released within ``snap`` of it."""
+
+    def __init__(self, snap: int = 0, parent=None):
+        super().__init__(Qt.Horizontal, parent)
+        self.marks: list[tuple[int, str]] = []
+        self.snap = snap
+        self.setMinimumHeight(34)
+        self.sliderReleased.connect(self._snap_to_mark)
+
+    def set_marks(self, marks) -> None:
+        self.marks = [(int(v), str(t)) for v, t in marks]
+        self.update()
+
+    def _snap_to_mark(self) -> None:
+        if not self.snap:
+            return
+        near = min(self.marks, key=lambda m: abs(m[0] - self.value()), default=None)
+        if near is not None and abs(near[0] - self.value()) <= self.snap:
+            self.setValue(near[0])
+
+    def _x(self, v: int) -> float:
+        span = max(1, self.maximum() - self.minimum())
+        return 8 + (self.width() - 16) * (v - self.minimum()) / span
+
+    def paintEvent(self, ev):
+        super().paintEvent(ev)
+        if not self.marks:
+            return
+        from PySide6.QtGui import QPainter
+        p = QPainter(self)
+        col = self.palette().windowText().color()
+        col.setAlpha(150)
+        p.setPen(col)
+        f = p.font()
+        f.setPixelSize(9)
+        p.setFont(f)
+        fm = p.fontMetrics()
+        right = -1e9
+        for v, text in sorted(self.marks):
+            x = self._x(v)
+            p.drawLine(int(x), self.height() - 17, int(x), self.height() - 13)
+            w = fm.horizontalAdvance(text)
+            left = min(max(0, x - w / 2), self.width() - w)
+            if left > right + 4:                       # a label that would overlap the last one is left out
+                p.drawText(int(left), self.height() - 3, text)
+                right = left + w
+        p.end()
+
+
+class SunQuick(QWidget):
+    """The quick way to the sun's date and hour, always in view: a slider through the year that says the season and a
+    slider through the day that says the part of the day. They drive the date and the hour of the sun tab (which has the
+    calendar, the exact time, the zone and the place, folded below)."""
+
+    def __init__(self, tab, parent=None):
+        super().__init__(parent)
+        self.tab = tab
+        self._syncing = False
+        self.setVisible(False)                # a holder: the two rows below are put in the sky group's own form (aligned with it)
+        self.date_slider = MarkedSlider(snap=3)
+        self.date_slider.setRange(0, 364)
+        self.date_slider.setPageStep(30)
+        self.date_slider.setToolTip("The date, through the year: the label says the season (as the site lives it: summer "
+                                    "is June in the north, December in the south).")
+        self.date_label = QLabel("")
+        self.date_label.setStyleSheet("color: gray; font-size: 11px")
+        self.date_label.setWordWrap(True)
+        self.hour_slider = MarkedSlider(snap=12)
+        self.hour_slider.setRange(0, 1439)
+        self.hour_slider.setSingleStep(5)
+        self.hour_slider.setPageStep(60)
+        self.hour_slider.setToolTip("The hour, through the day: the label says the part of the day (night when the sun has "
+                                    "set at that place, date and hour).")
+        self.hour_label = QLabel("")
+        self.hour_label.setStyleSheet("color: gray; font-size: 11px")
+        self.hour_label.setWordWrap(True)
+        for s in (self.date_slider, self.hour_slider):
+            s.setMinimumWidth(40)
+            s.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self.date_box, self.hour_box = QWidget(), QWidget()
+        box1 = QVBoxLayout(self.date_box)
+        box1.setContentsMargins(0, 0, 0, 0)
+        box1.setSpacing(0)
+        box1.addWidget(self.date_slider)
+        box1.addWidget(self.date_label)
+        box2 = QVBoxLayout(self.hour_box)
+        box2.setContentsMargins(0, 0, 0, 0)
+        box2.setSpacing(0)
+        box2.addWidget(self.hour_slider)
+        box2.addWidget(self.hour_label)
+        self.date_slider.valueChanged.connect(self._date_moved)
+        self.hour_slider.valueChanged.connect(self._hour_moved)
+        self.sync()
+
+    def _date_moved(self, v: int) -> None:
+        if self._syncing:
+            return
+        d = QDate(2026, 1, 1).addDays(int(v))
+        self.tab.date.setDate(d)                          # the tab's own edit: it writes the document
+        self.sync()
+
+    def _hour_moved(self, v: int) -> None:
+        if self._syncing:
+            return
+        self.tab.set_minutes(int(v))
+        self.sync()
+
+    def sync(self) -> None:
+        """Follow the sun tab (its pending edits included)."""
+        try:
+            s = self.tab._preview_site()
+        except Exception:  # noqa: BLE001 - the site not read yet
+            return
+        d = QDate(2026, s["month"], s["day"])
+        minute = s["hour"] * 60 + s["minute"]
+        names_ = {"spring": "Spring", "summer": "Summer", "autumn": "Autumn", "winter": "Winter"}
+        self._syncing = True
+        try:
+            self.date_slider.setValue(d.dayOfYear() - 1)
+            self.hour_slider.setValue(minute)
+        finally:
+            self._syncing = False
+        self.date_slider.set_marks(
+            (QDate(2026, m, dd).dayOfYear() - 1, tr(names_[k]))
+            for k, (m, dd) in S.seasons(s["lat"]).items())
+        season = season_of(d.dayOfYear(), s["lat"])
+        names = {"spring": "Spring", "summer": "Summer", "autumn": "Autumn", "winter": "Winter"}
+        self.date_label.setText(f"{QLocale().toString(d, 'd MMMM')} · {tr(names[season])}")
+        i = S.info(s)
+        self.hour_slider.set_marks(hour_marks(i))
+        self.hour_label.setText(f"{minute // 60:02d}:{minute % 60:02d} · {tr(part_of_day(minute, i['daylight'], i['noon']))}")
+
+
 class SunTab(QWidget):
     def __init__(self, app, panel=None, parent=None):
         super().__init__(parent)
         self.app = app
         self.panel = panel
+        self.quick = None                       # the always-visible date and hour sliders (see SunQuick)
         self._filling = False
         self._pending = {}
         self._timer = QTimer(self)
@@ -58,15 +237,7 @@ class SunTab(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
 
-        top = QHBoxLayout()
-        top.addWidget(_bold("Place"))
-        top.addStretch(1)
-        help_btn = QToolButton()
-        help_btn.setText("?")
-        help_btn.setToolTip("The place, the date and the hour of the sun")
-        help_btn.clicked.connect(self._help)
-        top.addWidget(help_btn)
-        lay.addLayout(top)
+        lay.addWidget(_bold("Place"))
         form = QFormLayout()
         form.setRowWrapPolicy(QFormLayout.WrapLongRows)
         self.where = _note()
@@ -120,21 +291,6 @@ class SunTab(QWidget):
         self.date.setCalendarPopup(True)
         self.date.dateChanged.connect(self._date_edited)
         form2.addRow("Date", self.date)
-        srow = QGridLayout()
-        srow.setContentsMargins(0, 0, 0, 0)
-        self.season_btns = {}
-        for i, (key, label, tip) in enumerate((("spring", "Spring", "The spring equinox"),
-                                               ("summer", "Summer", "The summer solstice"),
-                                               ("autumn", "Autumn", "The autumn equinox"),
-                                               ("winter", "Winter", "The winter solstice"))):
-            b = _wide_button(label)
-            b.setToolTip(tr(tip) + tr(", as the site lives it: summer is June in the north, December in the south"))
-            b.clicked.connect(lambda _c=False, k=key: self._season(k))
-            self.season_btns[key] = b
-            srow.addWidget(b, i // 2, i % 2)
-        seasons = QWidget()
-        seasons.setLayout(srow)
-        form2.addRow(seasons)
         trow = QHBoxLayout()
         trow.setContentsMargins(0, 0, 0, 0)
         self.time_slider = QSlider(Qt.Horizontal)
@@ -154,18 +310,6 @@ class SunTab(QWidget):
         form2.addRow("Hour", tbox)
         self.daylight = _note()
         form2.addRow("", self.daylight)
-        qrow = QHBoxLayout()
-        qrow.setContentsMargins(0, 0, 0, 0)
-        for label, which, tip in (("Morning", "morning", "An hour after sunrise"),
-                                  ("Noon", "noon", "Solar noon: the sun at its highest"),
-                                  ("Evening", "evening", "An hour before sunset")):
-            b = _wide_button(label)
-            b.setToolTip(tip)
-            b.clicked.connect(lambda _c=False, w=which: self._quick(w))
-            qrow.addWidget(b)
-        qbox = QWidget()
-        qbox.setLayout(qrow)
-        form2.addRow(qbox)
         self.zone = QComboBox()
         self.zone.addItem(tr("From the longitude"), None)
         for h in range(-12, 15):
@@ -226,6 +370,10 @@ class SunTab(QWidget):
 
     def _show_sun(self, s=None) -> None:
         s = s or S.site(self.app.scene)
+        if self.quick is not None:
+            self.quick.sync()
+        if self.panel is not None and hasattr(self.panel, "update_night_rows"):
+            self.panel.update_night_rows(S.info(s)["up"])
         i = S.info(s)
         day = i["daylight"]
         if day:
@@ -238,8 +386,8 @@ class SunTab(QWidget):
                                     elev=i['elevation'], dir=S.compass(i['azimuth']), az=i['azimuth'],
                                     ratio=1 / max(0.01, math.tan(math.radians(i['elevation'])))))
         else:
-            self.sun_now.setText(tr("Below the horizon: night. A day look renders with sky light only; choose an hour "
-                                    "with sun, or the Night look."))
+            self.sun_now.setText(tr("Below the horizon: night. The render shows the night sky, with stars and moonlight "
+                                    "(their sliders are in the Environment tab); choose an hour with sun for a day."))
         look, hdri = "clear", False
         if self.panel is not None:
             look = self.panel.preset.currentData()

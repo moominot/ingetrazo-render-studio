@@ -17,6 +17,19 @@ format is a public contract; ``version`` goes up if it ever changes::
         "width": 1920,                   # pixels; the height follows the 3D view
         "ground": true,                  # the generated ground under the model
         "ground_shadow": true,           # with no ground: an invisible floor that only shows the model's shadow
+        "ground_look": {"type": "", "color": null, "roughness": 0.9, "haze": 1.0, "offset": 0.0, "grass_radius": 0.0, "ground_radius": 0.0},
+                                         # the ground's type (see presets.GROUND_TYPES), its colour (null: the look's),
+                                         # roughness 0..1, horizon haze (multiple of the usual distance, 0 = none)
+                                         # and height offset in metres; ground_radius: metres of generated ground (0 = a very large
+                                         # one), which also sets how far the haze melts it into the horizon;
+                                         # grass_radius: metres of grass round the model when the ground's material is
+                                         # grass (0 = the model's farthest point plus 10 m)
+        "style": {"mode": "none", "width": 0, "color": [r, g, b], "material": "", "model_color": [r, g, b], "lux_max": 0,
+                  "noise": 0.5, "extend": 0.4, "wetness": 0.5, "paper": 0.5, "edges": 0.4},
+                                         # none | white | model | light | sketch | watercolour, see style()
+        "skyline": {"type": "", "height": 4.0, "distance": 0.0, "seed": 1, "color": null},
+                                         # distant mountains, hills, forest or city that hide the line between ground and sky
+        "ground_material": null,         # or {"name": "<model material>", "tile": metres (0 = the picture's own size)}
         "sliders": {                     # the panel's sliders
           "exposure_bias": 0.0,          # stops (EV)
           "clouds": 0.25,                # 0..1
@@ -54,6 +67,74 @@ def _num(value, lo, hi, default):
     return max(lo, min(hi, v))
 
 
+def _colour(v, default):
+    try:
+        c = [max(0.0, min(1.0, float(x))) for x in v][:3]
+        return c if len(c) == 3 else list(default)
+    except (TypeError, ValueError):
+        return list(default)
+
+
+def style(raw) -> dict:
+    """The render's style, cleaned: ``mode`` (none, white, model, light, sketch, watercolour), the outlines every style can have
+    (``width`` in pixels, 0 = none, and ``color``) and what each adds: the model's ``material`` (a name; "" = ``model_color``), the
+    lux scale's top (``lux_max``, 0 = from the picture), the sketch's ``noise`` (irregular stroke) and ``extend`` (lines run past their
+    corners), the watercolour's ``wetness``, ``paper`` and ``edges``."""
+    d = dict(presets.STYLE_DEFAULT)
+    if not isinstance(raw, dict):
+        return d
+    d["mode"] = raw.get("mode") if raw.get("mode") in presets.STYLES else "none"
+    d["width"] = _num(raw.get("width"), 0.0, 4.0, 0.0)
+    d["color"] = _colour(raw.get("color"), presets.STYLE_DEFAULT["color"])
+    m = raw.get("material")
+    d["material"] = m.strip()[:120] if isinstance(m, str) else ""
+    d["model_color"] = _colour(raw.get("model_color"), presets.STYLE_DEFAULT["model_color"])
+    d["lux_max"] = _num(raw.get("lux_max"), 0.0, 1e6, 0.0)
+    for key in ("noise", "extend", "wetness", "paper", "edges"):
+        d[key] = _num(raw.get(key), 0.0, 1.0, presets.STYLE_DEFAULT[key])
+    return d
+
+
+def skyline(raw) -> dict:
+    """The distant skyline (mountains, hills, forest, city), cleaned: ``type`` ("" = none), the angle the tallest peaks
+    reach above the horizon (°), the distance of its farthest layer (m, 0 = from the ground), a seed for its shape and a
+    colour of its own (None: the type's)."""
+    d = dict(presets.SKYLINE_DEFAULT)
+    if not isinstance(raw, dict):
+        return d
+    d["type"] = raw.get("type") if raw.get("type") in presets.SKYLINE_TYPES else ""
+    d["height"] = _num(raw.get("height"), 0.5, 20.0, 4.0)
+    d["distance"] = _num(raw.get("distance"), 0.0, 20000.0, 0.0)
+    d["seed"] = int(_num(raw.get("seed"), 0, 9999, 1))
+    c = raw.get("color")
+    try:
+        c = [max(0.0, min(1.0, float(x))) for x in c][:3]
+        d["color"] = c if len(c) == 3 else None
+    except (TypeError, ValueError):
+        d["color"] = None
+    return d
+
+
+def ground_look(raw) -> dict:
+    """The ground's own look (type, colour, roughness, haze, offset), cleaned."""
+    d = dict(presets.GROUND_DEFAULT)
+    if not isinstance(raw, dict):
+        return d
+    d["type"] = raw.get("type") if raw.get("type") in presets.GROUND_TYPES or raw.get("type") == "custom" else ""
+    c = raw.get("color")
+    try:
+        c = [max(0.0, min(1.0, float(x))) for x in c][:3]
+        d["color"] = c if len(c) == 3 else None
+    except (TypeError, ValueError):
+        d["color"] = None
+    d["roughness"] = _num(raw.get("roughness"), 0.0, 1.0, 0.9)
+    d["haze"] = _num(raw.get("haze"), 0.0, 4.0, 1.0)
+    d["offset"] = _num(raw.get("offset"), -10.0, 10.0, 0.0)
+    d["grass_radius"] = _num(raw.get("grass_radius"), 0.0, 500.0, 0.0)
+    d["ground_radius"] = _num(raw.get("ground_radius"), 0.0, 5000.0, 0.0)
+    return d
+
+
 def clean(raw) -> dict | None:
     """A trusted copy of ``raw`` (whatever a document holds), or None when
     it holds nothing usable. Unknown looks and engines fall back; numbers are
@@ -77,11 +158,18 @@ def clean(raw) -> dict | None:
         "ground": bool(raw.get("ground", True)),
         "ground_shadow": bool(raw.get("ground_shadow", True)),
         "sliders": sliders,
+        "ground_look": ground_look(raw.get("ground_look")),
+        "skyline": skyline(raw.get("skyline")),
+        "style": style(raw.get("style")),
+        "ground_material": None,
         "hdri": None,
         "backdrop": None,
         "output": output.clean(raw.get("output")),
         "section": section.clean(raw.get("section")),
     }
+    g = raw.get("ground_material")
+    if isinstance(g, dict) and isinstance(g.get("name"), str) and g["name"]:
+        out["ground_material"] = {"name": g["name"][:120], "tile": _num(g.get("tile"), 0.0, 100.0, 0.0)}
     h = raw.get("hdri")
     if isinstance(h, dict) and isinstance(h.get("path"), str) and h["path"]:
         out["hdri"] = {"path": h["path"],

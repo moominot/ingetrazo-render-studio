@@ -13,7 +13,7 @@ their full models, placed by Blender as instances (proxies.py).
 """
 from __future__ import annotations
 
-__version__ = "0.25.0"
+__version__ = "0.26.0"
 
 import logging
 import os
@@ -41,11 +41,7 @@ def setup(app):
     # The lights in the 3D view: drawn over the model, picked by the Select tool, Supr deletes.
     from . import light_view
 
-    def show_lights():
-        app.show_panel(dock)
-        panel.tabs.setCurrentWidget(panel.tabs.widget(1))
-
-    app.add_menu_action(tr("Render Studio lights…"), show_lights,
+    app.add_menu_action(tr("Render Studio lights…"), panel.open_lights,
                         tip=tr("Point, spot, area and sun lights for the render, placed in the model."))
     tab = panel.lights_tab
     if hasattr(app, "add_overlay"):

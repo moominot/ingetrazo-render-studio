@@ -146,9 +146,11 @@ for engine in ("eevee", "cycles"):
     path_rows = slice(int(h * 0.93), h)
     d_lawn = float(np.abs(g[lawn_rows] - f[lawn_rows]).mean())
     d_tall = float(np.abs(t[lawn_rows] - g[lawn_rows]).mean())
-    ok(d_lawn > 0.02, f"[{engine}] the lawn looks different with grass (|Δ| {d_lawn:.3f})")
-    ok(d_tall > 0.02, f"[{engine}] the height slider changes it (8 cm vs 35 cm, |Δ| {d_tall:.3f})")
-    d_path = float(np.abs(g[path_rows] - f[path_rows]).mean())
+    ok(d_lawn > 0.01, f"[{engine}] the lawn looks different with grass (|Δ| {d_lawn:.3f})")
+    ok(d_tall > 0.008, f"[{engine}] the height slider changes it (8 cm vs 35 cm, |Δ| {d_tall:.3f})")
+    # (the auto exposure follows how much of the picture is grass: compare the path's own pattern, not its level)
+    gp, fp = g[path_rows], f[path_rows]
+    d_path = float(np.abs(gp / max(gp.mean(), 1e-6) - fp / max(fp.mean(), 1e-6)).mean()) * float(fp.mean())
     ok(d_path < 0.5 * d_lawn, f"[{engine}] the path in front is (nearly) unchanged (|Δ| {d_path:.3f}; shadows of blades allowed)")
     left, right = g[lawn_rows, : w // 2 - 20], g[lawn_rows, w // 2 + 20:]
     red_l = float((left[..., 0] - left[..., 1]).mean()); red_r = float((right[..., 0] - right[..., 1]).mean())

@@ -9,6 +9,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 SRC, REPO = [os.path.abspath(a) for a in sys.argv[1:3]]
 sys.path[:0] = [SRC, REPO]
 from pathlib import Path
+from PySide6.QtCore import QDate
 from PySide6.QtWidgets import QApplication, QWidget
 qa = QApplication.instance() or QApplication([])
 from PySide6.QtGui import QColor, QImage, QVector3D
@@ -19,6 +20,7 @@ from core.history import History
 from core.scene import Scene
 from render_studio import light_ops, lights as L, output as O, panel as P, sun_site as S
 
+from render_studio import presets as PR
 fails = []
 def ok(c, w):
     print(("PASS " if c else "FAIL ") + w, flush=True)
@@ -140,7 +142,7 @@ ok(out.transparent.isEnabled() and out.jpeg_quality.isHidden() and "as Blender w
 panel._save_timer.stop(); panel._save_document_settings()
 st = scene.plugin_data["render_studio"]["settings"]
 ok(st["output"] == {"size": "a4", "height": 1240, "dpi": 150, "format": "png16", "jpeg_quality": 92,
-                    "transparent": True}, f"saved in the document ({st['output']})")
+                    "transparent": True, "projection": "normal", "angle": 180}, f"saved in the document ({st['output']})")
 p2 = P.StudioPanel(app)
 ok(p2.output_tab.settings() == out.settings() and p2.output_tab.frame() == (1754, 1240), "a new panel shows it again")
 
@@ -198,18 +200,83 @@ for kind in L.TYPES:
     light_ops.add_free(app, L.new_light(kind, pos=(0, 0, 3)))
 panel.need_box.setVisible(False)
 panel.resize(240, 900); panel.show()
-for i, name in ((2, "Sky"), (3, "Lights"), (5, "Output")):
+for i, name in ((2, "Environment"), (4, "Output")):
     panel.tabs.setCurrentIndex(i); qa.processEvents()
     area = panel.tabs.currentWidget()
     inner = area.widget()
-    keys = [e["key"] for e in L.all_lights(scene)] if name == "Lights" else [None]
-    widest = 0
-    for key in keys:
-        if key is not None:
-            inner.select(key)
-        qa.processEvents()
-        widest = max(widest, QWidget.width(inner) - area.viewport().width())
-    ok(widest <= 0, f"the {name} tab fits a 240 px tray with every light chosen ({widest} px too wide)")
+    qa.processEvents()
+    widest = QWidget.width(inner) - area.viewport().width()
+    ok(widest <= 0, f"the {name} tab fits a 240 px tray ({widest} px too wide)")
 
+# The lights window: every kind of light chosen, nothing wider than its scroll area, and the
+# advanced rows folded away until asked for.
+from PySide6.QtWidgets import QScrollArea
+win = panel.open_lights(); qa.processEvents()
+tab = panel.lights_tab
+sc = tab.findChild(QScrollArea)
+widest = 0
+for e in L.all_lights(scene):
+    tab.select(e["key"]); qa.processEvents()
+    widest = max(widest, QWidget.width(sc.widget()) - sc.viewport().width())
+ok(widest <= 0, f"the lights window fits with every light chosen ({widest} px too wide)")
+ok(not tab.adv.body.isVisible(), "the advanced lights rows start folded")
+ok(not tab.power.isHidden() and not tab.name.isHidden(), "power and name are in view")
+
+
+# ---- the date and the hour, always in view: sliders that say the season and the part of the day ---------------------------------------
+from render_studio import sun_panel as SPN
+q = panel.sun_quick
+ok(q.date_box.isVisibleTo(panel.tabs.widget(2).widget()) and q.hour_box.isVisibleTo(panel.tabs.widget(2).widget()), "the quick date and hour are in view (not folded)")
+panel.sun_tab._season("summer"); panel.sun_tab.flush(); q.sync()
+ok("Summer" in q.date_label.text() or "Estiu" in q.date_label.text(), f"the date slider says the season ({q.date_label.text()})")
+q.date_slider.setValue(QDate(2026, 12, 22).dayOfYear() - 1); panel.sun_tab.flush(); q.sync()
+ok(panel.sun_tab.date.date().month() == 12 and panel.sun_tab.date.date().day() == 22, "moving the date slider sets the sun's date")
+ok("Winter" in q.date_label.text() or "Hivern" in q.date_label.text(), f"…and a late December day is winter in the north ({q.date_label.text()})")
+q.hour_slider.setValue(13 * 60); panel.sun_tab.flush(); q.sync()
+ok(panel.sun_tab.time.time().hour() == 13 and ("Midday" in q.hour_label.text() or "Migdia" in q.hour_label.text()), f"the hour slider sets the hour and names it ({q.hour_label.text()})")
+q.hour_slider.setValue(2 * 60); panel.sun_tab.flush(); q.sync()
+ok("Night" in q.hour_label.text() or "Nit" in q.hour_label.text(), f"…at 02:00 it is night ({q.hour_label.text()})")
+ok(SPN.season_of(80, 41.0) == "spring" and SPN.season_of(80, -41.0) == "autumn" and SPN.season_of(10, 41.0) == "winter", "the seasons follow the hemisphere")
+ok(SPN.part_of_day(7 * 60, (6 * 60, 20 * 60), 13 * 60) == "Morning" and SPN.part_of_day(20 * 60 + 15, (6 * 60, 20 * 60), 13 * 60) == "Dusk"
+   and SPN.part_of_day(23 * 60, (6 * 60, 20 * 60), 13 * 60) == "Night", "the parts of the day")
+# stars and moonlight: only at night
+panel.sun_tab.set_minutes(12 * 60); panel.sun_tab.flush()
+panel.preset.setCurrentIndex(panel.preset.findData("clear")); panel.sun_tab._show_sun(); qa.processEvents()
+form = panel._form_skyadj
+ok(not panel.slider_rows["stars"].isVisibleTo(panel.tabs.widget(2).widget()), "in the day there are no night sliders")
+panel.sun_tab.set_minutes(23 * 60); panel.sun_tab.flush(); panel.sun_tab._show_sun(); qa.processEvents()
+night_rows = [panel.slider_rows[k] for k in ("stars", "moon")]
+ok(all(r.isVisibleTo(panel.tabs.widget(2).widget()) for r in night_rows), "with the sun set, the stars and moonlight sliders appear")
+panel.sun_tab.set_minutes(12 * 60); panel.sun_tab.flush(); panel.sun_tab._show_sun(); qa.processEvents()
+ok(not any(r.isVisibleTo(panel.tabs.widget(2).widget()) for r in night_rows), "…and go away by day")
+panel.preset.setCurrentIndex(panel.preset.findData("night")); qa.processEvents()
+ok(all(r.isVisibleTo(panel.tabs.widget(2).widget()) for r in night_rows), "…the Night look shows them whatever the hour")
+ok(PR.apply_sliders({"stars": 1.0}, {"stars": 0.5, "moon": 1.5}).get("stars") == 0.5 and PR.apply_sliders({}, {"moon": 1.5})["moon_scale"] == 1.5, "the sliders reach the job")
+# the sky group: the date and hour with marks, then sun/moonlight, clouds, stars; no season or time buttons
+from render_studio import sun_panel as SP
+ok(not hasattr(sun, "season_btns"), "the season buttons are gone from the place-and-date fold")
+ok(not any(b.text() in ("Morning", "Noon", "Evening") for b in sun.findChildren(SP.QToolButton)), "…and so are Morning, Noon, Evening")
+panel.sun_tab.set_minutes(12 * 60); panel.sun_tab.flush(); panel.sun_tab._show_sun(); qa.processEvents()
+q = panel.sun_quick
+ok(len(q.date_slider.marks) == 4 and all(0 <= v <= 364 for v, _t in q.date_slider.marks), "the date slider has the four seasons' marks")
+labels = [t for _v, t in q.hour_slider.marks]
+ok(labels[0] == "Night" and "Golden hour" in labels and "Midday" in labels and "Dawn" in labels and "Dusk" in labels, f"the hour slider has the photographic hours ({labels})")
+ok(sorted(v for v, _t in q.hour_slider.marks) == [v for v, _t in q.hour_slider.marks], "…in order")
+rows = [(form.itemAt(i, SP.QFormLayout.FieldRole) or form.itemAt(i, SP.QFormLayout.SpanningRole)).widget() for i in range(form.rowCount())]
+order = [k for k in ("sun_scale", "moon", "clouds", "stars") if panel.slider_rows[k] in rows]
+ok(order == ["sun_scale", "moon", "clouds", "stars"], f"the sky's rows: sun, moonlight, clouds, stars ({order})")
+ok(rows.index(panel.slider_rows["sun_scale"]) > rows.index(q.date_box), "…under the date and hour")
+panel.sun_tab.set_minutes(23 * 60); panel.sun_tab.flush(); panel.sun_tab._show_sun(); qa.processEvents()
+ok(not panel.slider_rows["sun_scale"].isVisibleTo(panel.tabs.widget(2).widget()) and panel.slider_rows["moon"].isVisibleTo(panel.tabs.widget(2).widget()), "at night the moonlight takes the sun's place")
+ok(PR.apply_sliders({"stars": 1.0}, {"stars": 1.0, "clouds": 1.0})["stars"] < 0.2 and PR.apply_sliders({"stars": 1.0}, {"stars": 1.0, "clouds": 0.0})["stars"] == 1.0, "clouds dim the stars")
+# the interior box: the look follows it; the sliders share their left edge
+panel.interior.setChecked(True); ok(panel.preset.currentData() == "interior", "Interior ticked: the interior look")
+panel.interior.setChecked(False); ok(panel.preset.currentData() == "clear", "…and unticked: the clear day again")
+panel.preset.setCurrentIndex(panel.preset.findData("interior")); ok(panel.interior.isChecked(), "…the box follows the look")
+panel.preset.setCurrentIndex(panel.preset.findData("clear"))
+panel.show(); panel.tabs.setCurrentIndex(2); panel.resize(380, 900); qa.processEvents()
+xs = {k: panel.slider_rows[k].mapTo(panel, panel.slider_rows[k].rect().topLeft()).x() for k in ("sun_scale", "clouds")}
+xs["date"] = q.date_box.mapTo(panel, q.date_box.rect().topLeft()).x()
+ok(len(set(xs.values())) == 1, f"the sky's sliders start at the same left edge ({xs})")
 print("FAILED" if fails else "ALL PASSED", len(fails))
 sys.exit(1 if fails else 0)

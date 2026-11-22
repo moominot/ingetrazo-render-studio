@@ -210,7 +210,11 @@ them to the imported materials by the picture's name.
 
 ## Lights
 
-The panel's **Lights** tab (also **Render Studio lights…** in the menu) places lights for the render, of
+The **Lights…** button of the panel (also **Render Studio lights…** in the menu) opens a window of its own, laid out like
+the materials one: the list and the adding on the left; on the right a sketch of the chosen light, its basic settings
+(name, kind, power, colour, beam or size, shadows) and, folded under *Advanced*, bulb size, soft edge, exact place and
+aim, IES profile and the lights on objects. *Edit in Blender…* (see [Edit in Blender](#edit-in-blender)) is for experts.
+It places lights for the render, of
 the four kinds Blender has, and draws them in the 3D view: a bulb, a spot's cone, an area light's outline
 and the way it faces, a sun's rays; in their colour, grey when off. The Select tool picks them and Supr
 deletes them.
@@ -376,22 +380,70 @@ choose a 4K or larger file, for example a free one from polyhaven.com.
 
 ![Interior and live adjustments](docs/interior.png)
 
+## Edit in Blender
+
+For experts. *Edit in Blender…*, in the lights window and in the materials window, opens a Blender window and takes
+what you save (Ctrl+S) back into the drawing, one undo step.
+
+- **Materials**: the chosen material opens on a sphere made as the render makes it (its picture, its finish, its maps for
+  roughness, metal or relief, the picture's adjustments and its texture set, all as nodes) (a grass material also with a patch of
+  grass and its generator, a geometry-nodes group). Change **anything**: the whole material comes back and the render
+  uses it **exactly as you left it** (a small `.blend` with its node tree is kept in the drawing; for grass, also the
+  group that grows it and its tuft). While a material is edited in Blender, every setting of the Materials window is
+  **locked**; *Unlock (back to the basic settings)* drops the Blender material and returns to them. Pictures are kept by
+  their file path (a picture made only inside Blender is not kept). This is so for every material, preset or not.
+- **Lights**: Render Studio's own free lights (not those on objects, not the Render tab's). You can move, turn and resize
+  them, change power and colour, delete them and add new ones. A light that gets something Render Studio's light format has no place for
+  (nodes, other settings of Blender's) comes back as a **Blender light** (a proxy): it stays in the list, tagged *Blender*,
+  and the render uses it exactly as you left it. Its settings are locked but for its name and its place; *Unlock (back to a
+  Render Studio light)* returns to a light of this window with the numbers it came back with. What Blender does not know (a light's temperature, its
+  lumens, its IES file) is kept.
+
 ## Panel
 
-`Render Studio…` in the extensions menu opens the panel. It has six tabs: **Main**, **Image**, **Sky**,
-**Lights** (see [Lights](#lights)), **Section** and **Output** ([Output](#output)); the sun's place and date
-([Sun](#sun)) are folded in **Sky**. What is under them (Materials…, Open preview…, the status) serves all.
-The simple controls are in view and the rest folded under *Advanced* / *Effects*:
+`Render Studio…` in the extensions menu opens the panel. It has five tabs: **Main**, **Image**, **Environment**,
+**Section** and **Output** ([Output](#output)); the sun's place and date
+([Sun](#sun)) are folded in **Environment**. What is under them (**Materials…** and **Lights…**, which open windows of their own,
+Open preview…, the status) serves all.
+The simple controls are in view and the rest folded under *Advanced*:
+- **Render** reuses the preview's Blender when it can: with the preview open and up to date, the same engine and an ordinary PNG/JPEG,
+  the final picture is made in the scene the preview already has (nothing is exported or built again: about four times sooner, and
+  the same picture to within a level of 255). Panoramas, a transparent sky, deeper file formats, grass (a sparser draft in the preview)
+  or a scene behind the panel go the long way. **Quality › Advanced › Preview quality** (Fast, Normal, High) sets how big and how
+  clean the preview's pictures are.
+- **Main** also has a **Style** group: how the picture is drawn. *None*, *White*, *Model* (a maquette: every object wears one material),
+  *Light* (the lux each surface receives, in false colour with a scale), *Sketch* (pencil lines on paper: irregular stroke, line extension) and
+  *Watercolour* (wetness, edges, paper); every style can have **outlines** (thickness and colour). Outlines are Blender's Freestyle; the lux,
+  the paper and the watercolour are made on the finished picture, so the live view shows them too (slower).
 - **Main**: your **presets** (*Save as preset…* keeps the settings under a name for any drawing; *⋯* deletes,
   exports and imports them as `.json` files to share), the **look** with a button that resets every adjustment
   to the look's values, and the **final render** (engine and quality; *Advanced*: the preview's engine);
-- **Image**: exposure, warmth and saturation; *Effects*: vignette and **depth of field** (focused on the middle of
-  the view);
-- **Sky**: the **background** (sky of the look, 360° panorama or fixed picture), clouds and sun, the **ground**
-  and, folded, the sun's place and date;
-- **Lights**, **Section** and **Output** (size, file, save every render).
+- **Image**: a **Camera** group (the 3D view's own: parallel, perspective or two-point with the program's icons, and the **angle of view**); exposure, warmth and saturation; *Effects* (a group): vignette, **depth of field** (focused on the middle of
+  the view) and **ambient occlusion** (strength and reach: the render's AO pass multiplied into the picture) and **fog** (thickness, and the distance where it starts: the mist pass mixed into the sky's colour);
+- **Environment**: the **background** (sky of the look, 360° panorama or fixed picture; *Lights the scene* in view, rotation,
+  brightness and viewpoint height folded), the **sun** (clouds, strength, and its place and date folded inside its
+  group) and the **ground** (a **type** in view — the look's own, grass, asphalt, concrete, sand, snow, wet pavement — and, under *Advanced*,
+  its colour, roughness, *Ground radius* (the ground's own size: the haze melts it into the horizon over its outer two thirds, so it
+  has no visible edge; Automatic is a very large ground), horizon haze, height and a material on it (the model's or any other:
+  one that nothing is painted with is made from its picture and settings) with its *Tile size*; with a grass material,
+  the blades grow on a circle round the model whose *Grass radius* you set, or, in Automatic, the model's farthest point plus 10 m);
+  The sun's **date** and **hour** are two sliders always in view (the label says the season, and the part of the day). When the sun has set at
+  the place, date and hour, a day look renders as a **night** (no sun: the night sky) and the **Stars** and **Moonlight** sliders appear (the
+  moon's phase and place are not worked out: it is a free setting).
+  The **Horizon** group adds a distant **skyline** — mountains, hills, a distant forest or a city — that hides the line where the generated ground
+  meets the sky: layers round the scene that melt into the horizon colour with distance, cast no shadow and go dark at night (its height is
+  an angle above the horizon; Advanced: the distance, the shape — a seed — and a colour of your own).
+- **Section**: whether the cut is closed with a cap, and what the cap is made of — a material of the drawing, a **flat colour**
+  or a **hatch pattern** (diagonal lines, cross hatch, grid, dots, with their colours and spacing in centimetres) — and
+  *No shadows on the cap* (it neither casts nor receives them, as a drawn section); **Output**, in this order: **Projection** (normal, *flat panorama* — a cylindrical picture where verticals stay straight, over the
+  angle you choose — or *360° panorama*, equirectangular 2:1; both from the camera's place and rendered with Cycles), **Size**,
+  **File** (format, transparent sky), **What to render** (the *current view*, or the *scenes* you tick) and **Save** (one
+  folder and one name — `{document}`, `{scene}`, `{look}`, `{date}` — for a single render with *Save each render* and for the
+  scenes, which are always saved there; the drawing goes back to its view afterwards). The general help button (?) is beside the tabs.
 
-The preview window keeps Render and *Render and save…* in view; *More* opens the live view's options, *New scene
+The fixed buttons are few: **Materials…** and **Lights…**, then **Render** (its arrow: *Render and save…* and *Render the
+selected scenes*) and **Open preview…** (its arrow: *Open in Blender…*). The preview window has **Render** with the same arrow,
+**New scene from this view…** always in view and **Update preview** only when it can be used; *More* opens the live view's options, *New scene
 from this view…* and *Open in Blender…*, and the retouch of a finished picture folds its warmth and vignette.
 
 The panel has **Render** and **Render and save…** (the final picture right away, without the live preview: the window opens only to show it) and **Open preview…** (the live view).
@@ -443,7 +495,7 @@ interactive viewport, which a Blender running in the background does not have. I
 of IngeTrazo's own «Sync with the view» (Blender in `serve` mode), extended with `reload`. **Render**
 closes the live Blender first and leaves the live view off, so the draft does not cover the final image; **Back to preview** brings it back.
 
-**Preview engine** (panel, Final render group; 0.18.0): **Automatic** (the default), **EEVEE** or **Cycles**.
+**Preview engine** (panel, Quality group, under Advanced; 0.18.0): **Automatic** (the default), **EEVEE** or **Cycles**.
 On a big model EEVEE looks nothing like the final render, so Automatic keeps EEVEE while the view follows
 the camera or the changes (it must be quick) and switches to **Cycles** once both switches are off: nothing
 is sent to Blender again, the scene is rebuilt in place (the model is not exported again) and the picture

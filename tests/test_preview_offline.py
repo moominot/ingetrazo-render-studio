@@ -110,19 +110,24 @@ app = App(); panel = P.StudioPanel(app); panel.blender = lambda: object(); panel
 w = panel.preview(); w.resize(1000, 700); w.show(); qa.processEvents()
 see = lambda x: x.isVisibleTo(w)
 ok(w.mode == "preview" and see(w.bar_preview) and not see(w.bar_final), "the window opens as a preview: Render buttons, no retouch tools")
-ok(see(w.render_btn) and see(w.render_save_btn) and w.render_btn.isEnabled() and "Render and save" in w.render_save_btn.text(),
-   "…with Render and Render and save…")
+ok(see(w.render_btn) and w.render_btn.isEnabled() and "Render and save" in w.render_save_btn.text() and w.render_btn.menu() is not None
+   and w.render_save_btn in w.render_btn.menu().actions(), "…with Render, and Render and save… under its arrow")
+ok(see(w.scene_btn), "…and «New scene from this view…» always in view")
+ok(not see(w.update_btn), "…«Update preview» is not shown while Follow changes is on")
 ok(not any(see(s) for s in w.adj.values()), "…and the retouch sliders are hidden")
 ok(not see(w.follow_camera_box) and see(w.render_btn), "…the live view's options folded under More, Render in view")
 w.more_btn.setChecked(True)
-ok(see(w.follow_camera_box) and see(w.follow_changes_box) and see(w.scene_btn) and see(w.expert_btn), "…More opens the live view's switches and the extra buttons")
+ok(see(w.follow_camera_box) and see(w.follow_changes_box) and see(w.expert_btn), "…More opens the live view's switches and Open in Blender…")
+w.follow_changes_box.setChecked(False); qa.processEvents()
+ok(see(w.update_btn), "…with Follow changes off, «Update preview» appears (it was not just disabled)")
+w.follow_changes_box.setChecked(True); qa.processEvents()
 ok(w.summary.text() == "Render: EEVEE · Medium · 1920 × 1080 px · PNG, 8 bits", f"…and says what Render will use («{w.summary.text()}»)")
 panel.quality.setCurrentIndex(2); panel.engine.setCurrentIndex(panel.engine.findData("cycles")); panel.width.setValue(1280)
 ok(w.summary.text() == "Render: Cycles · High · 1280 × 720 px · PNG, 8 bits", f"…following the panel («{w.summary.text()}»)")
 w.show_draft(small); qa.processEvents()
 ok(w.has_image() and w.view.picture_size() == (480, 270) and w.original is None, "a live frame is shown (not retouched, no final picture yet)")
 w.set_mode("rendering"); qa.processEvents()
-ok(see(w.bar) and see(w.cancel_btn) and not w.render_btn.isEnabled() and not w.render_save_btn.isEnabled() and not see(w.bar_final),
+ok(see(w.bar) and see(w.cancel_btn) and not w.render_btn.isEnabled() and not see(w.bar_final),
    "rendering: progress and Cancel, the Render buttons off")
 w.set_progress(0.42); ok(w.bar.value() == 42, "…the bar follows")
 w.set_image(big); qa.processEvents()
@@ -173,9 +178,16 @@ panel.preset.setCurrentIndex(panel.preset.findData("night"))
 ok(panel.slider_rows["clouds"].value_label.text() == f"{presets.studio('night')[0]['clouds']:.0%}", "…and a look's own values")
 panel.apply_settings(panel.settings_dict() | {"sliders": {"clouds": 0.8}});
 ok(panel.slider_rows["clouds"].value_label.text() == "80%", "…and settings put in from the document")
-titles = [g.title() for g in panel.findChildren(P.QGroupBox)]
-ok(set(titles) == {"Presets", "Look", "Corrections", "Sky and sun", "Background", "Ground", "Final render"}, f"the panel's groups ({titles})")
+titles = [g.title() for g in panel.findChildren(P.QGroupBox) if not g.isHidden()]       # (the look's group is hidden)
+ok(set(titles) == {"Presets", "Style", "Camera", "Corrections", "Effects", "Sky", "Background", "Ground", "Horizon", "Quality"}, f"the panel's groups ({titles})")
 ok({"preview", "rendering", "final"} <= set(__import__("render_studio.preview", fromlist=["x"]).NOTES), "each state has its own note")
 _restore_settings()
+# ---- the preview's quality: fast, normal, high ----
+from render_studio import live as LV
+ok(LV.quality_numbers("normal", "draft", 8) == (1.0, 8), "normal: the draft as it was")
+fw, fs = LV.quality_numbers("fast", "quick", 4); hw, hs = LV.quality_numbers("high", "quick", 4)
+ok(fw < 1.0 and fs < 4 and hw > 1.0 and hs > 4, f"fast is smaller and rougher, high bigger and cleaner ({fw},{fs} / {hw},{hs})")
+ok(LV.quality_numbers("fast", "motion", 1)[1] == 1, "…never fewer than one sample")
+ok([panel.preview_quality.itemData(i) for i in range(3)] == ["fast", "normal", "high"], "the Quality group offers the preview's quality")
 print(f"\n{len(fails)} failure(s)")
 sys.exit(1 if fails else 0)

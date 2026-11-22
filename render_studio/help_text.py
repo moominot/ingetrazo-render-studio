@@ -29,7 +29,8 @@ PRESET_NOTES = {
     "wood_raw": "natural, matte", "fabric": "very matte with a soft edge sheen",
     "metal_brushed": "metal, half polished", "chrome": "metal, almost a mirror",
     "glass": "clear and transparent", "glass_frosted": "transparent but diffuse",
-    "water": "reflective and transparent surface", "light": "a panel that shines by itself",
+    "water": "reflective and transparent surface (a pool)", "lake": "water of a lake or pond: broader ripples and waves",
+    "sea": "sea water: swell of several metres", "ocean": "ocean water: long, high rollers", "light": "a panel that shines by itself",
     "lawn": "short mown grass, 6 cm", "meadow": "long, uncut grass, 30 cm",
 }
 
@@ -67,7 +68,7 @@ where IngeTrazo's Render tab keeps it, so both use the same Blender.</p>
 
 <h4>In four steps</h4>
 <ol>
-<li>Choose a <b>Look</b> and move the sliders (the scene), and set the <b>Engine</b>, <b>Quality</b> and <b>Width</b> of the final render.</li>
+<li>Choose a <b>Look</b> and move the sliders (the scene), and set the <b>Quality</b> (three buttons; the engines are under <i>Advanced</i>) and the <b>Width</b> of the final render.</li>
 <li>Press <b>Open preview…</b>: a window with a <b>live preview</b> of the 3D view that you can zoom and move. (To skip the preview, press <b>Render</b> in the panel.)</li>
 <li>Press <b>Render</b> for the final picture. Then the retouch sliders and <b>Save image…</b> appear. Or press
 <b>Render and save…</b> to choose a file and get the picture saved straight away, with no retouching.</li>
@@ -82,12 +83,12 @@ instantly, without rendering again. Every slider shows its value and a line sayi
 
 <h4>The panel</h4>
 <p>The panel has pages: <b>Main</b> (your presets, the look, the engine and quality), <b>Image</b> (exposure, warmth,
-saturation; <i>Effects</i>: vignette and depth of field), <b>Sky</b> (background, clouds and sun, ground, and the sun's
-place and date), <b>Lights</b>, <b>Section</b> and <b>Output</b>. The simple controls are in view; the rest is folded
-under <i>Advanced</i> or <i>Effects</i>. Only Render uses the engine, quality and width; the preview is always a quick
+saturation; <i>Effects</i>: vignette, depth of field and fog), <b>Environment</b> (background, clouds and sun, ground, and the sun's
+place and date), <b>Section</b> and <b>Output</b> (the lights and the materials have windows of their own: <b>Lights…</b>, <b>Materials…</b>). The simple controls are in view; the rest is folded
+under <i>Advanced</i>. Only Render uses the engine, quality and width; the preview is always a quick
 draft. <b>Presets</b>: <i>Save as preset…</i> keeps the settings under a name to use in any drawing; <i>⋯</i> deletes a
-preset or exports and imports them as files to share. <b>Reset adjustments to the look</b> puts every slider back to
-the look's values.</p>
+preset or exports and imports them as files to share. <b>Reset all settings</b> puts every setting back to the defaults
+(saved presets are not touched).</p>
 <table cellspacing='0' cellpadding='3' width='100%'>
 <tr><td valign='top'><b>Look</b></td><td>The light and mood: see the list below. Changing it puts that look's own
 values into the sliders it sets.</td></tr>
@@ -102,10 +103,36 @@ it, up to 2. Not available while a 360° background lights the scene.</td></tr>
 <tr><td valign='top'><b>Vignette</b></td><td>Darkens the corners of the render to draw the eye to the centre.</td></tr>
 <tr><td valign='top'><b>Depth of field</b></td><td>Blurs what is nearer or farther than the middle of the view, 0 to 100 % (0 =
 everything sharp). It focuses on the point the camera looks at.</td></tr>
+<tr><td valign='top'><b>Focal point</b></td><td>The distance, in metres, that is in focus. <i>Auto</i>: the middle of the view. It matters only with depth of field.</td></tr>
+<tr><td valign='top'><b>Ambient occlusion</b></td><td>Darkens the corners and the contact of things, where surfaces meet and the light hardly reaches, 0 to 100 % (0 = off). <i>Occlusion reach</i> is how far from a surface it reaches, in metres.</td></tr>
+<tr><td valign='top'><b>Occlusion reach</b></td><td>How far from a surface the occlusion reaches, in metres: small for crevices, large for broad shade.</td></tr>
+<tr><td valign='top'><b>Projection, Angle of view</b></td><td>The camera's, as in IngeTrazo's Camera panel: <b>parallel</b>, <b>perspective</b> or <b>two-point</b> (the verticals stay vertical), and the angle of view (a parallel view has none). They change the 3D view itself.</td></tr>
+<tr><td valign='top'><b>Fog</b></td><td>How thick the fog is, 0 to 100 % (0 = none): it veils what is far with the colour of the sky's light, and the thicker it is the sooner it closes.</td></tr>
+<tr><td valign='top'><b>Fog starts at</b></td><td>How far from the camera the fog begins, in metres: nearer than this, everything is clear.</td></tr>
+<tr><td valign='top'><b>Stars</b></td><td>How many stars the night sky has, 0 to 200 % (0 = none). Shown only when it is night: the
+Night look, or any day look when the sun has set at the site's place, date and hour (then the render is a night, with no sun).</td></tr>
+<tr><td valign='top'><b>Horizon, Skyline</b></td><td>Distant <b>mountains</b>, <b>hills</b>, a <b>distant forest</b> or a <b>city skyline</b> that
+hide the line where the generated ground meets the sky. They stand in layers round the scene (the nearest clear, the farthest paler, melting into the sky's
+horizon colour), cast no shadow and are dark at night. <b>Height</b> is the angle the tallest peaks reach above the horizon. Under <i>Advanced</i>: the
+<b>Distance</b> of the farthest layer (Automatic: the ground's edge), the <b>Shape</b> (another number, another outline) and a <b>Colour</b> of your own. It needs
+the generated ground.</td></tr>
+<tr><td valign='top'><b>Style</b></td><td>How the picture is drawn; every style can have <b>outlines</b> (their thickness in pixels, 0 = none, and their colour).
+<b>None</b>: as it is. <b>White</b>: every material white. <b>Model</b>: a maquette, every object wearing one material (a colour, or a material of the
+drawing). <b>Light</b>: the picture shows the <b>lux</b> each surface receives, in false colour with a scale drawn at the right (round numbers chosen
+from the picture, or fixed with <i>Scale up to</i>); approximate: white matte surfaces, a clear day's sun (100 000 lx) and the lamps' lumens.
+<b>Sketch</b>: pencil lines on paper, without the sky; <i>Irregular stroke</i> makes the line wobble and be gone over twice, <i>Line extension</i> lets
+the lines run past their corners. <b>Watercolour</b>: washes of colour; <i>Wetness</i> how far the colour spreads, <i>Edges</i> how dark the pigment pools
+along them, <i>Paper</i> how rough the paper is.</td></tr>
+<tr><td valign='top'><b>Moon</b></td><td>How bright the moonlight is, 0 to 200 %. A real moon (its phase and place) is not worked out: it is a free
+setting. Shown only at night.</td></tr>
+<tr><td valign='top'><b>Interior</b></td><td>Tick it for a picture of a room: it is metered for the inside (the window may burn out) and rendered with Cycles. Day or night follows the sun.</td></tr>
+<tr><td valign='top'><b>Date, Hour</b></td><td>Two sliders always in view: the date through the year (the label says the season, as the site lives it) and the hour
+through the day (the label says the part of the day: night, dawn, morning, midday, afternoon, dusk); both carry marks (the four seasons; night, dawn, golden hour, midday, golden hour, dusk) the handle clicks onto. The calendar, the exact time, the time zone
+and the place are folded under <i>Place and date</i>.</td></tr>
 <tr><td valign='top'><b>Background</b></td><td><b>Sky of the look</b>, a <b>360° panorama</b> (see below) or a <b>Fixed
 picture</b>: one flat image behind the model that stays put when the view turns, shown filling the frame (cropped),
 whole (the look's sky around it) or stretched. If the Output tab leaves the sky transparent, no background shows.</td></tr>
-<tr><td valign='top'><b>Engine</b></td><td><b>EEVEE</b> is fast (about 3 seconds). <b>Cycles</b> gives the best
+<tr><td valign='top'><b>Render, Preview</b></td><td>Under <i>Advanced</i>: the engine of the final render and the one of the preview. <b>EEVEE</b> is fast (about 3 seconds). <b>Cycles</b> gives the best
 quality (about 5 seconds on an RTX graphics card, slower without one), with truer light bouncing.</td></tr>
 <tr><td valign='top'><b>Quality</b></td><td>Draft, Medium or High: the number of samples. EEVEE uses 16 / 64 / 128 and
 Cycles 32 / 128 / 512. More samples mean less noise and a slower render. Use Draft while you adjust and High for the
@@ -136,7 +163,11 @@ capped at 80 % so they do not glow, and a light finish of saturation and vignett
 
 <a name="lights"></a>
 <h4>Lights</h4>
-<p>The <b>Lights</b> tab of the panel places lights for the render, of the four kinds Blender has. They are drawn in
+<p>The <b>Lights…</b> button of the panel opens the lights window: the list and the adding on the left; on the right a
+sketch of the chosen light, its basic settings and, folded under <i>Advanced</i>, the exact place and aim, bulb size,
+soft edge, IES profile and the lights on objects. <b>Edit in Blender…</b> (for experts) opens the free lights in Blender
+over a floor and a cube; each time you save (Ctrl+S) they come back here, one undo step.</p>
+<p>Lights place lights for the render, of the four kinds Blender has. They are drawn in
 the 3D view (a bulb, a spot's cone, an area light's outline and the way it faces, a sun's rays), in their colour,
 grey when off; <b>Show in the 3D view</b> hides them. Click one with the Select tool to choose it; Supr deletes it.</p>
 <table cellspacing='0' cellpadding='3' width='100%'>
@@ -209,6 +240,15 @@ ready size (HD, Full HD, QHD, 4K UHD, square, portrait 4:5, vertical 9:16, A4, A
 or <b>Custom</b>. Typing a width or a height makes it Custom; <b>Keep proportions</b> changes the other with it;
 <b>⇄</b> turns it between landscape and portrait. The preview frames the same picture: the view's height is kept,
 its sides change.</td></tr>
+<tr><td valign='top'><b>Projection</b></td><td><b>Normal view</b> is the 3D view's camera. <b>Flat panorama</b> is a wide
+picture where vertical lines stay vertical (like a stitched photo) over the <b>Angle</b> you choose; <b>360° panorama</b> is
+the whole sphere, 2:1, for a panorama or VR viewer. Both are rendered from the camera's place with Cycles (the
+Engine setting is ignored).</td></tr>
+<tr><td valign='top'><b>What to render, Save</b></td><td><b>Current view</b> renders what the 3D window (or the preview) shows; <b>Scenes</b>
+lists the drawing's scenes: tick some and <b>Render</b> (or its arrow, <i>Render the selected scenes</i>) renders them one after another with this
+projection, size and format. Both save with the <b>folder and name</b> of <b>Save</b> ({{document}}, {{scene}}, {{look}}, {{date}}): the scenes always,
+the current view when <i>Save each render</i> is on. Each scene is recalled as its tab does; at the end (or if you cancel) the drawing goes back to the
+view it had.</td></tr>
 <tr><td valign='top'><b>Print resolution</b></td><td>Dots per inch: the paper sizes are worked out at it, and the line
 under the size says how big a print is.</td></tr>
 <tr><td valign='top'><b>Format</b></td><td><b>PNG</b> and <b>JPEG</b> (with its quality) keep the preview window's
@@ -242,6 +282,7 @@ file, for example a free one from polyhaven.com. The ground melts into the image
 <h4>The preview window</h4>
 <p>One window to look at the scene and to make the picture. It has three states:</p>
 <table cellspacing='0' cellpadding='3' width='100%'>
+<tr><td valign='top'><b>Preview quality</b></td><td>Under <i>Quality › Advanced</i>: <b>Fast</b> (smaller, rougher pictures, quicker answers), <b>Normal</b> or <b>High</b> (bigger, cleaner ones). It only affects the preview; Render has its own quality.</td></tr>
 <tr><td valign='top'><b>Preview</b></td><td>The live view: Blender stays open with your scene and look, and an image follows your
 work. It uses EEVEE with its slowest effects off, whatever the <b>Engine</b> and <b>Quality</b> say (those are for Render),
 except with the <b>Interior</b> look: EEVEE can't fill a room lit through a window, so there the preview uses <b>Cycles</b> (a

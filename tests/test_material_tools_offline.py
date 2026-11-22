@@ -94,6 +94,19 @@ hist.redo()
 ok(new in scene.materials and new in app.document_data({})["materials"], "…redo puts them back")
 ok(MT.duplicate_material(app, "Nobody") == (None, 0), "copying a material the document does not have does nothing")
 
+# deleting a material: only one nothing wears, one undo step
+ok(MT.delete_material(app, "Bricks (2)") and "Bricks (2)" not in scene.materials, "an unused material can be deleted")
+hist.undo()
+ok("Bricks (2)" in scene.materials, "…and one undo brings it back")
+hist.redo()
+ok("Bricks (2)" not in scene.materials and MT.delete_material(app, "Nobody") is False, "…redo takes it out again; one that is not there does nothing")
+from PySide6.QtGui import QVector3D as _V
+from core.mesh import Mesh as _M
+from core.group import Group as _G
+_m = _M(); _f = _m.add_face([_V(0, 0, 0), _V(1, 0, 0), _V(1, 1, 0)]); _f.attrs["mat"] = "Bricks"
+scene.groups.append(_G(_m, name="wall")); scene.version += 1
+ok(MT.delete_material(app, "Bricks") is False and "Bricks" in scene.materials, "a material painted on the model is not deleted")
+
 # the paint bucket
 PaintTool.current_material = None
 ok(MT.arm_paint_bucket(app, "Bricks") and PaintTool.current_material is scene.materials["Bricks"]

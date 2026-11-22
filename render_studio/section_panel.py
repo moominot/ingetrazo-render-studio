@@ -9,8 +9,9 @@ from __future__ import annotations
 from .i18n import tr, translate_on_show  # noqa: F401
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QLabel,
-                               QVBoxLayout, QWidget)
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel,
+                               QPushButton, QVBoxLayout, QWidget)
 
 from . import section as S
 
@@ -20,6 +21,43 @@ def _note(text: str = "") -> QLabel:
     lab.setWordWrap(True)
     lab.setStyleSheet("color: gray; font-size: 11px")
     return lab
+
+
+class ColourButton(QPushButton):
+    """A button that is its colour: click to choose another."""
+    changed = Signal()
+
+    def __init__(self, rgb, title="Colour", parent=None, linear=False):
+        super().__init__(parent)
+        self._title = title
+        self._linear = linear                 # the values are Blender's (linear light): the swatch and the chooser show them as the eye sees them
+        self.set_rgb(rgb)
+        self.clicked.connect(self._pick)
+
+    def rgb(self) -> list:
+        return list(self._rgb)
+
+    def set_rgb(self, rgb) -> None:
+        self._rgb = [float(c) for c in rgb][:3]
+        c = QColor.fromRgbF(*self._shown(self._rgb))
+        self.setStyleSheet(f"QPushButton {{ background-color: {c.name()}; border: 1px solid gray; min-height: 18px; }}")
+
+    def _shown(self, rgb) -> list:
+        """The colour as the screen shows it: linear values are encoded (a linear 0.2 is a mid grey, not a dark one)."""
+        if not self._linear:
+            return [max(0.0, min(1.0, c)) for c in rgb]
+        return [max(0.0, min(1.0, 12.92 * c if c <= 0.0031308 else 1.055 * c ** (1 / 2.4) - 0.055)) for c in rgb]
+
+    @staticmethod
+    def _decode(rgb) -> list:
+        return [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in rgb]
+
+    def _pick(self) -> None:
+        c = QColorDialog.getColor(QColor.fromRgbF(*self._shown(self._rgb)), self, tr(self._title))
+        if c.isValid():
+            got = (c.redF(), c.greenF(), c.blueF())
+            self.set_rgb(self._decode(got) if self._linear else got)
+            self.changed.emit()
 
 
 class SectionTab(QWidget):
@@ -42,13 +80,50 @@ class SectionTab(QWidget):
         self.cap.setToolTip("Without it the cut is open and the inside of the walls shows.")
         self.cap.toggled.connect(self._edited)
         form.addRow(self.cap)
+        self.style = QComboBox()
+        self.style.addItem(tr("Material of the drawing"), "material")
+        self.style.addItem(tr("Flat colour"), "flat")
+        self.style.addItem(tr("Hatch pattern"), "hatch")
+        self.style.setToolTip("What the cap is made of: a material of the drawing (with its picture and finish), "
+                              "one plain colour, or a pattern of lines or dots over a colour.")
+        self.style.currentIndexChanged.connect(self._edited)
+        form.addRow("Cap", self.style)
         self.material = QComboBox()
         self.material.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.material.setMinimumContentsLength(8)
         self.material.setToolTip("The cap is made of this material of the drawing, so it takes its "
                                  "picture, finish and the settings of the material editor.")
         self.material.currentIndexChanged.connect(self._edited)
-        form.addRow("Cap material", self.material)
+        form.addRow("Material", self.material)
+        self.colour = ColourButton(S.DEFAULT["color"], "Cap colour")
+        self.colour.setToolTip("The cap's colour (the ground of a hatch).")
+        self.colour.changed.connect(self._edited)
+        form.addRow("Colour", self.colour)
+        self.pattern = QComboBox()
+        for key, label in (("diagonal", "Diagonal lines"), ("cross", "Cross hatch"), ("grid", "Grid"), ("dots", "Dots")):
+            self.pattern.addItem(tr(label), key)
+        self.pattern.currentIndexChanged.connect(self._edited)
+        form.addRow("Pattern", self.pattern)
+        self.line = ColourButton(S.DEFAULT["line"], "Line colour")
+        self.line.setToolTip("The colour of the lines or dots.")
+        self.line.changed.connect(self._edited)
+        form.addRow("Lines", self.line)
+        self.spacing = QDoubleSpinBox()
+        self.spacing.setRange(0.5, 500.0)
+        self.spacing.setDecimals(1)
+        self.spacing.setSingleStep(1.0)
+        self.spacing.setSuffix(" cm")
+        self.spacing.setValue(S.DEFAULT["spacing"] * 100.0)
+        self.spacing.setKeyboardTracking(False)
+        self.spacing.setToolTip("The distance between lines (or dots), in the real size of the drawing.")
+        self.spacing.valueChanged.connect(self._edited)
+        form.addRow("Spacing", self.spacing)
+        self.shadows = QCheckBox("No shadows on the cap")
+        self.shadows.setToolTip("The cap neither casts nor receives shadows: it keeps its colour evenly, "
+                                "as a drawn section, whatever the sun does.")
+        self.shadows.toggled.connect(self._edited)
+        form.addRow(self.shadows)
+        self.form = form
         self.light = QComboBox()
         self.light.addItem(tr("Light enters the cut (open)"), "open")
         self.light.addItem(tr("The removed part still blocks light"), "blocked")
@@ -68,18 +143,27 @@ class SectionTab(QWidget):
 
     # -- values -----------------------------------------------------------------------
     def settings(self) -> dict:
-        return {"cap": self.cap.isChecked(), "material": self._wanted,
+        return {"cap": self.cap.isChecked(), "style": self.style.currentData(), "material": self._wanted,
+                "color": self.colour.rgb(), "pattern": self.pattern.currentData(), "line": self.line.rgb(),
+                "spacing": round(self.spacing.value() / 100.0, 4), "shadows": not self.shadows.isChecked(),
                 "light": self.light.currentData()}
 
     def apply(self, raw) -> None:
         d = S.clean(raw)
-        for w in (self.cap, self.material, self.light):
+        mine = (self.cap, self.material, self.light, self.style, self.pattern, self.spacing, self.shadows)
+        for w in mine:
             w.blockSignals(True)
         self.cap.setChecked(d["cap"])
+        self.style.setCurrentIndex(max(0, self.style.findData(d["style"])))
+        self.pattern.setCurrentIndex(max(0, self.pattern.findData(d["pattern"])))
+        self.colour.set_rgb(d["color"])
+        self.line.set_rgb(d["line"])
+        self.spacing.setValue(d["spacing"] * 100.0)
+        self.shadows.setChecked(not d["shadows"])
         self._wanted = d["material"]
         self.light.setCurrentIndex(max(0, self.light.findData(d["light"])))
         self._fill()
-        for w in (self.cap, self.material, self.light):
+        for w in mine:
             w.blockSignals(False)
         self._paint()
 
@@ -139,8 +223,14 @@ class SectionTab(QWidget):
             pass
         self.state.setText(tr("Active section: the render is cut.") if has else
                            tr("No active section plane: the render shows the whole model."))
-        self.material.setEnabled(self.cap.isChecked())
-        name = self.material.currentData()
+        capped = self.cap.isChecked()
+        style = self.style.currentData()
+        for w, shown in ((self.style, True), (self.material, style == "material"), (self.colour, style != "material"),
+                         (self.pattern, style == "hatch"), (self.line, style == "hatch"),
+                         (self.spacing, style == "hatch"), (self.shadows, True)):
+            self.form.setRowVisible(w, shown)
+            w.setEnabled(capped)
+        name = self.material.currentData() if style == "material" else None
         if name and not (getattr(self, "_counts", {}) or {}).get(name):
             self.state.setText(self.state.text() + "\n" + tr("The cap material is in no face of the model: "
                                "only its colour is used (no picture). Paint something with it to get it whole."))

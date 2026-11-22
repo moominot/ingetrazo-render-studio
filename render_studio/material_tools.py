@@ -12,7 +12,7 @@ import copy
 import json
 
 from core.group import Group
-from core.history import (CompoundCommand, SetFaceColorCommand, SetFaceMaterialTagCommand,
+from core.history import (Command, CompoundCommand, SetFaceColorCommand, SetFaceMaterialTagCommand,
                           SetFaceOpacityCommand, SetFaceTextureCommand, SetGroupMaterialCommand)
 from core.materials import Material
 from core.mesh import Face
@@ -69,6 +69,36 @@ def paint_commands(scene, mat) -> tuple:
     for g in groups:
         cmds.append(SetGroupMaterialCommand(g, mat.face_attrs()))
     return cmds, len(faces) + len(groups)
+
+
+class DeleteMaterialCommand(Command):
+    """Take an unused material out of the document's registry (undo puts it back as it was)."""
+
+    def __init__(self, name) -> None:
+        self.name = name
+        self._old = None
+
+    def do(self, scene) -> None:
+        self._old = scene.materials.pop(self.name, None)
+        scene.version += 1
+
+    def undo(self, scene) -> None:
+        if self._old is not None:
+            scene.materials[self.name] = self._old
+        scene.version += 1
+
+
+def delete_material(app, name) -> bool:
+    """Remove the material ``name`` from the document, one undo step. Only one that no face or object wears
+    (it would leave them with a name that has no material); returns False when it is used or not there."""
+    from . import materials as M
+    scene = app.scene
+    if name not in (getattr(scene, "materials", None) or {}):
+        return False
+    if M.used_materials(scene).get(name, 0):
+        return False
+    _run(app, [DeleteMaterialCommand(name)], name, None)
+    return True
 
 
 def _run(app, cmds, name, spec):
@@ -272,12 +302,69 @@ def load_material(app, path):
                            spec=data.get("settings"), finish=data.get("finish"))
 
 
-def set_material_colour(app, name, rgb):
+def set_material_picture(app, name, path, width=1.0):
+    """A picture for the material ``name``, which is a flat colour so far, everywhere it is worn (one undo step).
+    The picture repeats every ``width`` metres, its height following its proportions. Returns ``(done, message)``.
+    A material that has a picture already changes it with ``texture_swap.swap_picture``."""
+    from pathlib import Path
+    from core.history import RestampMaterialCommand
+    from core.texture import cache_image, is_image_file
+    from PySide6.QtGui import QImage
+    from .i18n import tr
+    mat = (getattr(app.scene, "materials", None) or {}).get(name)
+    if mat is None:
+        return False, tr("Choose a material of the model first.")
+    if mat.texture:
+        return False, tr("«{name}» has a picture already: change it instead.", name=name)
+    p = Path(path)
+    if not is_image_file(p):
+        return False, tr("{name} is not an image IngeTrazo can read.", name=p.name)
+    try:
+        cached = cache_image(p.read_bytes(), p.name, "imported")      # the model does not depend on the file staying put
+    except OSError as exc:
+        return False, tr("Could not read {name}: {error}", name=p.name, error=exc)
+    img = QImage(str(cached))
+    ratio = img.height() / img.width() if not img.isNull() and img.width() else 1.0
+    sw = max(0.01, float(width))
+    new = Material(name, color=None, texture={"path": str(cached), "sw": round(sw, 3), "sh": round(sw * ratio, 3)},
+                   opacity=mat.opacity, finish=getattr(mat, "finish", None))
+    vp = app.viewport
+    vp.history.execute(RestampMaterialCommand(name, new))
+    notify = getattr(vp, "notify_scene_changed", None)
+    if callable(notify):
+        notify()
+    vp.update()
+    return True, tr("«{name}» now uses {file}, on every face that wears it. One undo step.", name=name, file=p.name)
+
+
+def set_texture_size(app, name, width, height):
+    """How big the picture of the material ``name`` is on the model (metres), on every face and object that wears
+    it, one undo step; each face keeps its own turn, tint and placement. Returns True when it changed."""
+    from core.history import EditTexturedMaterialCommand
+    mat = (getattr(app.scene, "materials", None) or {}).get(name)
+    if mat is None or not mat.texture:
+        return False
+    tex = mat.texture
+    sw, sh = max(0.01, float(width)), max(0.01, float(height))
+    if abs(sw - float(tex.get("sw", 1.0))) < 1e-6 and abs(sh - float(tex.get("sh", 1.0))) < 1e-6:
+        return False
+    vp = app.viewport
+    vp.history.execute(EditTexturedMaterialCommand(name, tex.get("tint"), tex.get("tint_mode", 0),
+                                                   (sw, sh, float(tex.get("rot", 0.0) or 0.0))))
+    notify = getattr(vp, "notify_scene_changed", None)
+    if callable(notify):
+        notify()
+    vp.update()
+    return True
+
+
+def set_material_colour(app, name, rgb, force=False):
     """The flat colour of the material ``name`` changed everywhere it is worn (every face and object, nested
-    ones too), one undo step. A material with a picture is left alone. Returns True when it changed."""
+    ones too), one undo step. A material with a picture is left alone, unless ``force``: it then becomes a flat
+    colour. Returns True when it changed."""
     from core.history import RestampMaterialCommand
     mat = (getattr(app.scene, "materials", None) or {}).get(name)
-    if mat is None or mat.texture:
+    if mat is None or (mat.texture and not force):
         return False
     rgb = tuple(float(c) for c in rgb[:3])
     new = Material(name, color=rgb, opacity=mat.opacity, finish=getattr(mat, "finish", None))

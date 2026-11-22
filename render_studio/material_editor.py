@@ -18,7 +18,7 @@ from PySide6.QtCore import QSettings, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog,
                                QFormLayout, QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
-                               QPushButton, QScrollArea, QSlider, QToolButton, QVBoxLayout, QWidget)
+                               QPushButton, QRadioButton, QScrollArea, QSlider, QToolButton, QVBoxLayout, QWidget)
 
 from . import cube_preview
 from . import opacity as opacity_mod
@@ -302,10 +302,14 @@ class MaterialEditor(QDialog):
         self.dup_btn = QPushButton("Duplicate")
         self.dup_btn.setToolTip("A copy of this material, settings included, under a new name.")
         self.dup_btn.clicked.connect(self.duplicate_current)
-        tools.addWidget(self.pipette_btn, 0, 0)
-        tools.addWidget(self.paint_btn, 0, 1)
-        tools.addWidget(self.new_btn, 1, 0)
-        tools.addWidget(self.dup_btn, 1, 1)
+        self.del_btn = QPushButton("Delete")
+        self.del_btn.setToolTip("Take this material out of the drawing. Only one that nothing is painted with.")
+        self.del_btn.clicked.connect(self.delete_current)
+        tools.addWidget(self.pipette_btn, 0, 0, 1, 3)
+        tools.addWidget(self.paint_btn, 1, 0, 1, 3)
+        tools.addWidget(self.new_btn, 2, 0)
+        tools.addWidget(self.dup_btn, 2, 1)
+        tools.addWidget(self.del_btn, 2, 2)
         self.save_btn = QPushButton("Save material…")
         self.save_btn.setToolTip("Save this material (its colour or picture, settings and finish) to a file, with its pictures, "
                                  "to use it in another drawing.")
@@ -313,8 +317,14 @@ class MaterialEditor(QDialog):
         self.load_btn = QPushButton("Load material…")
         self.load_btn.setToolTip("Bring a saved material into this drawing (it is added; nothing is painted).")
         self.load_btn.clicked.connect(self.load_from_file)
-        tools.addWidget(self.save_btn, 2, 0)
-        tools.addWidget(self.load_btn, 2, 1)
+        self.blender_btn = QPushButton("Edit in Blender…")
+        self.blender_btn.setToolTip("For experts: open the chosen material in Blender, on a sphere with its picture and "
+                                    "its nodes (a grass material with its grass generator too). Change anything: each "
+                                    "time you save (Ctrl+S) it comes back here whole and the render uses it exactly as "
+                                    "you left it. While it is edited in Blender its settings here are locked: «Unlock» "
+                                    "goes back to them.")
+        self.blender_btn.clicked.connect(self.edit_in_blender)
+        self._session = None
         left.addLayout(tools)
         self._pick_timer = QTimer(self)
         self._pick_timer.setInterval(150)
@@ -323,7 +333,13 @@ class MaterialEditor(QDialog):
         pick = QPushButton("From the selection")
         pick.setToolTip("Show the material of the selected face or group.")
         pick.clicked.connect(self.pick_selection)
-        left.addWidget(pick)
+        # the less usual ones are folded: files, the selection, Blender
+        from .widgets import Collapsible
+        self.more = Collapsible(tr("More"), "materials_more")
+        self.more.form.setContentsMargins(0, 0, 0, 0)
+        for b in (self.save_btn, self.load_btn, pick, self.blender_btn):
+            self.more.form.addRow(b)
+        left.addWidget(self.more)
         help_btn = QToolButton()
         help_btn.setText("?")
         help_btn.setToolTip("How materials render, and what each setting does")
@@ -345,6 +361,23 @@ class MaterialEditor(QDialog):
                                        "LED, neon…) in several languages, or by their picture's file name.")
         self.detected_label.setVisible(False)
         form.addRow(self.detected_label)
+        # a material edited in Blender: its settings here are locked until the person takes them back
+        self.lock_box = QWidget()
+        lb = QVBoxLayout(self.lock_box)
+        lb.setContentsMargins(0, 0, 0, 0)
+        self.lock_label = QLabel(tr("Edited in Blender: the render uses that material exactly as you left it, so the "
+                                    "settings below are locked."))
+        self.lock_label.setWordWrap(True)
+        self.lock_label.setStyleSheet("color: #8a5a00")
+        self.unlock_btn = QPushButton("Unlock (back to the basic settings)")
+        self.unlock_btn.setToolTip("Drop the material made in Blender and go back to this editor's settings: the render "
+                                   "makes the material from them again. The Blender version is lost (Undo brings it back).")
+        self.unlock_btn.clicked.connect(self.unlock_current)
+        lb.addWidget(self.lock_label)
+        lb.addWidget(self.unlock_btn)
+        self.lock_box.setVisible(False)
+        form.addRow(self.lock_box)
+        self._locked = False
         prev = QHBoxLayout()
         self.cube = ClickLabel()
         self.cube.setCursor(Qt.PointingHandCursor)
@@ -359,18 +392,40 @@ class MaterialEditor(QDialog):
         prev.addWidget(self.cube)
         prev.addWidget(note, 1)
         form.addRow(prev)
+        # What the material is made of: a flat colour or a picture. One place to choose, to change it, to edit it
+        # in another program and to say how big it is on the model.
+        moderow = QHBoxLayout()
+        self.mode_colour = QRadioButton("Colour")
+        self.mode_picture = QRadioButton("Picture")
+        self.mode_colour.setToolTip("The material is one flat colour, in the MODEL (every face and object that wears it follows; "
+                                    "one undo step).")
+        self.mode_picture.setToolTip("The material is a picture: choose an image file. In the MODEL too, one undo step.")
+        self.mode_colour.clicked.connect(self._mode_colour)
+        self.mode_picture.clicked.connect(self._mode_picture)
+        moderow.addWidget(QLabel("Material of"))
+        moderow.addWidget(self.mode_colour)
+        moderow.addWidget(self.mode_picture)
+        moderow.addStretch(1)
+        form.addRow(moderow)
+        colrow = QHBoxLayout()
+        self.colour_btn = QPushButton("")
+        self.colour_btn.setMinimumWidth(90)
+        self.colour_btn.setToolTip("The material's colour: click to choose another.")
+        self.colour_btn.clicked.connect(self.choose_colour)
+        colrow.addWidget(self.colour_btn)
+        colrow.addStretch(1)
+        form.addRow(colrow)
+        picbox = QVBoxLayout()
         picrow = QHBoxLayout()
+        self.pic_name = QLabel("")
+        self.pic_name.setStyleSheet("color: gray")
         self.pic_btn = QPushButton("Change picture…")
         self.pic_btn.setToolTip("Replace the picture of this material in the MODEL (not only in the "
                                 "render): every face and object that wears it changes, one undo step.")
         self.pic_btn.clicked.connect(self.change_picture)
-        self.keep_ratio = QCheckBox("Keep proportions")
-        self.keep_ratio.setChecked(True)
-        self.keep_ratio.setToolTip("The tile height follows the new image's proportions. Off: the "
-                                   "tile size stays and a different shape is stretched.")
         self.edit_btn = QPushButton("Edit picture…")
-        self.edit_btn.setToolTip("Open the picture in another program (GIMP, Krita, the system's own…) and take it back "
-                                 "into the material when it is saved there. The original file is not touched: it is edited "
+        self.edit_btn.setToolTip("Open the picture in another program (GIMP by default, or Krita, or the system's own) and take it "
+                                 "back into the material when it is saved there. The original file is not touched: it is edited "
                                  "as a copy. In GIMP save with File ▸ Overwrite (or Export As). Each save is one undo step.")
         self.edit_btn.clicked.connect(self.edit_picture)
         self.editor_btn = QToolButton()
@@ -383,14 +438,45 @@ class MaterialEditor(QDialog):
         picrow.addWidget(self.pic_btn)
         picrow.addWidget(self.edit_btn)
         picrow.addWidget(self.editor_btn)
-        picrow.addWidget(self.keep_ratio)
         picrow.addStretch(1)
-        form.addRow(picrow)
+        sizerow = QHBoxLayout()
+        self.tile_w = QDoubleSpinBox()
+        self.tile_h = QDoubleSpinBox()
+        for sp, tip in ((self.tile_w, "How wide the picture is on the model, in metres."),
+                        (self.tile_h, "How tall the picture is on the model, in metres.")):
+            sp.setRange(0.01, 500.0)
+            sp.setDecimals(2)
+            sp.setSingleStep(0.1)
+            sp.setSuffix(" m")
+            sp.setToolTip(tip)
+        self.keep_ratio = QCheckBox("Keep proportions")
+        self.keep_ratio.setChecked(True)
+        self.keep_ratio.setToolTip("Changing the width changes the height too, so the picture is not stretched; and a new "
+                                   "picture takes its own proportions. Off: each size is its own.")
+        self._tile_timer = QTimer(self)
+        self._tile_timer.setSingleShot(True)
+        self._tile_timer.setInterval(350)
+        self._tile_timer.timeout.connect(self._apply_tile)
+        self.tile_w.valueChanged.connect(lambda _v: self._tile_moved("w"))
+        self.tile_h.valueChanged.connect(lambda _v: self._tile_moved("h"))
+        sizerow.addWidget(QLabel("Size on the model"))
+        sizerow.addWidget(self.tile_w)
+        sizerow.addWidget(QLabel("×"))
+        sizerow.addWidget(self.tile_h)
+        sizerow.addWidget(self.keep_ratio)
+        sizerow.addStretch(1)
+        picbox.addLayout(picrow)
+        picbox.addWidget(self.pic_name)
+        picbox.addLayout(sizerow)
+        form.addRow(picbox)
+        picrow = picbox
         self.form = form
-        self._rows = {"picture": picrow}        # control → its form row (hidden when it does nothing)
+        adv = form
+        self.map_toggles = {}                   # setting → the little button that opens its map options
+        self._rows = {"picture": picrow, "colour": colrow}        # control → its form row (hidden when it does nothing)
         self.image_adj = ImageAdjust()
         self.image_adj.changed.connect(self._changed)
-        form.addRow(self.image_adj)
+        adv.addRow(self.image_adj)
         self._rows["image"] = self.image_adj
         self.set_label = QLabel("")
         self.set_label.setWordWrap(True)
@@ -428,12 +514,13 @@ class MaterialEditor(QDialog):
         trow = QHBoxLayout()
         trow.addWidget(self.transparency, 1)
         trow.addWidget(self.transparency_value)
+        trow.addWidget(self._map_toggle("opacity"))
         form.addRow("Transparency", trow)
         self._rows["transparency"] = trow
         self.sliders["transparency"] = self.transparency
         self.values["transparency"] = self.transparency_value
         self.maps["opacity"] = MapRow("opacity", self._changed)
-        form.addRow("", self.maps["opacity"])
+        adv.addRow("", self.maps["opacity"])
         self._rows["map:opacity"] = self.maps["opacity"]
         for key, label, lo, hi, tip in _FIELDS:
             s = QSlider(Qt.Horizontal)
@@ -447,11 +534,12 @@ class MaterialEditor(QDialog):
             row = QHBoxLayout()
             row.addWidget(s, 1)
             row.addWidget(v)
+            row.addWidget(self._map_toggle(key))
             form.addRow(label, row)
             self.sliders[key] = s
             self.values[key] = v
             self.maps[key] = MapRow(key, self._changed)
-            form.addRow("", self.maps[key])
+            adv.addRow("", self.maps[key])
             self._rows[key] = row
             self._rows["map:" + key] = self.maps[key]
         self.ripple = QSlider(Qt.Horizontal)
@@ -470,6 +558,31 @@ class MaterialEditor(QDialog):
         self._rows["ripple_size"] = rrow
         self.sliders["ripple_size"] = self.ripple
         self.values["ripple_size"] = self.ripple_value
+        self.water_body = QComboBox()
+        for key in M.WATER_BODIES:
+            self.water_body.addItem(M.water_body_label(key, lang), key)
+        self.water_body.setToolTip("Water: how big the body of water is: a pool's wavelets, a lake's ripples, the sea's "
+                                   "swell, the ocean's long rollers. Choosing one sets the ripples and the waves to suit.")
+        self.water_body.activated.connect(self._water_body_chosen)
+        form.addRow("Water scale", self.water_body)
+        self._rows["water_body"] = self.water_body
+        self.waves = QSlider(Qt.Horizontal)
+        self.waves.setRange(0, 100)
+        self.waves.setProperty("lo", 0.0)
+        self.waves.setProperty("hi", 1.0)
+        self.waves.setToolTip("Water: real waves in the render's geometry (the model stays flat): the edges of a pool or a "
+                              "lake ripple too. 100 % is the height the chosen scale would make; 0 is flat water "
+                              "(only the ripples bend the light).")
+        self.waves_value = QLabel("")
+        self.waves_value.setMinimumWidth(34)
+        self.waves.valueChanged.connect(lambda _x: (self._label("waves"), self._changed()))
+        wrow = QHBoxLayout()
+        wrow.addWidget(self.waves, 1)
+        wrow.addWidget(self.waves_value)
+        form.addRow("Waves", wrow)
+        self._rows["waves"] = wrow
+        self.sliders["waves"] = self.waves
+        self.values["waves"] = self.waves_value
         lo, hi = M.GRASS_HEIGHT_RANGE
         self.grass = QSlider(Qt.Horizontal)
         self.grass.setRange(0, 100)
@@ -515,7 +628,7 @@ class MaterialEditor(QDialog):
                                  "the material has no picture of its own (with one, the maps "
                                  "follow the picture's size).")
         self.map_size.valueChanged.connect(self._changed)
-        form.addRow("Map image size", self.map_size)
+        adv.addRow("Map image size", self.map_size)
         self._rows["map_size"] = self.map_size
         self.reset_btn = QPushButton("Back to automatic")
         self.reset_btn.setToolTip("Forget these settings: IngeTrazo's own finish for this material.")
@@ -646,6 +759,37 @@ class MaterialEditor(QDialog):
                 return True
         return False
 
+    def _map_toggle(self, key):
+        """The small button next to a setting that opens its map options (a picture or a file drives the slider)."""
+        b = QToolButton()
+        b.setCheckable(True)
+        b.setArrowType(Qt.RightArrow)
+        b.setAutoRaise(True)
+        b.setToolTip(tr("Map: let a picture or an image file drive this setting"))
+        b.toggled.connect(lambda on, k=key, t=b: (t.setArrowType(Qt.DownArrow if on else Qt.RightArrow), self._enable_glow()))
+        self.map_toggles[key] = b
+        return b
+
+    def edit_in_blender(self):
+        from .blender_session import BlenderSession
+        owner = self.parent()
+        found = owner.blender_or_none() if owner is not None and hasattr(owner, "blender_or_none") else None
+        if found is None:
+            self.title.setText(tr("Blender was not found: choose it in the Render Studio panel."))
+            return None
+        if self._session is not None:
+            self._session.stop()
+        name = self.current_name()
+        if name is None:
+            self.title.setText(tr("Choose a material first."))
+            return None
+        self._session = BlenderSession(self.app, "materials", found, self, only=name)
+        self._session.changed.connect(self.title.setText)
+        self._session.failed.connect(self.title.setText)
+        if self._session.start():
+            self.title.setText(tr("Opened in Blender. Change the material there and save (Ctrl+S): it comes back here."))
+        return self._session
+
     def _help(self):
         from . import ui_help
         ui_help.show(self, "materials")
@@ -673,6 +817,120 @@ class MaterialEditor(QDialog):
             self.refresh(force=True)
             self.select(name)
             self.hint.setText(tr("Colour of {name} changed.", name=name))
+
+    def _sync_source(self, name):
+        """What the «Material of» block shows: colour or picture, the colour, the picture's name and its size."""
+        mat = (getattr(self.app.scene, "materials", None) or {}).get(name) if name else None
+        has = bool(mat is not None and mat.texture)
+        self._tile_loading = True
+        for b, on in ((self.mode_colour, not has), (self.mode_picture, has)):
+            b.setAutoExclusive(False)
+            b.setChecked(on)
+            b.setAutoExclusive(True)
+        usable = mat is not None and not getattr(self, "_locked", False)
+        for w in (self.mode_colour, self.mode_picture, self.colour_btn, self.pic_btn, self.tile_w, self.tile_h,
+                  self.keep_ratio):
+            w.setEnabled(usable)
+        rgb = tuple((getattr(mat, "color", None) or (0.8, 0.8, 0.8)))[:3] if mat is not None else (0.8, 0.8, 0.8)
+        c = QColor.fromRgbF(*[max(0.0, min(1.0, float(x))) for x in rgb])
+        self.colour_btn.setStyleSheet(f"background-color: {c.name()}; border: 1px solid gray")
+        tex = (mat.texture or {}) if mat is not None else {}
+        path = tex.get("base") or tex.get("path") or ""
+        self.pic_name.setText(Path(path).name if path else "")
+        self.tile_w.setValue(float(tex.get("sw", 1.0) or 1.0))
+        self.tile_h.setValue(float(tex.get("sh", 1.0) or 1.0))
+        self._tile_loading = False
+
+    def _material(self):
+        name = self.current_name()
+        return name, ((getattr(self.app.scene, "materials", None) or {}).get(name) if name else None)
+
+    def _reshow(self, name):
+        self.refresh(force=True)
+        self.select(name)
+
+    def choose_colour(self):
+        """The flat colour of the material, changed everywhere it is worn (a material with a picture becomes one
+        of this colour: see «Material of»)."""
+        from . import material_tools
+        from PySide6.QtWidgets import QColorDialog
+        name, mat = self._material()
+        if mat is None:
+            return
+        start = QColor.fromRgbF(*(tuple(mat.color or (0.8, 0.8, 0.8))[:3]))
+        chosen = QColorDialog.getColor(start, self, tr("Colour of the material"))
+        if chosen.isValid() and material_tools.set_material_colour(
+                self.app, name, (chosen.redF(), chosen.greenF(), chosen.blueF()), force=True):
+            self._reshow(name)
+            self.hint.setText(tr("Colour of {name} changed.", name=name))
+
+    def _mode_colour(self):
+        """«Colour»: a material with a picture becomes a flat colour (asked, starting from the picture's average)."""
+        from . import material_tools
+        from PySide6.QtWidgets import QColorDialog
+        name, mat = self._material()
+        if mat is None or not mat.texture:
+            self._sync_source(name)
+            return
+        pic = self._picture(name)
+        start = QColor(128, 128, 128)
+        if pic:
+            img = QImage(pic)
+            if not img.isNull():
+                start = img.scaled(1, 1, Qt.IgnoreAspectRatio, Qt.SmoothTransformation).pixelColor(0, 0)
+        chosen = QColorDialog.getColor(start, self, tr("Colour of the material"))
+        if chosen.isValid() and material_tools.set_material_colour(
+                self.app, name, (chosen.redF(), chosen.greenF(), chosen.blueF()), force=True):
+            self._reshow(name)
+            self.hint.setText(tr("{name} is now a flat colour.", name=name))
+        else:
+            self._sync_source(name)
+
+    def _mode_picture(self):
+        """«Picture»: a colour-only material gets an image file."""
+        from . import material_tools
+        name, mat = self._material()
+        if mat is None or mat.texture:
+            self._sync_source(name)
+            return
+        start = str(QSettings().value(_SETTINGS + "picture_dir", "") or "")
+        path, _f = QFileDialog.getOpenFileName(self, "Picture of the material", start,
+                                               "Images (*.png *.jpg *.jpeg *.tif *.tiff *.bmp *.webp *.tga)")
+        if not path:
+            self._sync_source(name)
+            return
+        done, message = material_tools.set_material_picture(self.app, name, path, self.tile_w.value())
+        if done:
+            QSettings().setValue(_SETTINGS + "picture_dir", str(Path(path).parent))
+            self._reshow(name)
+        else:
+            self._sync_source(name)
+        self.hint.setText(message)
+
+    def _tile_moved(self, which):
+        if getattr(self, "_tile_loading", False):
+            return
+        name, mat = self._material()
+        pic = self._picture(name) if mat is not None else ""
+        if self.keep_ratio.isChecked() and pic:
+            img = QImage(pic)
+            if not img.isNull() and img.width():
+                ratio = img.height() / img.width()
+                self._tile_loading = True
+                if which == "w":
+                    self.tile_h.setValue(self.tile_w.value() * ratio)
+                else:
+                    self.tile_w.setValue(self.tile_h.value() / ratio)
+                self._tile_loading = False
+        self._tile_timer.start()
+
+    def _apply_tile(self):
+        """The size the picture has on the model, on every face and object that wears the material."""
+        from . import material_tools
+        name, mat = self._material()
+        if mat is not None and mat.texture and material_tools.set_texture_size(
+                self.app, name, self.tile_w.value(), self.tile_h.value()):
+            self._update_cube()
 
     def _edit_label(self):
         """«Edit in GIMP…» once the program is known, else «Edit picture…»."""
@@ -850,6 +1108,17 @@ class MaterialEditor(QDialog):
             return
         self._made(new, 0, tr("Copied {name} as", name=name))
 
+    def delete_current(self):
+        """Take the chosen material out of the drawing, when nothing wears it."""
+        from . import material_tools
+        name = self.current_name()
+        if name is None:
+            return
+        if material_tools.delete_material(self.app, name):
+            self.title.setText(tr("{name} deleted. Undo brings it back.", name=name))
+        else:
+            self.title.setText(tr("{name} is painted on the model: paint those faces with another material first.", name=name))
+
     def save_current(self):
         """The chosen material to a file of its own (``.rsmat``) with its pictures, to use in another drawing."""
         from . import material_tools
@@ -911,10 +1180,35 @@ class MaterialEditor(QDialog):
 
     def _label(self, key):
         v = self._get(key)
-        self.values[key].setText(f"{v * 100:.0f}%" if key == "transparency"
+        self.values[key].setText(f"{v * 100:.0f}%" if key in ("transparency", "waves")
                                  else f"{v * 100:.0f} cm" if key == "grass_height"
                                  else f"{v:.0f}/m²" if key == "grass_density"
                                  else (f"{v:.2f}" if v < 10 else f"{v:.1f}") if key == "glow" else f"{v:.2f}")
+
+    def _set_locked(self, on: bool) -> None:
+        """A material edited in Blender: every setting of this editor is locked (and says why)."""
+        self._locked = bool(on)
+        self.lock_box.setVisible(self._locked)
+        if self._locked:
+            for w in (self.preset, self.kind, self.water_body, self.reset_btn, self.map_size, self.image_adj,
+                      *self.sliders.values(), *self.maps.values(), *self.map_toggles.values()):
+                w.setEnabled(False)
+        else:
+            for w in (self.preset, self.kind, self.water_body, self.reset_btn, self.map_size, self.image_adj,
+                      *self.sliders.values(), *self.maps.values(), *self.map_toggles.values()):
+                w.setEnabled(True)
+
+    def unlock_current(self) -> None:
+        """Back to this editor's settings: the material made in Blender is dropped."""
+        name = self.current_name()
+        own = dict(self.specs().get(name) or {})
+        if name is None or not own.get("blender"):
+            return
+        own.pop("blender", None)
+        self._pending = None
+        self._store(name, own)
+        self._show(self.list.currentItem())
+        self.title.setText(tr("{name} unlocked: the render makes it from these settings again.", name=name))
 
     def _show(self, item, _prev=None):
         if self._loading:
@@ -924,7 +1218,11 @@ class MaterialEditor(QDialog):
         enabled = name is not None
         for w in (self.paint_btn, self.dup_btn, self.save_btn, self.edit_btn):
             w.setEnabled(name is not None)
-        for w in (self.preset, self.kind, self.reset_btn, self.map_size, self.image_adj,
+        unused = name is not None and not M.used_materials(self.app.scene).get(name, 0)
+        self.del_btn.setEnabled(bool(unused))
+        self.del_btn.setToolTip(tr("Take this material out of the drawing.") if unused else
+                                tr("Take this material out of the drawing. Only one that nothing is painted with."))
+        for w in (self.preset, self.kind, self.water_body, self.reset_btn, self.map_size, self.image_adj,
                   *self.sliders.values(), *self.maps.values()):
             w.setEnabled(enabled)
         self.title.setText(name or "No material is used in the model.")
@@ -935,6 +1233,7 @@ class MaterialEditor(QDialog):
             return
         spec = dict(M.DEFAULT)
         own = self.specs().get(name)
+        self._set_locked(bool((own or {}).get("blender")))
         detected = None if own else self.detected(name)
         spec.update(own or detected or {})
         self.detected_label.setText(
@@ -949,7 +1248,11 @@ class MaterialEditor(QDialog):
         for key, *_r in _FIELDS:
             self._set_slider(key, spec.get(key, M.DEFAULT.get(key, 0.0)))
             self.maps[key].load(maps.get(key), picture)
+            self.map_toggles[key].setChecked(bool(maps.get(key)))
+        self.map_toggles["opacity"].setChecked(bool(maps.get("opacity")))
         self._set_slider("ripple_size", spec.get("ripple_size", M.DEFAULT_RIPPLE_SIZE))
+        self._set_slider("waves", spec.get("waves", M.DEFAULT_WAVES))
+        self.water_body.setCurrentIndex(max(0, self.water_body.findData(spec.get("water_body") or M.DEFAULT_WATER_BODY)))
         self._set_slider("grass_height", spec.get("grass_height", M.DEFAULT_GRASS_HEIGHT))
         self._set_slider("grass_density", spec.get("grass_density") or M.auto_grass_density(
             spec.get("grass_height", M.DEFAULT_GRASS_HEIGHT)))
@@ -960,6 +1263,7 @@ class MaterialEditor(QDialog):
         self._loading = False
         self._enable_glow()
         self._update_cube()
+        self._sync_source(name)
 
     def _transparency_moved(self, *_a):
         self._label("transparency")
@@ -979,13 +1283,36 @@ class MaterialEditor(QDialog):
         if done:
             self._update_cube()
 
+    def _water_body_chosen(self, _i):
+        """A scale of water chosen by hand: its ripples, their height and its waves become the ones that suit
+        it (the sliders stay free to be moved after)."""
+        key = self.water_body.currentData()
+        if not key or self._loading:
+            return
+        _names, ripple, relief, _wl, _h = M.WATER_BODIES[key]
+        self._loading = True
+        self._set_slider("ripple_size", ripple)
+        self._set_slider("bump", relief)
+        self._set_slider("waves", M.DEFAULT_WAVES)
+        self._loading = False
+        self._changed()
+
     def _kind_changed(self, *_a):
         """Choosing Water gives it waves to start with (Relief 0 would be a flat mirror),
         and Water or Glass a transparency to start with (opaque would hide the point)."""
         kind = self.kind.currentData()
+        prev, self._prev_kind = getattr(self, "_prev_kind", None), kind
+        if (not self._loading and prev in M.DEFAULT_TRANSPARENCY and kind not in M.DEFAULT_TRANSPARENCY
+                and self._get("transparency") > 0.0):
+            # from glass or water to a type that is not see-through (grass, generic, glow): opaque again,
+            # in the model too (the transparency is the material's opacity on every face that wears it)
+            self._loading = True
+            self._set_slider("transparency", 0.0)
+            self._loading = False
+            self._opacity_timer.start()
         if not self._loading and kind == "water" and self._get("bump") <= 0.0:
             self._loading = True
-            self._set_slider("bump", 0.5)
+            self._set_slider("bump", 0.3)
             self._loading = False
         if not self._loading and kind in M.DEFAULT_TRANSPARENCY and self._get("transparency") <= 0.0:
             self._loading = True
@@ -1042,13 +1369,18 @@ class MaterialEditor(QDialog):
     def _enable_glow(self):
         """Hide what does nothing for this material (another type's setting, one a
         texture set replaces, a picture's control without a picture)."""
-        shown = self.shown_controls() if self.current_name() is not None else set(self._rows)
+        shown = self.shown_controls() if self.current_name() is not None else set()
         for key, row in self._rows.items():
             self.form.setRowVisible(row, key in shown)
+        for key, tog in self.map_toggles.items():      # a map's options: only when it applies and is opened
+            has = f"map:{key}" in shown
+            row_key = "transparency" if key == "opacity" else key
+            tog.setVisible(has and row_key in shown)      # (a hidden setting's button must not float on its own)
+            self.form.setRowVisible(self._rows["map:" + key], has and tog.isChecked())
         kind = self.kind.currentData()
         label = self.form.labelForField(self._rows["bump"])
         if label is not None:                    # water's relief is its waves' height
-            label.setText(tr("Wave height") if kind == "water" else tr("Relief"))
+            label.setText(tr("Ripple height") if kind == "water" else tr("Relief"))
         self._show_texture_set(self.current_name(), kind)
 
     def _preset(self, _i):
@@ -1061,6 +1393,8 @@ class MaterialEditor(QDialog):
         for k, *_r in _FIELDS:
             self._set_slider(k, spec.get(k, M.DEFAULT.get(k, 0.0)))
         self._set_slider("ripple_size", spec.get("ripple_size", M.DEFAULT_RIPPLE_SIZE))
+        self._set_slider("waves", spec.get("waves", M.DEFAULT_WAVES))
+        self.water_body.setCurrentIndex(max(0, self.water_body.findData(spec.get("water_body") or M.DEFAULT_WATER_BODY)))
         self._set_slider("grass_height", spec.get("grass_height", M.DEFAULT_GRASS_HEIGHT))
         self._set_slider("grass_density", spec.get("grass_density") or M.auto_grass_density(
             spec.get("grass_height", M.DEFAULT_GRASS_HEIGHT)))
@@ -1070,7 +1404,7 @@ class MaterialEditor(QDialog):
         self._changed(from_preset=key)
 
     def _changed(self, *_a, from_preset=None):
-        if self._loading:
+        if self._loading or getattr(self, "_locked", False):
             return
         self._enable_glow()
         self._update_cube()
@@ -1083,6 +1417,8 @@ class MaterialEditor(QDialog):
             spec[key] = self._get(key)
         if spec["type"] == "water":
             spec["ripple_size"] = self._get("ripple_size")
+            spec["water_body"] = self.water_body.currentData()
+            spec["waves"] = round(self._get("waves"), 3)
         if spec["type"] == "grass":
             spec["grass_height"] = self._get("grass_height")
             spec["grass_density"] = round(self._get("grass_density"), 1)

@@ -81,5 +81,32 @@ try:
 finally:
     M.used_materials = real
 
+
+# ---- the cap's style: material / flat colour / hatch, and no shadows ----------------------------------
+from render_studio import section as S
+tab = SectionTab(App(), live=lambda: False); tab.show()
+ok(tab.settings()["style"] == "material" and tab.settings()["shadows"] is True, "the cap starts as before: the material, with shadows")
+ok(tab.material.isVisibleTo(tab) and not tab.colour.isVisibleTo(tab) and not tab.pattern.isVisibleTo(tab), "material style: only the material list")
+tab.style.setCurrentIndex(tab.style.findData("flat"))
+ok(tab.colour.isVisibleTo(tab) and not tab.material.isVisibleTo(tab) and not tab.pattern.isVisibleTo(tab), "flat style: a colour, no material, no pattern")
+tab.style.setCurrentIndex(tab.style.findData("hatch"))
+ok(all(w.isVisibleTo(tab) for w in (tab.colour, tab.pattern, tab.line, tab.spacing)), "hatch style: colour, pattern, lines and spacing")
+tab.colour.set_rgb((1, 1, 1)); tab.pattern.setCurrentIndex(tab.pattern.findData("cross")); tab.spacing.setValue(25); tab.shadows.setChecked(True)
+st = tab.settings()
+ok(st["style"] == "hatch" and st["pattern"] == "cross" and abs(st["spacing"] - 0.25) < 1e-6 and st["shadows"] is False and st["color"] == [1.0, 1.0, 1.0],
+   f"the settings carry it ({st['style']}, {st['pattern']}, {st['spacing']}, shadows {st['shadows']})")
+tab2 = SectionTab(App(), live=lambda: False); tab2.apply(st)
+ok(tab2.settings() == st, "and apply puts them back")
+ok(S.clean({"style": "x", "pattern": "y", "spacing": -4, "color": "red", "shadows": 0})["style"] == "material"
+   and S.clean({"spacing": -4})["spacing"] == 0.005 and S.clean({"color": "red"})["color"] == S.DEFAULT["color"], "junk is cleaned")
+class Sc2(Scene):
+    def __init__(self):
+        super().__init__()
+        from PySide6.QtGui import QVector3D
+        pl = Plane(); pl.point = QVector3D(0, 0, 0); pl.normal = QVector3D(1, 0, 0); self.plane = pl
+blk = S.job_block(Sc2(), st)
+ok(blk["style"] == "hatch" and blk["pattern"] == "cross" and blk["texture_size"] == [1.0, 1.0] and blk["shadows"] is False and blk["color"] == [1.0, 1.0, 1.0],
+   "the job carries the hatch, laid out in metres")
+ok(S.job_block(Sc2(), {"style": "material"})["shadows"] is True, "the default job keeps the shadows")
 print("FAILED" if fails else "ALL PASSED", len(fails))
 sys.exit(1 if fails else 0)

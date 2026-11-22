@@ -36,7 +36,9 @@ ok("map:opacity" in M.shown_controls("generic") and "map:opacity" in M.shown_con
    "the opacity map is offered with the Transparency slider")
 ok("map:opacity" not in M.shown_controls("grass"), "…and not on grass (the blades cover the face)")
 ok("opacity" in ed.maps and ed.maps["opacity"].source.count() == 3, "the editor has an Opacity map row (none / picture / file)")
-ok(not ed.maps["opacity"].isHidden(), "…shown for a generic material")
+ok(ed.maps["opacity"].isHidden() and not ed.map_toggles["opacity"].isHidden(), "…folded behind the small button next to the slider")
+ed.map_toggles["opacity"].setChecked(True)
+ok(not ed.maps["opacity"].isHidden(), "…and shown for a generic material once opened")
 
 ed.maps["opacity"].set_file(mask); ed._flush()
 o = (spec().get("maps") or {}).get("opacity")
@@ -55,5 +57,18 @@ ok("opacity" not in (spec().get("maps") or {}), "No map removes it")
 ed.kind.setCurrentIndex(ed.kind.findData("grass")); ed._flush()
 ok(ed.maps["opacity"].isHidden() or not ed.maps["opacity"].isVisibleTo(ed), "a grass material hides the row")
 
+
+# changing the type from water or glass to one that is not see-through makes the material opaque again
+import time as _t
+ed.kind.setCurrentIndex(ed.kind.findData("water")); qa.processEvents()
+ok(ed._get("transparency") > 0.0, f"water starts see-through ({ed._get('transparency'):.2f})")
+ed._flush()
+ed.kind.setCurrentIndex(ed.kind.findData("grass")); qa.processEvents()
+ok(ed._get("transparency") == 0.0, "…and changing to grass takes the transparency away")
+ed._flush()
+op = getattr(scene.materials["Fence"], "opacity", None)
+ok(op in (None, 1.0), f"…in the model too ({op})")
+ed.kind.setCurrentIndex(ed.kind.findData("generic")); ed._set_slider("transparency", 0.3); ed.kind.setCurrentIndex(ed.kind.findData("glow"))
+ok(abs(ed._get("transparency") - 0.3) < 0.02, "a generic material's own transparency is kept when its type changes to another that has none")
 print("FAILED" if fails else "ALL PASSED", len(fails))
 sys.exit(1 if fails else 0)

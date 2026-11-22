@@ -53,6 +53,20 @@ DRAFT_SAMPLES = 8
 CYCLES_SAMPLES = {"motion": 2, "quick": 4, "draft": 32}
 
 
+#: The preview's quality: how big the frames are (a factor of the draft's width) and how many samples they take (a factor too,
+#: at least one). «normal» is the numbers above.
+QUALITY = {"fast": (0.6, 0.5), "normal": (1.0, 1.0), "high": (1.0, 2.0)}
+
+
+def quality_numbers(level: str, kind: str, samples: int) -> tuple[float, int]:
+    """(the width factor, the samples) of a frame of ``kind`` at the preview quality ``level``. «High» also keeps the moving
+    frames and the quick image as sharp as it can (they were a third and a half of the width)."""
+    wf, sf = QUALITY.get(level, QUALITY["normal"])
+    if level == "high" and kind != "draft":
+        wf = 1.5 if kind == "motion" else 1.3                   # 1/3 → 1/2 of the width, 1/2 → 2/3
+    return wf, max(1, round(samples * sf))
+
+
 def _copy_camera(cam):
     """A copy of the viewport camera that does not move with it."""
     import copy
@@ -70,6 +84,7 @@ def _copy_camera(cam):
 class LiveSession(QObject):
     image = Signal(object)          # Path of a new image
     state = Signal(str)             # what it is doing, for the status line
+    line = Signal(str)              # a line Blender said while it makes a final picture (the progress)
 
     def __init__(self, panel, *, argv_factory=None, poll_ms: int = POLL_MS, rest_ms: int | None = None):
         super().__init__(panel)
@@ -93,6 +108,7 @@ class LiveSession(QObject):
         self._count = 0
         self.follow_camera = True
         self.follow_changes = True
+        self._final = None                     # (done, refused) callbacks while it makes a final picture
         self._force = False                    # «Update»: take the model and materials as they are now, once
         self.loads = 0                         # how many times the scene was loaded (for tests)
         self.starts = 0                        # how many times a Blender was started (for tests)
@@ -103,17 +119,31 @@ class LiveSession(QObject):
     def active(self) -> bool:
         return self._timer.isActive()
 
+    @property
+    def usable(self) -> bool:
+        """Blender is running with its scene ready (the view may be paused: see :meth:`pause`)."""
+        return self._proc is not None and self._ready
+
+    def pause(self) -> None:
+        """The view stops following the camera and the changes, but Blender and its scene stay: :meth:`start` takes it up again
+        with no new build (the preview window shows a final picture meanwhile)."""
+        self._timer.stop()
+
     def start(self) -> None:
         if self.active:
             return
-        self._scene_key = self._seen_key = None
+        if self._proc is None or not self._ready:
+            self._scene_key = None             # (a paused view keeps its scene: it is rebuilt only if something changed)
+        self._seen_key = None
         self._done_key = self._quick_key = self._motion_key = None
         self._timer.start()
         self._poll()
 
-    def stop(self) -> None:
+    def stop(self, wait: bool = True) -> None:
+        """Stop the live view. ``wait`` False: Blender is told to quit and left to do it (a final render made in its scene does not
+        wait for it)."""
         self._timer.stop()
-        self._shutdown()
+        self._shutdown(wait)
 
     # ---- the two switches -------------------------------------------------------
     def set_follow_camera(self, on: bool) -> None:
@@ -139,6 +169,35 @@ class LiveSession(QObject):
     def set_follow_changes(self, on: bool) -> None:
         """Off: the live scene keeps its model and materials (look and sliders still apply)."""
         self.follow_changes = bool(on)
+
+    def render_final(self, camera, output, width, height, samples, engine, on_done, on_refused) -> bool:
+        """The final picture of ``camera`` made by THIS Blender, in the scene it already has (the model, the materials and the look
+        are in it: nothing is exported or built again). False when it cannot: no scene that is ready and up to date with the
+        panel. ``on_done(path)`` when the picture is written, ``on_refused()`` when Blender says its scene is only a draft (see
+        studio_scene.as_final): the caller makes the picture the long way."""
+        from core import render_blender as rb
+        if not (self.usable and not self._busy and self._final is None):
+            return False
+        try:
+            if self._scene_key is None or self.panel.live_key() != self._scene_key:
+                return False                   # the scene is behind the panel (or Follow changes is off and something changed)
+        except Exception:  # noqa: BLE001
+            return False
+        req = json.loads(rb.sync_request(camera, output, width, height, engine))
+        req["samples"] = int(samples)
+        req["final"] = True
+        self._final = (on_done, on_refused)
+        self._busy = True
+        self._timer.stop()                     # the view does not follow the camera while the picture is made
+        self._proc.write((json.dumps(req) + chr(10)).encode())
+        return True
+
+    def live_engine_name(self) -> str:
+        return self.panel.live_engine()
+
+    def quality_changed(self) -> None:
+        """The preview's quality was changed: the picture of the camera as it is is made again."""
+        self._motion_key = self._quick_key = self._done_key = None
 
     def update_now(self) -> None:
         """With Follow changes off: take the model and the materials as they are now, once (the scene
@@ -285,6 +344,8 @@ class LiveSession(QObject):
         engine = self.panel.live_engine()
         if engine == "cycles":
             samples = CYCLES_SAMPLES[kind]
+        wf, samples = quality_numbers(self.panel.preview_quality.currentData(), kind, samples)
+        k = min(1.0, k * wf)
         if kind == "motion":
             self._motion_key = cam_key
             self.frames += 1
@@ -300,6 +361,13 @@ class LiveSession(QObject):
         if not self.follow_camera and self._frozen is not None:
             req["camera"] = self._frozen
         req["samples"] = samples
+        # The outlines (Freestyle: seconds, even minutes, on a big model, and it cannot be interrupted: the camera would freeze) only
+        # once the camera rests and only on a model that is not big; the final render always has them.
+        try:
+            big = bool(self.panel._big_model())
+        except Exception:  # noqa: BLE001
+            big = False
+        req["outlines"] = kind == "draft" and not big
         self._proc.write((json.dumps(req) + "\n").encode())
 
     def _read(self) -> None:
@@ -309,11 +377,27 @@ class LiveSession(QObject):
         *lines, self._buf = self._buf.split("\n")
         self.tail = (self.tail + lines)[-40:]
         for line in lines:
+            if self._final is not None:
+                if line.startswith("INGETRAZO final refused"):
+                    (_d, refused), self._final = self._final, None
+                    self._busy = False
+                    refused()
+                    continue
+                if line.startswith("INGETRAZO done "):
+                    (done, _r), self._final = self._final, None
+                    self._busy = False
+                    self._motion_key = self._quick_key = self._done_key = None      # the draft of the camera is made again
+                    done(Path(line[len("INGETRAZO done "):].strip()))
+                    continue
+                self.line.emit(line)
+                continue
             if line.startswith("INGETRAZO ready"):
                 self._ready = True
                 self.state.emit("Live view: in sync")
             elif line.startswith("INGETRAZO imported"):
                 self.state.emit("Blender: the model is in; applying the look…")
+            elif line.startswith("INGETRAZO ") and not self._ready:
+                self.state.emit("Blender: " + line[len("INGETRAZO "):].strip()[:70] + "…")      # the step it is at (a big model takes a while)
             elif line.startswith("INGETRAZO done "):
                 self._busy = False
                 self.image.emit(Path(line[len("INGETRAZO done "):].strip()))
@@ -331,7 +415,7 @@ class LiveSession(QObject):
             _log.warning("live Blender stopped:\n%s", "\n".join(self.tail[-15:]))
             self.state.emit("Blender stopped; it will start again")
 
-    def _shutdown(self) -> None:
+    def _shutdown(self, wait: bool = True) -> None:
         proc, self._proc = self._proc, None
         self._ready = self._busy = False
         self._scene_key = None
@@ -344,6 +428,9 @@ class LiveSession(QObject):
         if proc.state() != QProcess.NotRunning:
             proc.write(b'{"quit": true}\n')
             proc.closeWriteChannel()
+            if not wait:                               # left to quit by itself
+                proc.finished.connect(proc.deleteLater)
+                return
             if not proc.waitForFinished(1500):
                 proc.kill()
                 proc.waitForFinished(1000)

@@ -5,8 +5,8 @@ from __future__ import annotations
 
 from PySide6.QtCore import QPointF, Qt, Signal
 from PySide6.QtGui import QColor, QKeyEvent, QPainter, QPixmap
-from PySide6.QtWidgets import (QFrame, QGraphicsPixmapItem, QGraphicsScene, QGraphicsView, QHBoxLayout,
-                               QLabel, QSlider, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QComboBox, QFrame, QGraphicsPixmapItem, QGraphicsScene, QGraphicsView, QHBoxLayout,
+                               QLabel, QSizePolicy, QSlider, QVBoxLayout, QWidget)
 
 
 def slider(lo, hi, value, steps=200):
@@ -57,7 +57,11 @@ class SliderRow(QWidget):
         self.update_value()
 
     def update_value(self, *_a) -> None:
-        self.value_label.setText(self.fmt.format(value(self.slider)))
+        v = value(self.slider)
+        if self.fmt.startswith("auto|"):                 # «auto|{:.1f} m»: the lowest value reads «Auto»
+            self.value_label.setText(tr("Auto") if v <= 1e-6 else self.fmt[5:].format(v))
+            return
+        self.value_label.setText(self.fmt.format(v))
 
     def setEnabled(self, on: bool) -> None:          # noqa: N802 - Qt naming
         super().setEnabled(on)
@@ -197,6 +201,123 @@ class ZoomView(QGraphicsView):
             self.fit()
 
 
+from .i18n import tr  # noqa: E402
+
+
+SPLIT_STYLE = """
+QToolButton { border: 1px solid palette(mid); border-radius: 4px; padding: 4px 22px 4px 10px;
+              background: palette(button); color: palette(button-text); }
+QToolButton:hover { background: palette(light); }
+QToolButton:pressed { background: palette(midlight); }
+QToolButton:disabled { color: palette(mid); }
+QToolButton::menu-button { border: none; border-left: 1px solid palette(mid); width: 20px;
+                           border-top-right-radius: 3px; border-bottom-right-radius: 3px; }
+QToolButton::menu-button:hover { background: palette(light); }
+QToolButton::menu-arrow { width: 8px; height: 8px; }
+"""
+
+
+def split_button(text: str, main_slot, tip: str, actions):
+    """A button whose arrow opens a menu of ``actions`` (QActions): the button itself does ``main_slot``."""
+    from PySide6.QtWidgets import QMenu, QSizePolicy, QToolButton
+    b = QToolButton()
+    b.setText(text)
+    b.setToolTip(tip)
+    b.setPopupMode(QToolButton.MenuButtonPopup)
+    b.setToolButtonStyle(Qt.ToolButtonTextOnly)
+    b.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+    b.setMinimumHeight(28)
+    # one rounded rectangle, with a plain divider before the arrow: no rounding where the two parts meet
+    b.setStyleSheet(SPLIT_STYLE)
+    menu = QMenu(b)
+    for a in actions:
+        menu.addAction(a)
+    b.setMenu(menu)
+    b.clicked.connect(lambda _c=False: main_slot())
+    return b
+
+
+class RadiusSlider(QWidget):
+    """A slider in metres with its value beside it («Automatic» at 0): ``value()``, ``setValue()`` and
+    ``valueChanged`` (a float) like a number box."""
+    valueChanged = Signal(float)
+
+    def __init__(self, maximum: float = 500.0, step: float = 5.0, parent=None):
+        super().__init__(parent)
+        from PySide6.QtWidgets import QSlider
+        self._step = float(step)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        self.slider = QSlider(Qt.Horizontal)
+        self.slider.setRange(0, int(round(maximum / step)))
+        self.slider.valueChanged.connect(self._moved)
+        self.label = QLabel("")
+        self.label.setMinimumWidth(70)
+        self.label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        lay.addWidget(self.slider, 1)
+        lay.addWidget(self.label)
+        self._moved()
+
+    def value(self) -> float:
+        return self.slider.value() * self._step
+
+    def setValue(self, metres: float) -> None:
+        self.slider.setValue(int(round(float(metres) / self._step)))
+
+    def maximum(self) -> float:
+        return self.slider.maximum() * self._step
+
+    def _moved(self, *_a) -> None:
+        v = self.value()
+        self.label.setText(tr("Automatic") if v <= 0 else f"{v:.0f} m")
+        self.valueChanged.emit(v)
+
+
+class NumberSlider(QWidget):
+    """A slider over a range of numbers with its value beside it (``fmt``): ``value()``, ``setValue()``, ``valueChanged``."""
+    valueChanged = Signal(float)
+
+    def __init__(self, lo: float, hi: float, step: float, fmt: str = "{:.1f}", parent=None, special: str = ""):
+        super().__init__(parent)
+        from PySide6.QtWidgets import QSlider
+        self._lo, self._step, self._fmt, self._special = float(lo), float(step), fmt, special
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        self.slider = QSlider(Qt.Horizontal)
+        self.slider.setRange(0, int(round((hi - lo) / step)))
+        self.slider.valueChanged.connect(self._moved)
+        self.label = QLabel("")
+        self.label.setMinimumWidth(52)
+        self.label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        lay.addWidget(self.slider, 1)
+        lay.addWidget(self.label)
+        self._moved()
+
+    def value(self) -> float:
+        return self._lo + self.slider.value() * self._step
+
+    def setValue(self, v: float) -> None:
+        self.slider.setValue(int(round((float(v) - self._lo) / self._step)))
+
+    def _moved(self, *_a) -> None:
+        v = self.value()
+        self.label.setText(tr(self._special) if (self._special and v <= self._lo) else self._fmt.format(v))
+        self.valueChanged.emit(v)
+
+
+class RefreshCombo(QComboBox):
+    """A combo box that asks for its list just before it opens (a list that changes with the drawing)."""
+
+    def __init__(self, refresh=None, parent=None):
+        super().__init__(parent)
+        self.refresh = refresh
+
+    def showPopup(self):  # noqa: N802
+        if callable(self.refresh):
+            self.refresh()
+        super().showPopup()
+
+
 class Collapsible(QWidget):
     """A section that starts closed: a header you click to show the advanced controls under it.
     ``form`` is the QFormLayout to fill; the open/closed state is remembered under ``key``."""
@@ -241,3 +362,41 @@ class Collapsible(QWidget):
                 QSettings().setValue(self._key, "true" if on else "false")
             except Exception:  # noqa: BLE001
                 pass
+
+
+class ChoiceButtons(QWidget):
+    """A few buttons in one row, one of them chosen (a list of choices that all show): the interface of a combo box
+    (``currentIndex``, ``setCurrentIndex``, ``currentIndexChanged``, ``currentText``)."""
+
+    currentIndexChanged = Signal(int)
+
+    def __init__(self, labels, parent=None):
+        super().__init__(parent)
+        from PySide6.QtWidgets import QButtonGroup, QToolButton
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        self._group = QButtonGroup(self)
+        self._group.setExclusive(True)
+        self._buttons = []
+        for i, text in enumerate(labels):
+            b = QToolButton()
+            b.setText(text)
+            b.setCheckable(True)
+            b.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            b.setMinimumHeight(28)
+            self._group.addButton(b, i)
+            self._buttons.append(b)
+            lay.addWidget(b, 1)
+        self._buttons[0].setChecked(True)
+        self._group.idToggled.connect(lambda i, on: self.currentIndexChanged.emit(i) if on else None)
+
+    def currentIndex(self) -> int:
+        return max(0, self._group.checkedId())
+
+    def setCurrentIndex(self, i: int) -> None:
+        i = max(0, min(len(self._buttons) - 1, int(i)))
+        self._buttons[i].setChecked(True)
+
+    def currentText(self) -> str:
+        return self._buttons[self.currentIndex()].text()

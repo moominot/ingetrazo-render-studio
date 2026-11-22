@@ -133,12 +133,15 @@ def add_clouds(scene, coverage, scale=1.0, brightness=1.0, seed=0.0, tint=(1.0, 
 
 
 def night_sky(scene, stars=1.0, density=0.14, seed=0.0,
-              zenith=(0.004, 0.007, 0.020), horizon=(0.020, 0.026, 0.045)):
+              zenith=(0.004, 0.007, 0.020), horizon=(0.020, 0.026, 0.045), glow=1.0):
     """A night sky in the world's Background: deep blue overhead, a little
     paler at the horizon (the glow of towns and the air), and stars: points
     on a sphere of Voronoi cells, ``density`` of the cells lit, each with
     its own brightness and a hint of colour, faded out near the horizon.
-    Clouds added afterwards (:func:`add_clouds`) hide them."""
+    Clouds added afterwards (:func:`add_clouds`) hide them. ``glow``: how bright the sky itself is (the moonlit
+    blue): 0 is a black sky, with only the stars (if any) in it."""
+    zenith = tuple(c * max(0.0, glow) for c in zenith)
+    horizon = tuple(c * max(0.0, glow) for c in horizon)
     nodes, links = _world_nodes(scene)
     bg = next((n for n in nodes if n.type == "BACKGROUND"), None)
     if bg is None:
@@ -269,10 +272,10 @@ def set_hdri(scene, path, rotation_deg=0.0, strength=1.0, light=True):
     return image
 
 
-_DOF = {"amount": 0.0}          # the job's depth of field, kept for the live view's cameras
+_DOF = {"amount": 0.0, "focus": 0.0}          # the job's depth of field, kept for the live view's cameras
 
 
-def set_dof(scene, cam_cfg, amount):
+def set_dof(scene, cam_cfg, amount, focus=0.0):
     """Depth of field: ``amount`` 0..1 (0 = off) from a wide f/32 down to a shallow f/1.4, focused on the
     middle of the view (the distance from the eye to the camera's target)."""
     cam = scene.camera
@@ -283,8 +286,32 @@ def set_dof(scene, cam_cfg, amount):
     d.use_dof = amount > 0.01 and bool(cam_cfg.get("perspective", True))
     if d.use_dof:
         eye, target = Vector(cam_cfg["eye"]), Vector(cam_cfg["target"])
-        d.focus_distance = max(0.05, (target - eye).length)
+        d.focus_distance = max(0.05, float(focus)) if float(focus or 0.0) > 0.0 else max(0.05, (target - eye).length)
         d.aperture_fstop = 32.0 * (1.4 / 32.0) ** amount
+
+
+def set_panorama(scene, projection, angle_deg=180.0, aspect=3.0):
+    """A panoramic camera (Cycles only): ``projection`` «360» is the whole sphere (equirectangular, 2:1);
+    «flat» a central cylinder over ``angle_deg`` of the horizon (vertical lines stay vertical), its height
+    from the picture's shape ``aspect`` (width / height) so the pixels stay square. Depth of field is off."""
+    cam = scene.camera
+    if cam is None or cam.type != "CAMERA":
+        return False
+    cam.data.type = "PANO"
+    cam.data.dof.use_dof = False
+    if projection == "360":
+        cam.data.panorama_type = "EQUIRECTANGULAR"
+        cam.data.longitude_min, cam.data.longitude_max = -math.pi, math.pi
+        cam.data.latitude_min, cam.data.latitude_max = -math.pi / 2, math.pi / 2
+    else:
+        a = math.radians(max(30.0, min(360.0, float(angle_deg))))
+        cam.data.panorama_type = "CENTRAL_CYLINDRICAL"
+        cam.data.central_cylindrical_radius = 1.0
+        cam.data.central_cylindrical_range_u_min, cam.data.central_cylindrical_range_u_max = -a / 2, a / 2
+        half = a / (2.0 * max(0.05, float(aspect)))
+        cam.data.central_cylindrical_range_v_min, cam.data.central_cylindrical_range_v_max = -half, half
+    say("panorama", projection, f"{angle_deg:g}°" if projection != "360" else "")
+    return True
 
 
 def set_backdrop(scene, path, fit="fill", strength=1.0, aspect=1.5):
@@ -460,6 +487,46 @@ def _sky_copy(nodes, wsky):
     return sky
 
 
+def sky_whole_sphere(scene):
+    """Without a generated ground the sky is all round: below the horizon the world shows the same sky, mirrored
+    (a second Sky Texture with no sun disc, looked up with the direction's height made positive), so there is no dark
+    half and no ground colour under the model. Returns True when the world had a Sky Texture."""
+    if scene.world is None:
+        return False
+    nodes, links = _world_nodes(scene)
+    wsky = next((n for n in nodes if n.type == "TEX_SKY"), None)
+    bg = next((n for n in nodes if n.type == "BACKGROUND" and n.name != "hdri_background"), None)
+    if wsky is None or bg is None:
+        return False
+    src = next(iter(bg.inputs["Color"].links), None)
+    if src is None:
+        return False
+    coord = nodes.new("ShaderNodeTexCoord")
+    sep = nodes.new("ShaderNodeSeparateXYZ")
+    links.new(coord.outputs["Generated"], sep.inputs["Vector"])
+    flat = nodes.new("ShaderNodeMath")
+    flat.operation = "ABSOLUTE"
+    links.new(sep.outputs["Z"], flat.inputs[0])
+    comb = nodes.new("ShaderNodeCombineXYZ")
+    links.new(sep.outputs["X"], comb.inputs["X"])
+    links.new(sep.outputs["Y"], comb.inputs["Y"])
+    links.new(flat.outputs["Value"], comb.inputs["Z"])
+    mirror = _sky_copy(nodes, wsky)
+    links.new(comb.outputs["Vector"], mirror.inputs["Vector"])
+    below = nodes.new("ShaderNodeMapRange")            # 1 below the horizon
+    below.inputs["From Min"].default_value = 0.0
+    below.inputs["From Max"].default_value = -0.02
+    links.new(sep.outputs["Z"], below.inputs["Value"])
+    mix = nodes.new("ShaderNodeMix")
+    mix.data_type = "RGBA"
+    links.new(below.outputs["Result"], mix.inputs["Factor"])
+    links.new(src.from_socket, mix.inputs["A"])
+    links.new(mirror.outputs["Color"], mix.inputs["B"])
+    links.new(mix.outputs["Result"], bg.inputs["Color"])
+    say("sky", "all round (no ground)")
+    return True
+
+
 def world_ground(scene, albedo, level=2.0):
     """Below the horizon the physical sky is black. Cycles never sees it (the
     ground plane is in the way), but EEVEE does wherever its screen-space
@@ -554,6 +621,62 @@ def fix_normals():
     say("normals", f"custom normals cleared on {n} meshes")
 
 
+def _load_blender_package(pkg):
+    """(material, group, tuft) appended from a package (a small .blend, base64) a material edited in Blender
+    came back as; not yet renamed or placed. None when it cannot be read."""
+    import base64
+    import tempfile
+    path = os.path.join(tempfile.mkdtemp(prefix="rs-pkg-"), "package.blend")
+    with open(path, "wb") as fh:
+        fh.write(base64.b64decode(pkg["blend"]))
+    with bpy.data.libraries.load(path, link=False) as (src, dst):
+        dst.materials = [n for n in src.materials if n == pkg["material"]]
+        dst.node_groups = [n for n in src.node_groups if pkg.get("group") and n == pkg["group"]]
+        dst.objects = [n for n in src.objects if pkg.get("tuft") and n == pkg["tuft"]]
+    return (dst.materials[0] if dst.materials else None, dst.node_groups[0] if dst.node_groups else None,
+            dst.objects[0] if dst.objects else None)
+
+
+def apply_blender_packages(specs, only=None):
+    """The materials edited in Blender, exactly as they were left: each one's package (its whole node tree and,
+    for grass, the geometry-nodes group that grows it) takes the place of the material the editor's settings
+    made, on every object that wears it. Nothing of the editor's settings touches it after this."""
+    done = 0
+    for mat in list(_live_materials(only)):
+        pkg = (_spec_for(mat, specs) or {}).get("blender")
+        if not pkg or not pkg.get("blend"):
+            continue
+        try:
+            new, group, tuft = _load_blender_package(pkg)
+        except Exception as exc:  # noqa: BLE001 - the editor's version stays
+            say("blender package failed", mat.name, exc)
+            continue
+        if new is None:
+            say("blender package empty", mat.name)
+            continue
+        name = mat.name
+        users = [o for o in bpy.context.scene.objects if o.type == "MESH" and any(s.material is mat for s in o.material_slots)]
+        mat.user_remap(new)
+        bpy.data.materials.remove(mat)
+        new.name = name
+        new["rs_blender"] = True
+        if group is not None:
+            hidden = bpy.data.collections.get("studio grass tufts")
+            if hidden is None:
+                hidden = bpy.data.collections.new("studio grass tufts")
+                bpy.context.scene.collection.children.link(hidden)
+                hidden.hide_render = True
+                hidden.hide_viewport = True
+            if tuft is not None and tuft.name not in hidden.objects:
+                hidden.objects.link(tuft)
+            for obj in users:
+                mod = obj.modifiers.new("Studio grass", "NODES")
+                mod.node_group = group
+        done += 1
+        say("blender package", name, "grass" if group is not None else "material")
+    return done
+
+
 def cap_albedo(cap=0.8, only=None):
     """No material reflects more than ``cap`` of the light: IngeTrazo's
     default «paper white» is 0.96, whiter than paper, and under a path tracer
@@ -561,8 +684,8 @@ def cap_albedo(cap=0.8, only=None):
     0.8). Colours are scaled down whole, so their hue stays."""
     n = 0
     for mat in _live_materials(only):
-        if not mat.node_tree or mat.name.startswith("IngeTrazo ground"):
-            continue
+        if not mat.node_tree or mat.name.startswith("IngeTrazo ground") or mat.get("rs_blender"):
+            continue                       # (a material edited in Blender is left as the person made it)
         bsdf = next((x for x in mat.node_tree.nodes if x.type == "BSDF_PRINCIPLED"), None)
         if bsdf is None:
             continue
@@ -593,6 +716,32 @@ def _model_centre(ground):
     if lo[0] > hi[0]:
         return 0.0, 0.0
     return (lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0
+
+
+def _model_centroid(ground):
+    """The centroid (x, y) of the model's objects: the mean of their boxes' centres, in the world (the ground, the
+    grass and the tufts are left out)."""
+    pts = []
+    for ob in bpy.data.objects:
+        if ob is ground or ob.type != "MESH" or ob.name.startswith(("IngeTrazo", "studio grass")):
+            continue
+        c = sum((ob.matrix_world @ Vector(corner) for corner in ob.bound_box), Vector((0.0, 0.0, 0.0))) / 8.0
+        pts.append(c)
+    if not pts:
+        return 0.0, 0.0
+    return sum(p.x for p in pts) / len(pts), sum(p.y for p in pts) / len(pts)
+
+
+def _model_radius(ground, centre):
+    """How far the model reaches from ``centre`` on the ground: the farthest corner of its objects' boxes."""
+    far = 0.0
+    for ob in bpy.data.objects:
+        if ob is ground or ob.type != "MESH" or ob.name.startswith(("IngeTrazo", "studio grass")):
+            continue
+        for corner in ob.bound_box:
+            p = ob.matrix_world @ Vector(corner)
+            far = max(far, math.hypot(p.x - centre[0], p.y - centre[1]))
+    return far
 
 
 def _unshadowed_light(scene, z, where):
@@ -706,7 +855,326 @@ def add_shadow_floor(scene, z, size):
     say("shadow floor", f"z {z:.2f}", f"film (bare floor reads {lit:.3f})")
     return floor
 
-def haze_ground(scene, near=120.0, far=1200.0, eye_height=None):
+def _synth_ground_source(gm, st):
+    """The material of a name the model's file does not have (nothing is painted with it): a Principled BSDF with
+    its picture and colour, then every step of the render's own pipeline on it (finish, roughness, relief, maps,
+    texture set), so it looks as it would on the model."""
+    name = str(gm.get("name") or "")
+    mat = bpy.data.materials.new(name)
+    mat.use_nodes = True
+    nt = mat.node_tree
+    bsdf = next((n for n in nt.nodes if n.type == "BSDF_PRINCIPLED"), None)
+    if bsdf is None:
+        bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
+        out = next((n for n in nt.nodes if n.type == "OUTPUT_MATERIAL"), None) or nt.nodes.new("ShaderNodeOutputMaterial")
+        nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+    color = [float(c) for c in (gm.get("color") or (0.42, 0.42, 0.4))[:3]]
+    bsdf.inputs["Base Color"].default_value = (*[_srgb_to_linear(c) for c in color], 1.0)
+    bsdf.inputs["Roughness"].default_value = 0.9
+    path = gm.get("texture")
+    if path and os.path.isfile(str(path)):
+        try:
+            node = nt.nodes.new("ShaderNodeTexImage")
+            node.image = bpy.data.images.load(str(path), check_existing=True)
+            nt.links.new(node.outputs["Color"], bsdf.inputs["Base Color"])
+        except RuntimeError:
+            pass
+    specs = _STATE.get("ground_specs") or {}
+    names = {mat.name}
+    try:
+        if _spec_for(mat, specs):
+            mark_material_types(specs, names)
+            finishes_for(names)
+            sets = match_texture_sets(_STATE.get("ground_pbr") or {})
+            apply_material_specs(specs, sets, names)
+            mine = {k: v for k, v in sets.items() if k in names}
+            if mine:
+                apply_texture_sets(mine, specs)
+            if (_spec_for(mat, specs) or {}).get("blender"):
+                apply_blender_packages(specs, names)           # a material edited in Blender: as it was left
+                mat = bpy.data.materials.get(name) or mat
+    except Exception as exc:  # noqa: BLE001 - the plain material then
+        say("ground material steps failed", name, exc)
+    say("ground material made", name)
+    return mat
+
+
+def set_ground_material(scene, gm, st=None):
+    """A material of the model on the generated ground. ``gm`` = {name, tile [w, h] metres, color}: the
+    model's own Blender material of that name (so it has its picture and finish) is copied onto the
+    ground, whose UVs are laid in metres over the tile size so the picture repeats at its real size.
+    A material that is not in the file gives the ground its colour."""
+    ground = bpy.data.objects.get("IngeTrazo ground")
+    if ground is None or ground.type != "MESH":
+        return False
+    name = str(gm.get("name") or "")
+    src = next((m for m in _live_materials() if m.name == name), None)
+    if src is None:
+        src = next((m for m in _live_materials() if m.name.startswith(name + ".")), None)
+    old = ground.data.materials[0] if ground.data.materials else None
+    if src is None or not src.use_nodes:
+        src = _synth_ground_source(gm, st or {})            # painted on nothing: made from its picture and settings
+        if src is None:
+            say("ground material could not be made", name)
+            return False
+    if old is not None:
+        old.name = "IngeTrazo ground (colour)"
+    mat = src.copy()
+    mat.name = "IngeTrazo ground"
+    ground.data.materials.clear()
+    ground.data.materials.append(mat)
+    tw, th = (gm.get("tile") or (2.0, 2.0))
+    tw, th = max(0.05, float(tw)), max(0.05, float(th))
+    me = ground.data
+    layer = me.uv_layers.active or me.uv_layers.new(name="UVMap")
+    for loop in me.loops:
+        co = me.vertices[loop.vertex_index].co
+        layer.data[loop.index].uv = (co.x / tw, co.y / th)
+    if old is not None and old.users == 0:
+        bpy.data.materials.remove(old)
+    say("ground material", name, f"tile {tw:g} x {th:g} m")
+    return src
+
+
+def make_ground(scene, ground, st):
+    """The generated ground under the model, as the look and the panel's ground settings say: its colour
+    (``ground_color``), its radius, height offset, a material (the model's, or made from its picture and
+    settings when nothing is painted with it), roughness, and the haze into the horizon."""
+    color = st.get("ground_color") or ground["color"]
+    radius = float(st.get("ground_radius") or 0.0)
+    size = 2.0 * radius if radius > 0.0 else ground["size"]
+    core["add_ground"](scene, ground["z"] + float(st.get("ground_offset", 0.0)), size, color)
+    _STATE["ground_specs"] = st.get("materials") or {}
+    _STATE["ground_pbr"] = st.get("pbr") or {}
+    wears = False
+    if st.get("ground_material"):
+        try:
+            src = set_ground_material(scene, st["ground_material"], st)
+            wears = bool(src)
+            if src and st.get("grass", True) and (_spec_for(src, st.get("materials") or {}) or {}).get("type") == "grass":
+                ground_grass(scene, src, st)
+        except Exception as exc:               # never lose the render over it
+            say("ground material failed", exc)
+    if st.get("ground_roughness") is not None and not wears:       # a material has its own roughness
+        gmat = bpy.data.materials.get("IngeTrazo ground")
+        gb = next((n for n in gmat.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None) if gmat and gmat.use_nodes else None
+        if gb is not None:
+            gb.inputs["Roughness"].default_value = max(0.0, min(1.0, float(st["ground_roughness"])))
+    if st.get("haze", True):
+        # A photo's horizon is near (trees, buildings): melt sooner. With a radius of the ground's own the ground
+        # melts into the horizon over its outer two thirds, so its edge is never seen.
+        near, far = (30.0, 300.0) if st.get("hdri") else (120.0, 1200.0)
+        if radius > 0.0:
+            near, far = 0.35 * radius, radius
+        k = max(0.05, float(st.get("haze_scale", 1.0)))
+        haze_ground(scene, float(st.get("haze_near", near)) * k, float(st.get("haze_far", far)) * k,
+                    eye_height=(float(st.get("hdri_height", 2.5)) if st.get("hdri") else None))
+    sk = st.get("skyline")
+    if sk and sk.get("type"):
+        try:
+            gz = ground["z"] + float(st.get("ground_offset", 0.0))
+            centre = st.get("ground_grass_centre") or _model_centre(bpy.data.objects.get("IngeTrazo ground"))
+            far_d = float(sk.get("distance") or 0.0) or (radius if radius > 0.0 else 1200.0)
+            add_skyline(scene, sk, gz, far_d, centre, haze=bool(st.get("haze", True)),
+                        eye_height=(float(st.get("hdri_height", 2.5)) if st.get("hdri") else None))
+        except Exception as exc:               # never lose the render over it
+            say("skyline failed", exc)
+
+
+#: The grass of a ground made of a grass material grows on a circle round the model (a ground 4 km across
+#: could not carry it: the tufts would be thinned to nothing). Its radius is the person's (``ground_grass_radius``,
+#: metres) or, when 0, the farthest point of the model plus this margin.
+GROUND_GRASS_MARGIN = 10.0
+GROUND_GRASS_MIN, GROUND_GRASS_MAX = 5.0, 500.0
+
+
+def ground_grass(scene, src, st):
+    """The model's grass material on the generated ground: a patch laid just over the ground, round the
+    model, wearing that material itself, where its blades grow as they do on the model's own lawns."""
+    ground = bpy.data.objects.get("IngeTrazo ground")
+    if ground is None:
+        return None
+    centre = st.get("ground_grass_centre")                # the centroid of the model's objects, worked out from the drawing
+    cx, cy = (float(centre[0]), float(centre[1])) if centre and len(centre) >= 2 else _model_centroid(ground)
+    radius = float(st.get("ground_grass_radius") or 0.0)
+    if radius <= 0.0:
+        radius = _model_radius(ground, (cx, cy)) + GROUND_GRASS_MARGIN
+    radius = max(GROUND_GRASS_MIN, min(GROUND_GRASS_MAX, radius))
+    # The density is the material's, per m², on the whole circle: where the tufts would pass the limit the circle
+    # is smaller instead (thinning the grass would make its density depend on the radius).
+    spec = _spec_for(src, st.get("materials") or {}) or {}
+    density = float(spec.get("grass_density") or grass_density(spec.get("grass_height", 0.08)))
+    reach = math.sqrt(GRASS_MAX_TUFTS / (math.pi * max(1.0, density)))
+    if radius > reach:
+        say("ground grass limited", f"{radius:.0f} m asked, {reach:.0f} m at {density:.0f} tufts/m2 (the tuft limit)")
+        radius = max(GROUND_GRASS_MIN, reach)
+    me = bpy.data.meshes.new("IngeTrazo ground grass patch")
+    rim = 96
+    verts = [(0.0, 0.0, 0.0)] + [(radius * math.cos(2 * math.pi * i / rim), radius * math.sin(2 * math.pi * i / rim), 0.0)
+                                 for i in range(rim)]
+    me.from_pydata(verts, [], [(0, 1 + i, 1 + (i + 1) % rim) for i in range(rim)])
+    gm = st.get("ground_material") or {}
+    tw, th = (gm.get("tile") or (2.0, 2.0))
+    layer = me.uv_layers.new(name="UVMap")
+    for loop in me.loops:
+        co = me.vertices[loop.vertex_index].co
+        layer.data[loop.index].uv = ((co.x + cx) / max(0.05, float(tw)), (co.y + cy) / max(0.05, float(th)))
+    me.materials.append(src)
+    patch = bpy.data.objects.new("IngeTrazo ground grass patch", me)
+    patch.location = (cx, cy, ground.location.z + 0.003)
+    scene.collection.objects.link(patch)
+    n = build_grass(st.get("materials") or {}, LIVE_GRASS if st.get("live") else 1.0, only=[patch])
+    say("ground grass", f"circle of {radius:.0f} m round the model, {n} tufts")
+    return patch
+
+
+def remake_ground(scene, ground, st):
+    """The ground made again (its material is a copy of one of the model's: when that one changes in place,
+    the copy has to follow)."""
+    for ob in [o for o in bpy.data.objects if o.name.startswith("IngeTrazo ground")]:
+        me = ob.data
+        bpy.data.objects.remove(ob, do_unlink=True)
+        if me is not None and me.users == 0:
+            bpy.data.meshes.remove(me)
+    for m in [m for m in bpy.data.materials if m.name.startswith("IngeTrazo ground") and m.users == 0]:
+        bpy.data.materials.remove(m)
+    make_ground(scene, ground, st)
+
+
+
+# ---- the distant skyline: mountains, hills, a forest or a city on the horizon ---------------------------------------------------------
+
+_SKYLINE_COLOURS = {"mountains": (0.13, 0.17, 0.26), "hills": (0.12, 0.19, 0.12), "forest": (0.03, 0.06, 0.03),
+                    "city": (0.17, 0.19, 0.24)}
+#: layer: (share of the distance, share of the height) — the far ones lower and paler (the haze does the rest)
+_SKYLINE_LAYERS = {"mountains": ((0.62, 0.70), (0.80, 0.86), (1.00, 1.00)), "hills": ((0.70, 0.70), (1.00, 1.00)),
+                   "forest": ((0.80, 0.70), (1.00, 1.00)), "city": ((0.85, 0.8), (1.00, 1.00))}
+
+
+def _wrap_noise(rng, n, cells):
+    """``n`` values 0..1 round a circle: ``cells`` random values, smoothly interpolated (the end meets the start)."""
+    vals = [rng.random() for _ in range(max(2, cells))]
+    out = []
+    c = len(vals)
+    for i in range(n):
+        t = i / n * c
+        i0 = int(t) % c
+        f = t - int(t)
+        f = f * f * (3.0 - 2.0 * f)
+        out.append(vals[i0] * (1.0 - f) + vals[(i0 + 1) % c] * f)
+    return out
+
+
+def _fbm(rng, n, cells, octaves):
+    total = [0.0] * n
+    amp, norm = 1.0, 0.0
+    for o in range(octaves):
+        layer = _wrap_noise(rng, n, cells * (2 ** o))
+        for i in range(n):
+            total[i] += layer[i] * amp
+        norm += amp
+        amp *= 0.5
+    return [t / norm for t in total]
+
+
+def skyline_profile(kind, n, seed):
+    """The outline of a skyline: ``n`` heights 0..1 round the circle (1 = the tallest peak)."""
+    import random
+    rng = random.Random(int(seed) * 7919 + sum(map(ord, kind)))
+    deg = 360.0 / n                                    # one sample, in degrees of azimuth
+    if kind == "mountains":
+        f = _fbm(rng, n, 4, 5)
+        big = _wrap_noise(rng, n, 5)
+        h = [(1.0 - abs(2.0 * f[i] - 1.0)) ** 1.6 * (0.35 + 0.65 * big[i]) for i in range(n)]
+    elif kind == "hills":
+        f = _fbm(rng, n, 6, 3)
+        h = [0.25 + 0.75 * f[i] ** 1.3 for i in range(n)]
+    elif kind == "forest":
+        base = _fbm(rng, n, 7, 3)
+        h = [0.10 + 0.12 * b for b in base]
+        x = 0.0
+        while x < 360.0:
+            w = rng.uniform(0.35, 0.85)                # a tree: a round crown, this wide (degrees) and this tall
+            top = 0.45 + 0.55 * rng.random()
+            c = int(x / deg)
+            span = max(1, int(w / deg))
+            for k in range(-span, span + 1):
+                j = (c + k) % n
+                t = k / (span + 1.0)
+                v = (0.10 + 0.12 * base[j]) + top * 0.7 * math.sqrt(max(0.0, 1.0 - t * t))     # a half ellipse: no point
+                if v > h[j]:
+                    h[j] = v
+            x += w * rng.uniform(1.8, 2.8)             # a little apart, so the crowns read one by one
+        m = max(h) or 1.0
+        h = [v / m for v in h]
+    else:                                              # city
+        zone = _wrap_noise(rng, n, 5)
+        h = [0.0] * n
+        x = 0.0
+        while x < 360.0:
+            w = rng.uniform(0.45, 1.4)                 # a building: a flat-topped block this wide (degrees)
+            c = int(x / deg) % n
+            tall = rng.random() ** 2.4 * (0.25 + 0.75 * zone[c])
+            top = 0.12 + 0.88 * tall
+            for k in range(max(1, int(w / deg))):
+                h[(c + k) % n] = top
+            x += w * rng.uniform(1.0, 1.2)             # a gap now and then
+    m = max(h) or 1.0
+    return [v / m for v in h]
+
+
+def add_skyline(scene, sk, ground_z, far, centre=(0.0, 0.0), haze=True, eye_height=None):
+    """Layers of distant mountains, hills, forest or city round the scene (``sk``: type, height (the angle the tallest peaks
+    reach above the horizon, degrees), seed, colour), the farthest at ``far`` metres. They cast no shadow and melt into the
+    sky's horizon colour with distance, so the line where the ground ends is never seen. Returns the objects made."""
+    kind = sk.get("type")
+    if kind not in _SKYLINE_LAYERS:
+        return []
+    import math as _m
+    n = 2880
+    made = []
+    angle = max(0.2, float(sk.get("height", 4.0)))
+    base = tuple(sk.get("color") or _SKYLINE_COLOURS[kind])
+    for li, (dist_k, high_k) in enumerate(_SKYLINE_LAYERS[kind]):
+        d = float(far) * dist_k
+        top = d * _m.tan(_m.radians(angle * high_k))
+        prof = skyline_profile(kind, n, int(sk.get("seed", 1)) + 101 * li)
+        zb = -0.03 * d                                  # the wall goes under the ground: no gap at its foot
+        verts, faces = [], []
+        for i in range(n):
+            a = 2.0 * _m.pi * i / n
+            x, y = d * _m.cos(a), d * _m.sin(a)
+            verts.append((x, y, zb))
+            verts.append((x, y, prof[i] * top))
+        for i in range(n):
+            j = (i + 1) % n
+            faces.append((2 * i, 2 * j, 2 * j + 1, 2 * i + 1))
+        me = bpy.data.meshes.new(f"IngeTrazo skyline {kind} {li + 1}")
+        me.from_pydata(verts, [], faces)
+        me.update()
+        mat = bpy.data.materials.new(f"IngeTrazo skyline {kind} {li + 1}")
+        mat.use_nodes = True
+        bsdf = next((x for x in mat.node_tree.nodes if x.type == "BSDF_PRINCIPLED"), None)
+        if bsdf is not None:
+            tint = 0.22 * li                            # the farther the paler
+            bsdf.inputs["Base Color"].default_value = (*[min(1.0, c + (1.0 - c) * tint) for c in base], 1.0)
+            bsdf.inputs["Roughness"].default_value = 1.0
+        me.materials.append(mat)
+        ob = bpy.data.objects.new(f"IngeTrazo skyline {kind} {li + 1}", me)
+        ob.location = (float(centre[0]), float(centre[1]), float(ground_z))
+        scene.collection.objects.link(ob)
+        ob.visible_shadow = False                       # far away: it lights nothing and shades nothing
+        made.append(ob)
+        if haze:
+            try:
+                haze_ground(scene, 0.5 * far, 6.0 * far, eye_height=eye_height, obj=ob)   # the nearest layer clear, the farthest paler
+            except Exception as exc:  # noqa: BLE001 - the layer is there, without its haze
+                say("skyline haze failed", exc)
+    say("skyline", kind, f"{len(made)} layers, up to {angle:g} degrees at {far:.0f} m")
+    return made
+
+
+def haze_ground(scene, near=120.0, far=1200.0, eye_height=None, obj=None):
     """The ground melts into the sky's own horizon colour with distance, so
     the far edge of the ground plane is no hard line against the sky (the
     atmosphere Enscape shows). The horizon colour is the world's sky looked
@@ -715,7 +1183,7 @@ def haze_ground(scene, near=120.0, far=1200.0, eye_height=None):
     image's own ground, projected as a dome would: each point is looked up in the direction from an
     eye ``eye_height`` above the ground, in the middle of the model, to that point. Without it every
     row of the ground would be the image's horizon row, stretched (vertical stripes)."""
-    ground = bpy.data.objects.get("IngeTrazo ground")
+    ground = obj if obj is not None else bpy.data.objects.get("IngeTrazo ground")    # (the skyline's layers melt too)
     if ground is None or not ground.data.materials or scene.world is None:
         return
     mat = ground.data.materials[0]
@@ -1151,6 +1619,145 @@ def _water_ripples(mat, bsdf, relief, size):
     links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
 
 
+# Water waves in REAL geometry: the shader's ripples only bend the light, so the edge of a pool or a
+# lake stayed a straight line. The faces that wear a water material are divided and lifted by a noise as
+# long and as high as the body of water asks (a pool's wavelets, a lake's ripple, the sea's swell, the
+# ocean's long rollers), fading to nothing at the edge of the water so it never tears from the walls.
+#: key → (swell wavelength m, swell height m at «waves» 1): the editor's «Water scale»
+#: (``render_studio.materials.WATER_BODIES``).
+WATER_BODIES = {"pool": (0.6, 0.012), "lake": (4.0, 0.06), "sea": (14.0, 0.40), "ocean": (60.0, 1.60)}
+WATER_MAX_FACES = 400_000          # all the water of a render: the division is lowered past it
+WATER_MAX_LEVEL = 7
+
+
+def _water_node_group(name, mat, level, wavelength, height, fade, seed=7):
+    """Geometry nodes: the faces wearing ``mat`` divided ``level`` times and lifted along their normals by a
+    3-D noise of ``wavelength`` metres, ``height`` metres tall; zero within ``fade`` metres of the water's edge."""
+    ng = bpy.data.node_groups.new(name, "GeometryNodeTree")
+    ng.interface.new_socket("Geometry", in_out="INPUT", socket_type="NodeSocketGeometry")
+    ng.interface.new_socket("Geometry", in_out="OUTPUT", socket_type="NodeSocketGeometry")
+    nodes, links = ng.nodes, ng.links
+    gin, gout = nodes.new("NodeGroupInput"), nodes.new("NodeGroupOutput")
+    sel = nodes.new("GeometryNodeMaterialSelection")
+    sel.inputs["Material"].default_value = mat
+    split = nodes.new("GeometryNodeSeparateGeometry")
+    split.domain = "FACE"
+    links.new(gin.outputs[0], split.inputs["Geometry"])
+    links.new(sel.outputs["Selection"], split.inputs["Selection"])
+    # the edge of the water: the edges of the water faces that have only one face
+    nb = nodes.new("GeometryNodeInputMeshEdgeNeighbors")
+    one = nodes.new("FunctionNodeCompare")
+    one.data_type = "INT"
+    one.operation = "EQUAL"
+    links.new(nb.outputs["Face Count"], one.inputs["A"])
+    one.inputs["B"].default_value = 1
+    edge = nodes.new("GeometryNodeSeparateGeometry")
+    edge.domain = "EDGE"
+    links.new(split.outputs["Selection"], edge.inputs["Geometry"])
+    links.new(one.outputs["Result"], edge.inputs["Selection"])
+    sub = nodes.new("GeometryNodeSubdivideMesh")
+    sub.inputs["Level"].default_value = int(level)
+    links.new(split.outputs["Selection"], sub.inputs["Mesh"])
+    # how far from the edge, 0 at the edge … 1 from ``fade`` metres in
+    prox = nodes.new("GeometryNodeProximity")
+    prox.target_element = "EDGES"
+    links.new(edge.outputs["Selection"], prox.inputs["Geometry"])
+    ramp = nodes.new("ShaderNodeMapRange")
+    ramp.clamp = True
+    ramp.inputs["From Min"].default_value = 0.0
+    ramp.inputs["From Max"].default_value = max(0.01, float(fade))
+    links.new(prox.outputs["Distance"], ramp.inputs["Value"])
+    # the noise at the point's place in the world, -1 … 1 (two octaves: a long swell and a shorter chop)
+    pos = nodes.new("GeometryNodeInputPosition")
+    noise = nodes.new("ShaderNodeTexNoise")
+    noise.noise_dimensions = "3D"
+    noise.inputs["Scale"].default_value = 1.0 / max(0.01, float(wavelength))
+    noise.inputs["Detail"].default_value = 3.0
+    noise.inputs["Roughness"].default_value = 0.5
+    links.new(pos.outputs["Position"], noise.inputs["Vector"])
+    centre = nodes.new("ShaderNodeMath"); centre.operation = "SUBTRACT"
+    links.new(noise.outputs["Fac"], centre.inputs[0])
+    centre.inputs[1].default_value = 0.5
+    amp = nodes.new("ShaderNodeMath"); amp.operation = "MULTIPLY"
+    links.new(centre.outputs[0], amp.inputs[0])
+    amp.inputs[1].default_value = 4.0 * float(height)       # (the noise rarely leaves 0.3…0.7: peaks reach ``height``)
+    faded = nodes.new("ShaderNodeMath"); faded.operation = "MULTIPLY"
+    links.new(amp.outputs[0], faded.inputs[0])
+    links.new(ramp.outputs["Result"], faded.inputs[1])
+    nor = nodes.new("GeometryNodeInputNormal")
+    lift = nodes.new("ShaderNodeVectorMath"); lift.operation = "SCALE"
+    links.new(nor.outputs["Normal"], lift.inputs[0])
+    links.new(faded.outputs[0], lift.inputs["Scale"])
+    move = nodes.new("GeometryNodeSetPosition")
+    links.new(sub.outputs["Mesh"], move.inputs["Geometry"])
+    links.new(lift.outputs["Vector"], move.inputs["Offset"])
+    join = nodes.new("GeometryNodeJoinGeometry")
+    links.new(split.outputs["Inverted"], join.inputs[0])
+    links.new(move.outputs["Geometry"], join.inputs[0])
+    links.new(join.outputs[0], gout.inputs[0])
+    return ng
+
+
+def _water_level(obj, mat_indices, cell):
+    """How many times the water faces of ``obj`` must be divided for the cells to be about ``cell`` metres."""
+    mw = obj.matrix_world
+    me = obj.data
+    longest, faces = 0.0, 0
+    for poly in me.polygons:
+        if poly.material_index in mat_indices:
+            pts = [mw @ me.vertices[i].co for i in poly.vertices]
+            faces += 1
+            for a, b in zip(pts, pts[1:] + pts[:1]):
+                longest = max(longest, (a - b).length)
+    if not faces or longest <= 0.0:
+        return 0, 0
+    level = 0
+    while level < WATER_MAX_LEVEL and longest / (2 ** level) > cell:
+        level += 1
+    return level, faces
+
+
+def build_water_waves(specs, only=None):
+    """Real waves on every face of a material of type «water» whose ``waves`` is above 0. Returns the number
+    of objects given waves."""
+    todo = {}
+    for mat in _live_materials(only):
+        spec = _spec_for(mat, specs)
+        if not spec or spec.get("type") != "water" or not mat.node_tree:
+            continue
+        if (spec.get("blender") or {}).get("group"):
+            continue
+        waves = max(0.0, min(1.0, float(spec.get("waves", 0.5))))
+        if waves <= 0.0:
+            continue
+        wl, h = WATER_BODIES.get(spec.get("water_body") or "pool", WATER_BODIES["pool"])
+        todo[mat.name] = (mat, wl, h * waves)
+    if not todo:
+        return 0
+    plan, budget = [], WATER_MAX_FACES
+    for obj in [o for o in bpy.context.scene.objects if o.type == "MESH"]:
+        for i, slot in enumerate(obj.material_slots):
+            if slot.material is not None and slot.material.name in todo:
+                mat, wl, h = todo[slot.material.name]
+                level, faces = _water_level(obj, {i}, max(0.02, wl / 6.0))
+                if faces:
+                    plan.append([obj, mat, level, faces, wl, h])
+    # past the limit every level is lowered by one until the water fits
+    while plan and sum(f * 4 ** l for _o, _m, l, f, _w, _h in plan) > budget and any(p[2] > 0 for p in plan):
+        for p in plan:
+            p[2] = max(0, p[2] - 1)
+    n = 0
+    for obj, mat, level, _faces, wl, h in plan:
+        if level <= 0:
+            continue
+        mod = obj.modifiers.new("Studio water", "NODES")
+        mod.node_group = _water_node_group("studio water " + obj.name, mat, level, wl, h, min(0.5 * wl, 3.0))
+        n += 1
+    if n:
+        say("water waves", f"{n} object(s), {', '.join(todo)}")
+    return n
+
+
 def _image_adjust(mat, bsdf, adj):
     """The editor's picture adjustments, in the render and the preview only (the 3D view keeps the
     original picture). ``adj``: ``hue`` (degrees), ``saturation`` (1 = as it is), ``brightness`` and
@@ -1331,6 +1938,14 @@ def grass_density(height):
     return max(GRASS_DENSITY_MIN, min(GRASS_DENSITY, GRASS_DENSITY * 0.10 / h))
 
 
+def grass_footprint(density, height):
+    """The sideways scale of a tuft (its mesh is 1 m tall and ``GRASS_TUFT_RADIUS`` wide): it reaches 60 % of the
+    spacing between tufts, whatever the height, so the same density covers the same. Only tall blades are
+    allowed to be broader than that (a tuft 60 cm tall is not 2 cm across)."""
+    spacing = 1.0 / math.sqrt(max(1.0, float(density)))
+    return max(0.6 * spacing / GRASS_TUFT_RADIUS, 0.5 * float(height))
+
+
 def _grass_tuft_mesh(name, seed=0):
     """One tuft, 1 m tall (scaled per instance): GRASS_BLADES tapered, bent blades
     around the origin, with ``grass_h`` (0 root … 1 tip) on its points."""
@@ -1482,24 +2097,40 @@ def _grass_node_group(name, branches):
         rot = nodes.new("ShaderNodeCombineXYZ")
         links.new(turn.outputs["Value"], rot.inputs["Z"])
         links.new(rot.outputs["Vector"], inst.inputs["Rotation"])
+        # Height and density are independent: the tuft's footprint follows the SPACING between tufts (what
+        # density sets), not the height, so low grass keeps its cover (it used to bald as it got shorter).
         size = nodes.new("FunctionNodeRandomValue")
         size.data_type = "FLOAT"
-        size.inputs["Min"].default_value = 0.75 * float(height)
-        size.inputs["Max"].default_value = 1.15 * float(height)
+        size.inputs["Min"].default_value = 0.75
+        size.inputs["Max"].default_value = 1.15
         size.inputs["Seed"].default_value = int(seed) + 2
-        links.new(size.outputs["Value"], inst.inputs["Scale"])
+        r = next(o for o in size.outputs if o.enabled)        # (Random Value has one «Value» output per data type)
+        wide = nodes.new("ShaderNodeMath"); wide.operation = "MULTIPLY"
+        links.new(r, wide.inputs[0])
+        wide.inputs[1].default_value = grass_footprint(density, height)
+        tall = nodes.new("ShaderNodeMath"); tall.operation = "MULTIPLY"
+        links.new(r, tall.inputs[0])
+        tall.inputs[1].default_value = float(height)
+        scale = nodes.new("ShaderNodeCombineXYZ")
+        links.new(wide.outputs[0], scale.inputs["X"])
+        links.new(wide.outputs[0], scale.inputs["Y"])
+        links.new(tall.outputs[0], scale.inputs["Z"])
+        links.new(scale.outputs["Vector"], inst.inputs["Scale"])
         links.new(inst.outputs["Instances"], join.inputs[0])
     links.new(join.outputs[0], gout.inputs[0])
     return ng
 
 
-def build_grass(specs, factor=1.0):
+def build_grass(specs, factor=1.0, only=None):
     """Grow the grass of every material of type «grass» (see above), at its own
     ``grass_density`` (tufts per m²; the height's automatic one when it has none),
-    ``factor`` times as dense. Returns the number of tufts asked for."""
+    ``factor`` times as dense. ``only``: grow it on those objects alone. Returns the number of
+    tufts asked for."""
     kinds, dens = {}, {}
     for mat in _live_materials():
         spec = _spec_for(mat, specs)
+        if spec and (spec.get("blender") or {}).get("group"):
+            continue                                   # its grass is the one edited in Blender (apply_blender_packages)
         if spec and spec.get("type") == "grass" and mat.node_tree:
             kinds[mat.name] = float(spec.get("grass_height", 0.08))
             if spec.get("grass_density"):
@@ -1511,7 +2142,7 @@ def build_grass(specs, factor=1.0):
     hidden.hide_render = True
     hidden.hide_viewport = True
     plan, total = [], 0.0
-    for obj in [o for o in bpy.context.scene.objects if o.type == "MESH"]:
+    for obj in (list(only) if only is not None else [o for o in bpy.context.scene.objects if o.type == "MESH"]):
         slots = {i: s.material for i, s in enumerate(obj.material_slots)
                  if s.material is not None and s.material.name in kinds}
         if not slots:
@@ -1859,10 +2490,12 @@ def set_look(scene, look_names, white_balance=None, tint=None):
             view.white_balance_tint = float(tint)
 
 
-def build_compositor(scene, saturation=1.0, bloom=0.0, vignette=0.0, exposure=0.0):
-    """Render layers → saturation → bloom → vignette → output, in Blender 5's
-    compositor (a node group set as the scene's compositing group)."""
-    if saturation == 1.0 and bloom <= 0.0 and vignette <= 0.0:
+def build_compositor(scene, saturation=1.0, bloom=0.0, vignette=0.0, exposure=0.0, fog=0.0, fog_start=30.0, fog_night=False,
+                     ao=0.0, ao_distance=1.0):
+    """Render layers → fog → saturation → bloom → vignette → output, in Blender 5's
+    compositor (a node group set as the scene's compositing group). The fog veils what is far with the sky's own light: the
+    mist pass (0 at ``fog_start`` metres, 1 a distance further on) times ``fog`` (0..1) mixes the picture into the fog's colour."""
+    if saturation == 1.0 and bloom <= 0.0 and vignette <= 0.0 and fog <= 0.0 and ao <= 0.0:
         return
     if not hasattr(scene, "compositing_node_group"):
         say("compositor", "unavailable")
@@ -1873,6 +2506,44 @@ def build_compositor(scene, saturation=1.0, bloom=0.0, vignette=0.0, exposure=0.
     rl = nodes.new("CompositorNodeRLayers")
     out = nodes.new("NodeGroupOutput")
     cur = rl.outputs["Image"]
+    if ao > 0.0:                                          # the ambient occlusion pass darkens the picture where it is 0
+        vl = bpy.context.view_layer
+        vl.use_pass_ambient_occlusion = True
+        w = scene.world
+        if w is not None and hasattr(w, "light_settings"):
+            w.light_settings.distance = max(0.05, float(ao_distance))
+        aop = rl.outputs.get("Ambient Occlusion")
+        if aop is not None:
+            mx = nodes.new("ShaderNodeMix")
+            mx.data_type = "RGBA"
+            mx.blend_type = "MULTIPLY"
+            mx.inputs["Factor"].default_value = max(0.0, min(1.0, float(ao)))
+            links.new(cur, mx.inputs["A"])
+            links.new(aop, mx.inputs["B"])
+            cur = mx.outputs["Result"]
+        else:
+            say("occlusion", "unavailable (no AO pass)")
+    if fog > 0.0:
+        vl = bpy.context.view_layer
+        vl.use_pass_mist = True
+        w = scene.world
+        if w is not None:
+            w.mist_settings.start = max(0.0, float(fog_start))
+            w.mist_settings.depth = 20.0 + 280.0 * (1.0 - max(0.0, min(1.0, float(fog)))) ** 2     # the thicker, the sooner it closes
+            w.mist_settings.falloff = "LINEAR"
+        mist = rl.outputs.get("Mist")
+        if mist is not None:
+            amount = nodes.new("ShaderNodeMath")
+            amount.operation = "MULTIPLY"
+            amount.inputs[1].default_value = 0.3 + 0.7 * max(0.0, min(1.0, float(fog)))
+            links.new(mist, amount.inputs[0])
+            fx = nodes.new("ShaderNodeMix")
+            fx.data_type = "RGBA"
+            # the colour of the sky's light near the horizon (scene-linear, before the view's exposure)
+            fx.inputs["B"].default_value = (0.012, 0.016, 0.03, 1.0) if fog_night else (0.80, 0.85, 0.92, 1.0)
+            links.new(amount.outputs[0], fx.inputs["Factor"])
+            links.new(cur, fx.inputs["A"])
+            cur = fx.outputs["Result"]
     if saturation != 1.0:
         hs = nodes.new("CompositorNodeHueSat")
         sat = hs.inputs.get("Saturation")
@@ -1926,7 +2597,7 @@ def build_compositor(scene, saturation=1.0, bloom=0.0, vignette=0.0, exposure=0.
     scene.compositing_node_group = ng
     if hasattr(scene.render, "use_compositing"):
         scene.render.use_compositing = True
-    say("compositor", f"saturation {saturation} bloom {bloom} vignette {vignette}")
+    say("compositor", f"saturation {saturation} bloom {bloom} vignette {vignette}", f"fog {fog:g} from {fog_start:g} m" if fog > 0 else "", f"occlusion {ao:g} reach {ao_distance:g} m" if ao > 0 else "")
 
 
 # ---- automatic exposure ----------------------------------------------------------------
@@ -1940,6 +2611,7 @@ def measure_exposure(scene, target=0.2, bias=0.0, fraction=25, samples=8, white=
     r = scene.render
     keep = (r.resolution_percentage, r.filepath, r.image_settings.file_format,
             scene.view_settings.exposure, getattr(r, "use_compositing", None))
+    freestyle = r.use_freestyle
     tmp = os.path.join(os.path.dirname(r.filepath) or HERE, "_meter.exr")
     # Glowing materials (light panels, screens) are metered as off: they
     # are meant to shine, not to darken the whole picture.
@@ -1955,6 +2627,7 @@ def measure_exposure(scene, target=0.2, bias=0.0, fraction=25, samples=8, white=
                 sock.default_value = 0.0
     try:
         r.resolution_percentage = fraction
+        r.use_freestyle = False                    # the outlines are no part of the light (and cost a lot on a big model)
         r.image_settings.file_format = "OPEN_EXR"
         r.filepath = tmp
         scene.view_settings.exposure = 0.0
@@ -1992,6 +2665,7 @@ def measure_exposure(scene, target=0.2, bias=0.0, fraction=25, samples=8, white=
             sock.default_value = value
         r.resolution_percentage, r.filepath, r.image_settings.file_format = keep[0], keep[1], keep[2]
         scene.view_settings.exposure = keep[3]
+        r.use_freestyle = freestyle
         if keep[4] is not None:
             r.use_compositing = keep[4]
         try:
@@ -2023,6 +2697,31 @@ def _ies_nodes(data, path, scale=1.0):
     return ies
 
 
+def _blender_light(lt, col, name):
+    """A light edited in Blender (``lt["blender"]``: a small .blend with the light object): appended as it was
+    left, with its nodes, and put where the list says (the place can be moved here; the rest is the Blender light's)."""
+    import base64
+    import tempfile
+    pkg = lt["blender"]
+    path = os.path.join(tempfile.mkdtemp(prefix="rs-light-"), "light.blend")
+    with open(path, "wb") as fh:
+        fh.write(base64.b64decode(pkg["blend"]))
+    with bpy.data.libraries.load(path, link=False) as (src, dst):
+        dst.objects = [n for n in src.objects if n == pkg["object"]]
+    obj = dst.objects[0]
+    obj.name = name
+    col.objects.link(obj)
+    obj["rs_id"] = lt.get("id", "")
+    obj["rs_source"] = lt.get("source", "")
+    obj["rs_proxy"] = True
+    pos = lt.get("pos")
+    if pos and obj.parent is None:
+        obj.location = Vector(pos)
+    obj.hide_render = False
+    say("blender light", name, obj.data.type)
+    return obj
+
+
 def add_studio_lights(scene, lights):
     """Render Studio's lights (``render_studio/lights.py``): point, spot, area
     and sun, in the world, with Blender's own power (``energy``) already
@@ -2031,6 +2730,12 @@ def add_studio_lights(scene, lights):
     col = bpy.data.collections.new("Render Studio lights")
     scene.collection.children.link(col)
     for i, lt in enumerate(lights):
+        if (lt.get("blender") or {}).get("blend"):
+            try:                                   # a light edited in Blender: that light, as it was left
+                made.append(_blender_light(lt, col, lt.get("name") or f"Studio light {i + 1}"))
+                continue
+            except Exception as exc:  # noqa: BLE001 - the light of Render Studio's settings instead
+                say("blender light failed", lt.get("name"), exc)
         kind = BLENDER_LIGHT.get(lt.get("type"), "POINT")
         name = lt.get("name") or f"Studio {lt.get('type', 'point')} {i + 1}"
         data = bpy.data.lights.new(name, type=kind)
@@ -2060,6 +2765,8 @@ def add_studio_lights(scene, lights):
                 say("ies failed", os.path.basename(lt["ies"]), exc)
         obj = bpy.data.objects.new(name, data)
         col.objects.link(obj)
+        obj["rs_id"] = lt.get("id", "")                # which light of Render Studio's it is (for «Edit in Blender»)
+        obj["rs_source"] = lt.get("source", "")
         obj.location = Vector(lt.get("pos") or (0.0, 0.0, 0.0))
         if lt.get("basis"):
             # The light's own axes, worked out by the extension (lights.light_basis):
@@ -2102,10 +2809,125 @@ def _srgb_to_linear(c):
     return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
 
 
+def _lin(color):
+    return [_srgb_to_linear(float(c)) for c in (color or (0.35, 0.37, 0.41))[:3]]
+
+
+def _hatch_nodes(mat, section):
+    """The cap's pattern in the material's Base Color: lines or dots of ``line`` over ``color``,
+    laid out in metres (the cap's uv are metres). Returns the colour socket."""
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    pattern = section.get("pattern", "diagonal")
+    spacing = max(0.005, float(section.get("spacing", 0.1)))
+    width = 0.14                                   # the line's share of the spacing
+    uv = nodes.new("ShaderNodeTexCoord")
+
+    def lines(angle_deg):
+        mp = nodes.new("ShaderNodeMapping")
+        mp.inputs["Rotation"].default_value = (0.0, 0.0, math.radians(angle_deg))
+        mp.inputs["Scale"].default_value = (1.0 / spacing, 1.0 / spacing, 1.0)
+        links.new(uv.outputs["UV"], mp.inputs["Vector"])
+        wave = nodes.new("ShaderNodeTexWave")
+        wave.wave_type = "BANDS"
+        wave.bands_direction = "X"
+        wave.wave_profile = "SAW"
+        wave.inputs["Scale"].default_value = 2.0 * math.pi / 20.0     # Blender: a band is 20 / 2π per unit
+        wave.inputs["Distortion"].default_value = 0.0
+        links.new(mp.outputs["Vector"], wave.inputs["Vector"])
+        ramp = nodes.new("ShaderNodeValToRGB")
+        ramp.color_ramp.interpolation = "CONSTANT"
+        ramp.color_ramp.elements[0].position = 0.0
+        ramp.color_ramp.elements[0].color = (1, 1, 1, 1)
+        ramp.color_ramp.elements[1].position = width
+        ramp.color_ramp.elements[1].color = (0, 0, 0, 1)
+        links.new(wave.outputs["Fac"], ramp.inputs["Fac"])
+        return ramp.outputs["Color"]
+
+    if pattern == "dots":
+        mp = nodes.new("ShaderNodeMapping")
+        mp.inputs["Scale"].default_value = (1.0 / spacing, 1.0 / spacing, 1.0)
+        links.new(uv.outputs["UV"], mp.inputs["Vector"])
+        vor = nodes.new("ShaderNodeTexVoronoi")
+        vor.voronoi_dimensions = "2D"
+        vor.feature = "F1"
+        vor.distance = "EUCLIDEAN"
+        vor.inputs["Randomness"].default_value = 0.0
+        links.new(mp.outputs["Vector"], vor.inputs["Vector"])
+        ramp = nodes.new("ShaderNodeValToRGB")
+        ramp.color_ramp.interpolation = "CONSTANT"
+        ramp.color_ramp.elements[0].position = 0.0
+        ramp.color_ramp.elements[0].color = (1, 1, 1, 1)
+        ramp.color_ramp.elements[1].position = 0.2
+        ramp.color_ramp.elements[1].color = (0, 0, 0, 1)
+        links.new(vor.outputs["Distance"], ramp.inputs["Fac"])
+        mask = ramp.outputs["Color"]
+    elif pattern == "diagonal":
+        mask = lines(45.0)
+    else:
+        a, b = (lines(45.0), lines(-45.0)) if pattern == "cross" else (lines(0.0), lines(90.0))
+        mx = nodes.new("ShaderNodeMix")
+        mx.data_type = "RGBA"
+        mx.blend_type = "LIGHTEN"
+        mx.inputs[0].default_value = 1.0
+        links.new(a, mx.inputs[6])
+        links.new(b, mx.inputs[7])
+        mask = mx.outputs[2]
+    out = nodes.new("ShaderNodeMix")
+    out.data_type = "RGBA"
+    links.new(mask, out.inputs[0])
+    out.inputs[6].default_value = (*_lin(section.get("color")), 1.0)         # where the mask is 0: the ground
+    out.inputs[7].default_value = (*_lin(section.get("line")), 1.0)          # where it is 1: the lines
+    return out.outputs[2]
+
+
+def _unlit(mat):
+    """The material without lighting: its Base Color (a picture, a pattern, a colour) shown as it is,
+    so the surface neither darkens in a shadow nor shades with the sun."""
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    out = next((n for n in nodes if n.type == "OUTPUT_MATERIAL"), None)
+    bsdf = next((n for n in nodes if n.type == "BSDF_PRINCIPLED"), None)
+    if out is None or bsdf is None:
+        return
+    emit = nodes.new("ShaderNodeEmission")
+    emit.inputs["Strength"].default_value = 1.0
+    base = bsdf.inputs["Base Color"]
+    if base.is_linked:
+        links.new(base.links[0].from_socket, emit.inputs["Color"])
+    else:
+        emit.inputs["Color"].default_value = base.default_value
+    links.new(emit.outputs["Emission"], out.inputs["Surface"])
+
+
 def _cap_material(section):
-    """The material of the section's cap: the model's own Blender material of that name
-    (so it has its picture, finish and the material editor's settings), else a matte
-    one of the material's colour (``rs_section_cap``: White model leaves it alone)."""
+    """The material of the section's cap: by ``style`` — the model's own Blender material of that name
+    (so it has its picture, finish and the material editor's settings), a flat colour, or a hatch
+    pattern. A material not in the file gives a matte one of its colour (``rs_section_cap``: White
+    model leaves it alone). ``shadows`` false: the material is unlit (see ``_unlit``)."""
+    style = section.get("style", "material")
+    if style in ("flat", "hatch"):
+        mat = bpy.data.materials.new("Render Studio section cap")
+        mat.use_nodes = True
+        mat["rs_section_cap"] = True
+        bsdf = next((x for x in mat.node_tree.nodes if x.type == "BSDF_PRINCIPLED"), None)
+        rgb = _lin(section.get("color"))
+        if bsdf is not None:
+            bsdf.inputs["Roughness"].default_value = 0.9
+            bsdf.inputs["Base Color"].default_value = (*rgb, 1.0)
+            if style == "hatch":
+                mat.node_tree.links.new(_hatch_nodes(mat, section), bsdf.inputs["Base Color"])
+        mat.diffuse_color = (*rgb, 1.0)
+        if not section.get("shadows", True):
+            _unlit(mat)
+        return mat
+    mat = _cap_material_named(section)
+    if mat is not None and not section.get("shadows", True) and mat.use_nodes:
+        mat = mat.copy()                               # the model's own material is left as it is
+        mat["rs_section_cap"] = True
+        _unlit(mat)
+    return mat
+
+
+def _cap_material_named(section):
     name = section.get("material")
     if name:
         mat = bpy.data.materials.get(name)
@@ -2160,6 +2982,8 @@ def clip_section(section):
     blocked = section.get("light") == "blocked"
     capmat = _cap_material(section) if want_cap else None
     uv_of = _plane_uv(co, no, section.get("texture_size"))
+    shadowless = want_cap and not section.get("shadows", True)
+    loose = []                                  # a shadowless cap: its triangles (world, with uv)
     n = capped = ghosts = 0
     for obj in list(bpy.data.objects):
         if obj.type != "MESH" or obj.data is None or not obj.data.vertices:
@@ -2208,7 +3032,12 @@ def clip_section(section):
             for loop in f.loops:
                 loop[uv_layer].uv = uv_of(loop.vert.co)
         slot = None
-        if new_faces:
+        if new_faces and shadowless:
+            for f in new_faces:
+                loose.append([(tuple(l.vert.co), tuple(l[uv_layer].uv)) for l in f.loops])
+            bmesh.ops.delete(bm, geom=new_faces, context="FACES_ONLY")
+            capped += 1
+        elif new_faces:
             if not len(obj.data.materials):
                 obj.data.materials.append(None)       # the faces it has keep «no material»
             obj.data.materials.append(capmat)
@@ -2221,9 +3050,32 @@ def clip_section(section):
         bm.free()
         obj.data.update()
         n += 1
+    if loose:
+        _loose_cap(loose, capmat)
     say("section", f"{n} meshes cut, {capped} capped, {ghosts} keep blocking light; at "
         f"{[round(c, 3) for c in co]}, normal {[round(c, 3) for c in no]}")
     return n
+
+
+def _loose_cap(polys, mat):
+    """One object for every cap triangle (world space), with its material: it casts no shadow, and
+    its material is unlit, so it takes none either."""
+    me = bpy.data.meshes.new("Section cap")
+    verts, faces, uvs = [], [], []
+    for poly in polys:
+        faces.append(tuple(range(len(verts), len(verts) + len(poly))))
+        for co_, uv in poly:
+            verts.append(co_)
+            uvs.append(uv)
+    me.from_pydata(verts, [], faces)
+    layer = me.uv_layers.new(name="UVMap")
+    for loop in me.loops:
+        layer.data[loop.index].uv = uvs[loop.index]
+    me.materials.append(mat)
+    obj = bpy.data.objects.new("Section cap", me)
+    bpy.context.scene.collection.objects.link(obj)
+    obj.visible_shadow = False
+    return obj
 
 
 def place_proxies(scene, entries, section=None):
@@ -2446,6 +3298,8 @@ def _patch_names(job):
     st = job.get("studio") or {}
     if _STATE["sig"] is None or not _STATE["pristine"] or st.get("section") or st.get("white_model"):
         return None
+    if (st.get("style") or {}).get("mode") in ("white", "model", "light", "sketch"):
+        return None                                    # a style that changes the materials: the scene is built again
     if _STATE["sig"] != _rest_signature(job):
         return None
     old_s, new_s = _STATE["specs"] or {}, st.get("materials") or {}
@@ -2459,6 +3313,8 @@ def _patch_names(job):
             return None
         if (a or {}).get("type") == "grass" or (b or {}).get("type") == "grass" or _light_affecting(a, b, job.get("engine", "eevee")):
             return None
+        if (a or {}).get("blender") or (b or {}).get("blender"):
+            return None                                # a material edited in Blender: the scene is built again
         names.add(m.name)
     return names
 
@@ -2482,7 +3338,9 @@ def _expose(scene, job):
     for g in [g for g in bpy.data.node_groups if g.name.startswith("IngeTrazo studio")]:
         bpy.data.node_groups.remove(g)
     build_compositor(scene, float(st.get("saturation", 1.0)), float(st.get("bloom", 0.0)),
-                     float(st.get("vignette", 0.0)), scene.view_settings.exposure)
+                     float(st.get("vignette", 0.0)), scene.view_settings.exposure,
+                     float(st.get("fog", 0.0)), float(st.get("fog_start", 30.0)), float(st.get("exposure_target", 0.2)) < 0.1,
+                     float(st.get("ao", 0.0)), float(st.get("ao_distance", 1.0)))
     say("exposure", round(scene.view_settings.exposure, 2))
 
 
@@ -2526,6 +3384,12 @@ def update(job):
         cap_albedo(float(st.get("albedo_cap", 0.8)), names)
     _STATE["specs"] = json.loads(json.dumps(specs))
     _STATE["pbr"] = json.loads(json.dumps(st.get("pbr") or {}))
+    gm = st.get("ground_material")
+    if gm and job.get("ground") and any(n == gm["name"] or n.startswith(gm["name"] + ".") for n in names):
+        try:
+            remake_ground(bpy.context.scene, job["ground"], st)       # the ground wears a copy of that material
+        except Exception as exc:                                      # never lose the preview over it
+            say("ground remake failed", exc)
     lights = st.get("lights")
     if isinstance(lights, list) and not _same(_STATE.get("lights") or [], lights):
         replace_studio_lights(bpy.context.scene, lights)     # the lights, in place: the model stays
@@ -2578,6 +3442,13 @@ def build(job):
         glass_see_through(specs)
     if specs and st.get("grass", True):
         build_grass(specs, LIVE_GRASS if st.get("live") else 1.0)
+    if specs and not st.get("white_model"):
+        try:
+            build_water_waves(specs)
+        except Exception as exc:  # noqa: BLE001 - flat water is better than no render
+            say("water waves failed", exc)
+    if specs and not st.get("white_model"):
+        apply_blender_packages(specs)
     if st.get("albedo_cap", 0.8):
         cap_albedo(float(st.get("albedo_cap", 0.8)))
     if st.get("white_model"):
@@ -2585,8 +3456,8 @@ def build(job):
     figures = core["find_figures"]()
     w, h = int(job["width"]), int(job["height"])
     core["set_camera"](scene, job["camera"], w, h)
-    _DOF["amount"] = st.get("dof", 0.0)
-    set_dof(scene, job["camera"], _DOF["amount"])
+    _DOF["amount"], _DOF["focus"] = st.get("dof", 0.0), st.get("focus", 0.0)
+    set_dof(scene, job["camera"], _DOF["amount"], _DOF["focus"])
     core["face_figures"](figures, job["camera"])
     ambience = job.get("ambience", "day")
     sun_dir = job.get("sun") if ambience == "day" else None
@@ -2595,12 +3466,16 @@ def build(job):
     if ambience == "night":
         core["set_plain_world"](scene, (0.010, 0.016, 0.035), 1.0, "night")
         core["add_moon"](scene)
-        night_sky(scene, stars=float(st.get("stars", 1.0)), seed=float(st.get("cloud_seed", 0.0)))
-        if st.get("clouds", 0.0) > 0.0:
+        moon = bpy.data.objects.get("IngeTrazo moon")
+        if moon is not None:
+            moon.data.energy *= max(0.0, float(st.get("moon_scale", 1.0)))       # the Moonlight slider
+        glow = max(0.0, float(st.get("moon_scale", 1.0)))     # the moonlit sky: no moon, a black one
+        night_sky(scene, stars=float(st.get("stars", 1.0)), seed=float(st.get("cloud_seed", 0.0)), glow=glow)
+        if st.get("clouds", 0.0) > 0.0 and glow > 0.0:
             # Moonlit: a blue-grey a little brighter than the sky, darker
             # where thick; they hide the stars behind them.
             add_clouds(scene, float(st["clouds"]), scale=st.get("cloud_scale", 1.0),
-                       brightness=0.05 * float(st.get("cloud_brightness", 1.0)),
+                       brightness=0.05 * float(st.get("cloud_brightness", 1.0)) * glow,
                        seed=st.get("cloud_seed", 0.0), tint=(0.80, 0.90, 1.25))
     elif ambience == "overcast":
         core["set_world"](scene, golden_sun(job.get("sun"), 35.0))
@@ -2652,18 +3527,22 @@ def build(job):
     if ground and not (st.get("hdri") and st.get("hdri_light", True)):
         world_ground(scene, st.get("ground_color") or ground["color"],
                      float(st.get("world_ground_level", 2.0)))
+    if not ground and not st.get("hdri") and not st.get("backdrop"):
+        try:
+            sky_whole_sphere(scene)                # no generated ground: the sky shows all round
+        except Exception as exc:                   # never lose the render over it
+            say("sky all round failed", exc)
     if isinstance(st.get("lights"), list):
         add_studio_lights(scene, st["lights"])     # Render Studio's (the Render tab's are among them)
     else:
         core["add_lights"](scene, job.get("lights") or [])
     if ground:
-        color = st.get("ground_color") or ground["color"]
-        core["add_ground"](scene, ground["z"], ground["size"], color)
-        if st.get("haze", True):
-            # A photo's horizon is near (trees, buildings): melt sooner.
-            near, far = (30.0, 300.0) if st.get("hdri") else (120.0, 1200.0)
-            haze_ground(scene, float(st.get("haze_near", near)), float(st.get("haze_far", far)),
-                        eye_height=(float(st.get("hdri_height", 2.5)) if st.get("hdri") else None))
+        make_ground(scene, ground, st)
+    if (st.get("style") or {}).get("mode") not in (None, "none") or float((st.get("style") or {}).get("width") or 0.0) > 0.0:
+        try:
+            apply_style(scene, st["style"], st)         # outlines, white, one material, calibrated light
+        except Exception as exc:                       # never lose the render over it
+            say("style failed", exc)
     core["set_engine"](scene, job.get("engine", "eevee"), int(job.get("samples", 64)))
     if job.get("engine") != "cycles" and st.get("hdri") and scene.world is not None:
         wld = scene.world
@@ -2681,15 +3560,25 @@ def build(job):
                     setattr(ev, attr, value)
                 except (TypeError, ValueError):
                     pass
+    _STATE["final_settings"] = None
     if st.get("live") and job.get("engine") != "cycles":
         ev = scene.eevee
+        kept = {}
         for attr, value in LIVE_EEVEE:                 # a quick draft, not the final picture
             if hasattr(ev, attr):
+                kept[attr] = getattr(ev, attr)         # (what the final picture has: put back by :func:`as_final`)
                 try:
                     setattr(ev, attr, value)
                 except (TypeError, ValueError):
                     pass
+        _STATE["final_settings"] = {"eevee": kept, "draft": {"eevee": dict(LIVE_EEVEE)}, "grass": bool(st.get("grass", True)) and any(
+            (m or {}).get("type") == "grass" for m in (st.get("materials") or {}).values())}
     if st.get("live") and job.get("engine") == "cycles":
+        _STATE["final_settings"] = {"cycles": {a: getattr(scene.cycles, a) for a in (
+            "use_denoising", "denoising_use_gpu", "denoising_prefilter", "use_adaptive_sampling") if hasattr(scene.cycles, a)},
+            "persistent": scene.render.use_persistent_data, "grass": False,
+            "draft": {"cycles": {"use_denoising": True, "denoising_use_gpu": True, "denoising_prefilter": "FAST",
+                                 "use_adaptive_sampling": False}, "persistent": True}}
         # The Interior look's live view: Cycles, its scene kept between images (only the
         # camera changes), denoised so a few samples read as a picture.
         scene.render.use_persistent_data = True
@@ -2716,6 +3605,9 @@ def build(job):
     set_look(scene, st.get("looks") or ["AgX - Medium High Contrast", "Medium High Contrast"],
              st.get("white_balance"), st.get("tint"))
     _expose(scene, job)
+    _STATE["style"] = st.get("style")
+    finish_style(scene, st.get("style"))
+    _STATE["outlines"] = bool(scene.render.use_freestyle)
     if st.get("shadow_catcher") and not ground:          # after the exposure: the floor is no part of what is metered
         add_shadow_floor(scene, float(st["shadow_catcher"]["z"]), float(st["shadow_catcher"]["size"]))
     last = {"text": None}
@@ -2732,6 +3624,46 @@ def build(job):
                   pbr=json.loads(json.dumps(st.get("pbr") or {})), figures=figures,
                   lights=json.loads(json.dumps(st["lights"])) if isinstance(st.get("lights"), list) else None)
     return scene, figures
+
+
+def as_final(scene):
+    """The draft scene of the live view made the final picture's: what the draft lightened is put back (EEVEE's shadows and
+    rays, Cycles' denoising and sampling). Returns False when the scene cannot be the final one as it is: the grass of a draft
+    is sparser, so it has to be built again."""
+    kept = _STATE.get("final_settings")
+    if not kept or kept.get("grass"):
+        return False
+    for attr, value in (kept.get("eevee") or {}).items():
+        try:
+            setattr(scene.eevee, attr, value)
+        except (TypeError, ValueError):
+            pass
+    for attr, value in (kept.get("cycles") or {}).items():
+        try:
+            setattr(scene.cycles, attr, value)
+        except (TypeError, ValueError):
+            pass
+    if "persistent" in kept:
+        scene.render.use_persistent_data = kept["persistent"]
+    return True
+
+
+def as_draft(scene):
+    """The scene made a draft again after :func:`as_final` (the live view goes on with it)."""
+    kept = _STATE.get("final_settings") or {}
+    draft = kept.get("draft") or {}
+    for attr, value in (draft.get("eevee") or {}).items():
+        try:
+            setattr(scene.eevee, attr, value)
+        except (TypeError, ValueError, AttributeError):
+            pass
+    for attr, value in (draft.get("cycles") or {}).items():
+        try:
+            setattr(scene.cycles, attr, value)
+        except (TypeError, ValueError, AttributeError):
+            pass
+    if "persistent" in draft:
+        scene.render.use_persistent_data = draft["persistent"]
 
 
 def serve(scene, figures):
@@ -2775,15 +3707,494 @@ def serve(scene, figures):
             continue
         w, h = int(req["width"]), int(req["height"])
         r = scene.render
+        if req.get("final"):
+            if not as_final(scene):                    # (sparser draft grass): the app builds the final scene in a Blender of its own
+                say("final refused")
+                continue
+            say("final", "the live scene, as the final picture")
         core["set_camera"](scene, req["camera"], w, h)
-        set_dof(scene, req["camera"], _DOF["amount"])
+        set_dof(scene, req["camera"], _DOF["amount"], _DOF["focus"])
         core["face_figures"](figures, req["camera"])
         core["set_samples"](scene, int(req.get("samples", 16)))
+        if _STATE.get("outlines"):                     # the frames of a moving camera go without outlines (slow on a big model)
+            r.use_freestyle = bool(req.get("outlines", True))
         r.resolution_x, r.resolution_y = w, h
         r.filepath = req["output"]
         say("rendering", w, "x", h)
-        bpy.ops.render.render(write_still=True)
+        render_styled(scene, _STATE.get("style"), req["output"])
+        if req.get("final"):
+            as_draft(scene)
         say("done", req["output"])
+
+
+
+# ---- styles: outlines, white, model, light (lux), sketch, watercolour ----------------------------------------------------------------------
+#
+# The panel's Style (settings "style", see settings_store.style): ``mode`` none | white | model | light | sketch | watercolour, with
+# the outlines every mode can have (``width`` in pixels, 0 = none, and ``color``), and what each mode adds. The scene is changed here
+# (materials, outlines, calibrated light); what needs the finished picture (the lux colours and scale, the sketch's paper, the
+# watercolour) is made on the picture after the render (:func:`render_styled`).
+
+STYLE_PAPER = (0.97, 0.96, 0.93)
+
+
+def _outline_collection(scene):
+    """The collection whose objects get no outline: the generated ground, the skyline, the grass tufts."""
+    col = bpy.data.collections.get("Render Studio no outlines")
+    if col is None:
+        col = bpy.data.collections.new("Render Studio no outlines")
+        scene.collection.children.link(col)
+    for ob in list(bpy.data.objects):
+        if ob.name.startswith(("IngeTrazo ground", "IngeTrazo skyline", "studio grass")) and ob.name not in col.objects:
+            for c in list(ob.users_collection):
+                c.objects.unlink(ob)
+            col.objects.link(ob)
+    return col
+
+
+def setup_outlines(scene, width, color, noise=0.0, extend=0.0):
+    """Outlines with Blender's Freestyle: silhouettes, borders and creases, ``width`` pixels, ``color``. ``noise`` (0..1) makes the
+    stroke irregular (wobbling, doubled like a pencil going over it twice); ``extend`` (0..1) lets the lines run past their corners,
+    as a draughtsman's do."""
+    width = float(width)
+    if width <= 0.0:
+        scene.render.use_freestyle = False
+        return False
+    r = scene.render
+    r.use_freestyle = True
+    r.line_thickness_mode = "ABSOLUTE"
+    vl = bpy.context.view_layer
+    vl.use_freestyle = True
+    fs = vl.freestyle_settings
+    fs.crease_angle = math.radians(120.0)
+    for ls in list(fs.linesets):
+        fs.linesets.remove(ls)
+    col = _outline_collection(scene)
+    sets = [(0.0, 0)] if noise <= 0.05 else [(1.0, 0), (0.6, 7)]            # a second, lighter pass: the pencil goes over it again
+    for k, (weight, seed) in enumerate(sets):
+        ls = fs.linesets.new("Render Studio outline %d" % (k + 1))
+        ls.select_silhouette = True
+        ls.select_border = True
+        ls.select_crease = True
+        ls.select_contour = False
+        ls.select_edge_mark = False
+        ls.select_by_collection = True
+        ls.collection = col
+        if hasattr(ls, "collection_negation"):
+            ls.collection_negation = "EXCLUSIVE"            # the lines of what is NOT in that collection
+        elif hasattr(ls, "exclude_collection"):
+            ls.exclude_collection = True
+        ls.select_by_visibility = True
+        style = bpy.data.linestyles.new("Render Studio outline %d" % (k + 1))
+        style.color = tuple(float(c) for c in (color or (0.05, 0.05, 0.05))[:3])
+        style.thickness = width * (1.0 if k == 0 else 0.7)
+        style.use_chaining = True
+        if noise > 0.05:
+            samp = style.geometry_modifiers.new("sampling", "SAMPLING")
+            samp.sampling = 2.0
+            wob = style.geometry_modifiers.new("wobble", "PERLIN_NOISE_1D")
+            wob.frequency = 4.0 + 10.0 * float(noise)
+            wob.amplitude = 0.6 + 3.2 * float(noise) * (1.0 if k == 0 else 1.5)
+            wob.octaves = 3
+            wob.seed = seed + 1
+            wob.angle = math.radians(90.0)
+        if extend > 0.01:
+            st = style.geometry_modifiers.new("stretch", "BACKBONE_STRETCHER")
+            st.backbone_length = float(extend) * 14.0
+        ls.linestyle = style
+    say("outlines", f"{width:g} px", "sketchy" if noise > 0.05 else "", f"extended {extend:g}" if extend > 0.01 else "")
+    return True
+
+
+def _one_material(scene, style, st):
+    """A model (maquette) of one material: every mesh of the model wears the chosen material (a colour, or a material of the
+    model or of the document made as the render would make it)."""
+    name = style.get("material") or ""
+    if name:
+        mat = next((m for m in _live_materials() if m.name == name), None) or \
+            next((m for m in _live_materials() if m.name.startswith(name + ".")), None)
+        if mat is None:
+            mat = _synth_ground_source({"name": name, "color": style.get("model_color"), "texture": style.get("texture")}, st)
+    else:
+        mat = bpy.data.materials.new("Render Studio model")
+        mat.use_nodes = True
+        bsdf = next((n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+        c = [float(x) for x in (style.get("model_color") or (0.85, 0.80, 0.70))[:3]]
+        if bsdf is not None:
+            bsdf.inputs["Base Color"].default_value = (*[_srgb_to_linear(x) for x in c], 1.0)
+            bsdf.inputs["Roughness"].default_value = 0.8
+    if mat is None:
+        say("model material not found", name)
+        return 0
+    n = 0
+    for ob in bpy.data.objects:
+        if ob.type != "MESH" or ob.name.startswith(("IngeTrazo skyline", "studio grass", "Section cap")):
+            continue
+        if ob.name.startswith("IngeTrazo ground"):
+            continue                                    # (the ground has its own colour; see apply_style)
+        if not ob.data.materials:
+            ob.data.materials.append(mat)
+        else:
+            for i in range(len(ob.data.materials)):
+                ob.data.materials[i] = mat
+        n += 1
+    say("model", name or "a colour", n, "objects")
+    return n
+
+
+def _whiten_ground():
+    gmat = bpy.data.materials.get("IngeTrazo ground")
+    if gmat is not None and gmat.use_nodes:
+        b = next((n for n in gmat.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+        if b is not None:
+            for link in list(b.inputs["Base Color"].links):
+                gmat.node_tree.links.remove(link)
+            b.inputs["Base Color"].default_value = (*[_srgb_to_linear(0.82)] * 3, 1.0)
+            b.inputs["Roughness"].default_value = 0.9
+
+
+#: Lux: a white diffuse surface (albedo 0.82) in front of the camera. W/m² → lux by the lamps' own factor (lights.LM_PER_W); a
+#: clear day's direct sun then is about 100 000 lux.
+LUX_ALBEDO = 0.82
+LUX_PER_W = 381.0
+LUX_SUN = 100000.0
+
+
+def _calibrate_lux(scene):
+    """The light in physical terms, so a white surface's brightness says its lux: the sun is 100 000 lux (a clear day), the sky
+    to match, no compositing, no tone mapping. Lamps are in lumens already."""
+    sun_w = LUX_SUN / LUX_PER_W
+    for ob in bpy.data.objects:
+        if ob.type == "LIGHT" and ob.data.type == "SUN" and ob.name == "IngeTrazo sun":
+            ob.data.energy = sun_w
+    if scene.world is not None and scene.world.node_tree:
+        for n in scene.world.node_tree.nodes:
+            if n.type == "BACKGROUND" and n.name != "hdri_background":
+                n.inputs["Strength"].default_value = sun_w / 1000.0 * 1.0
+    if hasattr(scene, "compositing_node_group"):
+        scene.compositing_node_group = None
+    scene.view_settings.view_transform = "Standard"
+    try:
+        scene.view_settings.look = "None"
+    except TypeError:
+        pass
+    scene.view_settings.exposure = 0.0
+    scene.render.film_transparent = True                 # the sky is not a surface: it has no lux
+    say("lux", f"sun {sun_w:.0f} W/m2 = {LUX_SUN:.0f} lx")
+
+
+def apply_style(scene, style, st):
+    """The scene's part of the style: outlines, white or one material, calibrated light."""
+    mode = (style or {}).get("mode") or "none"
+    if mode in ("white", "light", "sketch"):
+        white_model(skip_ground=False)
+        _whiten_ground()
+    elif mode == "model":
+        _one_material(scene, style, st)
+        _whiten_ground()
+    noise = float(style.get("noise", 0.0)) if mode == "sketch" else 0.0
+    extend = float(style.get("extend", 0.0)) if mode == "sketch" else 0.0
+    width = float(style.get("width", 0.0) or 0.0)
+    if mode == "sketch" and width <= 0.0:
+        width = 1.5                                      # a sketch is lines
+    setup_outlines(scene, width, style.get("color"), noise, extend)
+    if mode == "light":
+        _calibrate_lux(scene)
+    if mode == "sketch":
+        scene.render.film_transparent = True             # the paper is put behind it when the picture is made
+
+
+# ---- the picture after the render: lux colours and scale, paper, watercolour ----------------------------------------------------------------
+
+_FONT = {"0": ("01110", "10001", "10011", "10101", "11001", "10001", "01110"), "1": ("00100", "01100", "00100", "00100", "00100", "00100", "01110"),
+         "2": ("01110", "10001", "00001", "00010", "00100", "01000", "11111"), "3": ("11110", "00001", "00001", "01110", "00001", "00001", "11110"),
+         "4": ("00010", "00110", "01010", "10010", "11111", "00010", "00010"), "5": ("11111", "10000", "11110", "00001", "00001", "10001", "01110"),
+         "6": ("00110", "01000", "10000", "11110", "10001", "10001", "01110"), "7": ("11111", "00001", "00010", "00100", "01000", "01000", "01000"),
+         "8": ("01110", "10001", "10001", "01110", "10001", "10001", "01110"), "9": ("01110", "10001", "10001", "01111", "00001", "00010", "01100"),
+         ".": ("00000", "00000", "00000", "00000", "00000", "01100", "01100"), "k": ("10000", "10000", "10010", "10100", "11000", "10100", "10010"),
+         "l": ("01100", "00100", "00100", "00100", "00100", "00100", "01110"), "x": ("00000", "00000", "10001", "01010", "00100", "01010", "10001"),
+         " ": ("00000",) * 7}
+
+
+def _draw_text(img, text, x, y, scale=2, color=(0.0, 0.0, 0.0)):
+    """Text in a 5×7 bitmap font into ``img`` (H×W×3, 0..1), its top-left at (x, y); returns the width drawn."""
+    cx = x
+    for ch in text:
+        g = _FONT.get(ch, _FONT[" "])
+        for ry, row in enumerate(g):
+            for rx, bit in enumerate(row):
+                if bit == "1":
+                    y0, x0 = y + ry * scale, cx + rx * scale
+                    if 0 <= y0 and y0 + scale <= img.shape[0] and 0 <= x0 and x0 + scale <= img.shape[1]:
+                        img[y0:y0 + scale, x0:x0 + scale, :3] = color
+        cx += 6 * scale
+    return cx - x
+
+
+def _turbo(t):
+    import numpy as np
+    t = np.clip(t, 0.0, 1.0)
+    r = 0.13572138 + t * (4.61539260 + t * (-42.66032258 + t * (132.13108234 + t * (-152.94239396 + t * 59.28637943))))
+    g = 0.09140261 + t * (2.19418839 + t * (4.84296658 + t * (-14.18503333 + t * (4.27729857 + t * 2.82956604))))
+    b = 0.10667330 + t * (12.64194608 + t * (-60.58204836 + t * (110.36276771 + t * (-89.90310912 + t * 27.34824973))))
+    return np.clip(np.stack([r, g, b], axis=-1), 0.0, 1.0)
+
+
+def _nice(v, up):
+    """A round number at or above (``up``) or at or below ``v``: 1, 2, 2.5, 5 or 10 × a power of ten."""
+    if v <= 0:
+        return 0.0
+    p = 10 ** math.floor(math.log10(v))
+    steps = [m * p for m in (1, 2, 4, 6, 8, 10)]           # whole quarters: four intervals, round ticks
+    if up:
+        return next(s for s in steps if s >= v - 1e-9)
+    return max(s for s in steps if s <= v + 1e-9)
+
+
+def _lux_label(v):
+    return f"{v / 1000.0:g}k" if v >= 1000 else f"{v:g}"
+
+
+def lux_scale(values, fixed_max=0.0):
+    """(low, high) of the colour scale, round numbers: from the 2nd to the 99.5th percentile of the lux values, or 0 to
+    ``fixed_max`` when it is given."""
+    import numpy as np
+    if fixed_max and fixed_max > 0:
+        return 0.0, float(fixed_max)
+    if values.size == 0:
+        return 0.0, 1000.0
+    lo, hi = float(np.percentile(values, 2.0)), float(np.percentile(values, 99.5))
+    hi = max(hi, lo + 1.0)
+    hi_n = _nice(hi, True)
+    lo_n = 0.0 if lo < 0.3 * hi_n else _nice(lo, False)       # from zero unless the picture is all well lit
+    if hi_n <= lo_n:
+        hi_n = lo_n + 1.0
+    return lo_n, hi_n
+
+
+def _read_pixels(path):
+    import numpy as np
+    img = bpy.data.images.load(path, check_existing=False)
+    img.colorspace_settings.name = "Non-Color"
+    w, h = img.size
+    arr = np.empty(w * h * 4, dtype=np.float32)
+    img.pixels.foreach_get(arr)
+    bpy.data.images.remove(img)
+    return arr.reshape(h, w, 4)[::-1]               # rows from the top, as a picture is read
+
+
+def _write_png(path, arr):
+    import numpy as np
+    h, w = arr.shape[:2]
+    out = bpy.data.images.new("render studio styled", w, h, alpha=True)
+    out.colorspace_settings.name = "Non-Color"
+    out.pixels.foreach_set(np.ascontiguousarray(arr[::-1], dtype=np.float32).reshape(-1))
+    out.filepath_raw = path
+    out.file_format = "PNG"
+    out.save()
+    bpy.data.images.remove(out)
+
+
+def lux_picture(arr, style):
+    """The false-colour picture of a linear render (H×W×4, rows bottom to top): each pixel's lux, coloured on a scale chosen from the
+    picture (round numbers), the sky left pale grey, the scale drawn at the right."""
+    import numpy as np
+    rgb, alpha = arr[..., :3], arr[..., 3]
+    y = 0.2126 * rgb[..., 0] + 0.7152 * rgb[..., 1] + 0.0722 * rgb[..., 2]
+    lux = math.pi * y / LUX_ALBEDO * LUX_PER_W
+    mask = alpha > 0.5
+    lo, hi = lux_scale(lux[mask], float(style.get("lux_max") or 0.0))
+    t = (lux - lo) / max(1e-9, hi - lo)
+    out = _turbo(t)
+    out[~mask] = (0.86, 0.87, 0.88)
+    h, w = lux.shape
+    bar_w, bar_h = max(10, w // 40), int(h * 0.6)
+    x0, y0 = w - bar_w - max(8, w // 30) - 60, int(h * 0.2)
+    pad = 6
+    panel = out.copy()
+    panel[max(0, y0 - 22):min(h, y0 + bar_h + 22), max(0, x0 - pad):min(w, w - 6)] = (1.0, 1.0, 1.0)
+    for i in range(bar_h):
+        panel[y0 + i, x0:x0 + bar_w] = _turbo(np.array(1.0 - i / max(1, bar_h - 1)))
+    scale = 2
+    ticks = 5
+    for k in range(ticks):
+        frac = k / (ticks - 1)
+        yy = y0 + int(round((1.0 - frac) * (bar_h - 1)))
+        panel[max(0, yy - 1):yy + 1, x0 + bar_w:x0 + bar_w + 4] = (0.1, 0.1, 0.1)
+        _draw_text(panel, _lux_label(lo + frac * (hi - lo)), x0 + bar_w + 8, max(0, yy - 7), scale, (0.1, 0.1, 0.1))
+    _draw_text(panel, "lx", x0, max(0, y0 - 18), scale, (0.1, 0.1, 0.1))
+    res = np.dstack([panel, np.ones_like(alpha)])
+    return res.astype(np.float32), lo, hi
+
+
+def _box_sums(a, r):
+    """Sum over the (2r+1)² window round each pixel (edges repeated) of ``a`` (H×W or H×W×C)."""
+    import numpy as np
+    pad = [(r, r), (r, r)] + [(0, 0)] * (a.ndim - 2)
+    p = np.pad(a, pad, mode="edge")
+    c = np.cumsum(np.cumsum(p, axis=0), axis=1)
+    c = np.pad(c, [(1, 0), (1, 0)] + [(0, 0)] * (a.ndim - 2))
+    n = 2 * r + 1
+    return c[n:, n:] - c[:-n, n:] - c[n:, :-n] + c[:-n, :-n]
+
+
+def _blur(a, r, passes=2):
+    for _ in range(passes):
+        a = _box_sums(a, r) / float((2 * r + 1) ** 2)
+    return a
+
+
+def kuwahara(rgb, r):
+    """Painterly smoothing: each pixel takes the mean of the calmest of the four quadrants round it (edges stay sharp, flat areas
+    become washes)."""
+    import numpy as np
+    h, w, _c = rgb.shape
+    lum = (0.299 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2]).astype(np.float32)
+    best_var = np.full((h, w), np.inf, dtype=np.float32)
+    best = np.zeros_like(rgb)
+    pad = r
+    prgb = np.pad(rgb, ((pad, pad), (pad, pad), (0, 0)), mode="edge")
+    plum = np.pad(lum, ((pad, pad), (pad, pad)), mode="edge")
+    s1 = np.pad(np.cumsum(np.cumsum(plum, 0), 1), ((1, 0), (1, 0)))
+    s2 = np.pad(np.cumsum(np.cumsum(plum * plum, 0), 1), ((1, 0), (1, 0)))
+    sc = np.pad(np.cumsum(np.cumsum(prgb, 0), 1), ((1, 0), (1, 0), (0, 0)))
+    n = float((r + 1) ** 2)
+    for dy0, dx0 in ((-r, -r), (-r, 0), (0, -r), (0, 0)):
+        ys, xs = np.arange(h) + pad + dy0, np.arange(w) + pad + dx0          # the window's top-left, in the padded picture
+        y0, y1 = ys[:, None], ys[:, None] + r + 1
+        x0, x1 = xs[None, :], xs[None, :] + r + 1
+        def win(c):
+            return c[y1, x1] - c[y0, x1] - c[y1, x0] + c[y0, x0]
+        mean = win(s1) / n
+        var = win(s2) / n - mean * mean
+        col = np.stack([win(sc[..., k]) for k in range(3)], axis=-1) / n
+        better = var < best_var
+        best_var = np.where(better, var, best_var)
+        best = np.where(better[..., None], col, best)
+    return best
+
+
+def _paper_noise(h, w, seed=1):
+    import numpy as np
+    rng = np.random.default_rng(seed)
+    n = np.zeros((h, w), dtype=np.float32)
+    amp = 1.0
+    for cells in (6, 24, 96, 384):
+        gh, gw = max(2, h * cells // max(h, w)), max(2, w * cells // max(h, w))
+        g = rng.random((gh, gw)).astype(np.float32)
+        ys = np.linspace(0, gh - 1, h)
+        xs = np.linspace(0, gw - 1, w)
+        y0, x0 = np.floor(ys).astype(int), np.floor(xs).astype(int)
+        y1, x1 = np.minimum(y0 + 1, gh - 1), np.minimum(x0 + 1, gw - 1)
+        fy, fx = (ys - y0)[:, None], (xs - x0)[None, :]
+        n += amp * ((g[y0][:, x0] * (1 - fx) + g[y0][:, x1] * fx) * (1 - fy) + (g[y1][:, x0] * (1 - fx) + g[y1][:, x1] * fx) * fy)
+        amp *= 0.55
+    n -= n.min()
+    return n / max(1e-6, n.max())
+
+
+def watercolour(arr, style):
+    """A watercolour of a picture (H×W×4): washes (the painterly smoothing, then a little bleeding), darker pooled edges, a lighter
+    palette and the grain of the paper. ``wetness`` (0..1) how far the colour spreads, ``edges`` how dark the edges pool, ``paper`` how
+    rough the paper is."""
+    import numpy as np
+    wet = max(0.0, min(1.0, float(style.get("wetness", 0.5))))
+    edges = max(0.0, min(1.0, float(style.get("edges", 0.4))))
+    paper = max(0.0, min(1.0, float(style.get("paper", 0.5))))
+    rgb = arr[..., :3].astype(np.float32)
+    h, w, _c = rgb.shape
+    r = int(round(1 + wet * max(2, min(h, w) / 90.0)))
+    wash = kuwahara(rgb, r)
+    wash = _blur(wash, max(1, r // 2), 1)
+    lum = 0.299 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2]
+    gy, gx = np.gradient(_blur(lum, 1, 1))
+    edge = _blur(np.sqrt(gx * gx + gy * gy), 1, 1)
+    edge = np.clip(edge / max(1e-4, np.percentile(edge, 99.0)), 0.0, 1.0)
+    wash = wash * (1.0 - 0.45 * edges * edge[..., None]) + (wash * wash) * (0.0)
+    grey = wash.mean(axis=-1, keepdims=True)
+    wash = grey + (wash - grey) * 1.0                  # pigments in water
+    wash = wash * 0.9 + 0.10                           # and lighter: it is mixed with white paper
+    grain = _paper_noise(h, w, 3)
+    wash = wash * (1.0 - paper * 0.16 * (1.0 - grain[..., None])) + paper * 0.03 * (grain[..., None] - 0.5)
+    out = arr.copy()
+    out[..., :3] = np.clip(wash, 0.0, 1.0)
+    return out
+
+
+def paper_behind(arr):
+    """A picture with transparency (the sketch) on white paper."""
+    import numpy as np
+    a = arr[..., 3:4]
+    out = arr.copy()
+    out[..., :3] = arr[..., :3] * a + np.array(STYLE_PAPER, dtype=np.float32) * (1.0 - a)
+    out[..., 3] = 1.0
+    return out
+
+
+def render_styled(scene, style, path):
+    """Render the scene to ``path`` (a PNG) and make the style's picture of it: the lux colours, the sketch on its paper or the
+    watercolour. Without such a style it is the plain render."""
+    mode = (style or {}).get("mode") or "none"
+    if mode not in ("light", "sketch", "watercolour"):
+        bpy.ops.render.render(write_still=True)
+        return None
+    r = scene.render
+    keep = (r.filepath, r.image_settings.file_format, r.image_settings.color_depth, r.image_settings.color_mode)
+    try:
+        if mode == "light":
+            tmp = path + ".linear.exr"
+            r.filepath = tmp
+            r.image_settings.file_format = "OPEN_EXR"
+            r.image_settings.color_depth = "32"
+            r.image_settings.color_mode = "RGBA"
+            bpy.ops.render.render(write_still=True)
+            arr = _read_pixels(tmp)
+            res, lo, hi = lux_picture(arr, style)
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+            r.filepath, r.image_settings.file_format, r.image_settings.color_depth, r.image_settings.color_mode = keep
+            _write_png(path, res)
+            say("lux scale", f"{lo:g} to {hi:g} lx")
+            return (lo, hi)
+        r.image_settings.color_mode = "RGBA"
+        bpy.ops.render.render(write_still=True)
+        arr = _read_pixels(path)
+        if mode == "sketch":
+            arr = paper_behind(arr)
+        else:
+            arr = watercolour(arr, style)
+        r.filepath, r.image_settings.file_format, r.image_settings.color_depth, r.image_settings.color_mode = keep
+        _write_png(path, arr)
+        say("style picture", mode)
+        return None
+    finally:
+        r.filepath, r.image_settings.file_format, r.image_settings.color_depth, r.image_settings.color_mode = keep
+
+
+
+def finish_style(scene, style):
+    """After the exposure and the look were set: the lux picture needs the light as it is, not toned."""
+    mode = (style or {}).get("mode")
+    if mode == "light":
+        _calibrate_lux(scene)
+    elif mode == "sketch":
+        scene.render.film_transparent = True             # the sky is left out: the paper is put behind the lines
+
+
+def save_final_from_png(scene, out, png):
+    """The final picture in the Output tab's format, from the styled PNG (the render result is the plain render)."""
+    img = bpy.data.images.load(png, check_existing=False)
+    st = scene.render.image_settings
+    for key, value in (out.get("image_settings") or {}).items():
+        try:
+            setattr(st, key, value)
+        except (AttributeError, TypeError, ValueError):
+            pass
+    img.save_render(filepath=out["path"], scene=scene)
+    bpy.data.images.remove(img)
+    say("saved", out["path"])
 
 
 def save_final(scene, out):
@@ -2814,6 +4225,17 @@ def expert_open(scene, job):
     if job.get("blend"):
         bpy.ops.wm.save_as_mainfile(filepath=job["blend"])
         say("blend", job["blend"])
+    after = os.environ.get("RENDER_STUDIO_EDIT_AFTER")
+    if after:                                          # tests: the edits of a person, then save and close
+        def person():
+            try:
+                exec(compile(open(after, encoding="utf-8").read(), after, "exec"), {"bpy": bpy})
+                bpy.ops.wm.save_mainfile()
+            except Exception as exc:  # noqa: BLE001
+                say("error", "after-script", exc)
+            bpy.ops.wm.quit_blender()
+            return None
+        bpy.app.timers.register(person, first_interval=2.0)
 
     tries = {"n": 0}
 
@@ -2892,14 +4314,24 @@ def main():
         return
     w, h = int(job["width"]), int(job["height"])
     out = (job.get("studio") or {}).get("output") or {}
+    st_main = job.get("studio") or {}
+    if out.get("projection") in ("flat", "360"):
+        try:
+            set_panorama(scene, out["projection"], float(out.get("angle", 180.0)), w / max(1.0, float(h)))
+        except Exception as exc:                   # never lose the render over it
+            say("panorama failed", exc)
     if out.get("transparent"):
         # The sky left transparent — only now: the exposure was measured with it.
         scene.render.film_transparent = True
         scene.render.image_settings.color_mode = "RGBA"
     say("rendering", w, "x", h)
-    bpy.ops.render.render(write_still=True)
+    styled = (st_main.get("style") or {}).get("mode") in ("light", "sketch", "watercolour")
+    render_styled(scene, st_main.get("style"), job["output"])
     if out.get("path"):
-        save_final(scene, out)
+        if styled:
+            save_final_from_png(scene, out, job["output"])
+        else:
+            save_final(scene, out)
     if job.get("blend"):
         bpy.ops.wm.save_as_mainfile(filepath=job["blend"])
         say("blend", job["blend"])

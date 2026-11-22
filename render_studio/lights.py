@@ -380,6 +380,11 @@ def clean_light(raw) -> dict | None:
     }
     if shape == "square" or shape == "disk":
         out["size_y"] = out["size"]
+    b = raw.get("blender")
+    if isinstance(b, dict) and isinstance(b.get("blend"), str) and b["blend"] and isinstance(b.get("object"), str):
+        # A light edited in Blender (a proxy): the light as Blender has it, kept whole (its nodes too). The fields
+        # above are what the list, the 3D view and the place show; the render uses the Blender light as it is.
+        out["blender"] = {"v": 1, "object": b["object"][:120], "blend": b["blend"]}
     return out
 
 

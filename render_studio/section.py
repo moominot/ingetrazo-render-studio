@@ -8,7 +8,14 @@ carries the plane and ``blender/studio_scene.py`` cuts the meshes with it.
 The options (the Section tab) are kept in the document, ``settings["section"]``::
 
     {"cap": true,            # close the cut with a flat face
-     "material": "Formigó",  # the document's material the cap is made of (None: plain grey)
+     "style": "material",    # the cap is made of: "material" (of the drawing), "flat" (one colour)
+                             # or "hatch" (a pattern of lines or dots over a colour)
+     "material": "Formigó",  # style "material": the document's material (None: plain grey)
+     "color": [r, g, b],     # styles "flat" and "hatch": the colour (the ground of a hatch)
+     "pattern": "diagonal",  # style "hatch": diagonal, cross, grid, dots
+     "line": [r, g, b],      # style "hatch": the colour of the lines or dots
+     "spacing": 0.1,         # style "hatch": metres between lines
+     "shadows": true,        # false: the cap neither casts nor receives shadows (flat, as drawn)
      "light": "open"}        # "open": the removed part is gone, light enters the cut
                              # "blocked": it still blocks the light (invisible to the camera)
 
@@ -19,7 +26,10 @@ from __future__ import annotations
 import json
 
 LIGHTS = ("open", "blocked")
-DEFAULT = {"cap": True, "material": None, "light": "open"}
+STYLES = ("material", "flat", "hatch")
+PATTERNS = ("diagonal", "cross", "grid", "dots")
+DEFAULT = {"cap": True, "style": "material", "material": None, "color": [0.35, 0.37, 0.41],
+           "pattern": "diagonal", "line": [0.1, 0.1, 0.1], "spacing": 0.1, "shadows": True, "light": "open"}
 #: IngeTrazo's default colour for a cut's fill (core/section.py's style).
 FALLBACK_COLOR = (0.35, 0.37, 0.41)
 
@@ -33,7 +43,27 @@ def clean(raw) -> dict:
     out["light"] = raw.get("light") if raw.get("light") in LIGHTS else "open"
     m = raw.get("material")
     out["material"] = m.strip() if isinstance(m, str) and m.strip() else None
+    out["style"] = raw.get("style") if raw.get("style") in STYLES else "material"
+    out["pattern"] = raw.get("pattern") if raw.get("pattern") in PATTERNS else "diagonal"
+    out["color"] = _rgb(raw.get("color"), DEFAULT["color"])
+    out["line"] = _rgb(raw.get("line"), DEFAULT["line"])
+    try:
+        sp = float(raw.get("spacing", 0.1))
+    except (TypeError, ValueError):
+        sp = 0.1
+    out["spacing"] = max(0.005, min(5.0, sp)) if sp == sp else 0.1
+    out["shadows"] = bool(raw.get("shadows", True))
     return out
+
+
+def _rgb(v, default) -> list:
+    try:
+        c = [float(x) for x in v][:3]
+        if len(c) == 3 and all(x == x for x in c):
+            return [max(0.0, min(1.0, x)) for x in c]
+    except (TypeError, ValueError):
+        pass
+    return list(default)
 
 
 def job_block(scene, opts: dict | None = None) -> dict | None:
@@ -50,8 +80,13 @@ def job_block(scene, opts: dict | None = None) -> dict | None:
     p, n = plane.point, plane.normal
     block = {"point": [float(p.x()), float(p.y()), float(p.z())],
              "normal": [float(n.x()), float(n.y()), float(n.z())],
-             "cap": o["cap"], "light": o["light"], "material": None,
-             "color": list(FALLBACK_COLOR), "texture_size": None}
+             "cap": o["cap"], "light": o["light"], "material": None, "style": o["style"],
+             "shadows": o["shadows"], "color": list(FALLBACK_COLOR), "texture_size": None}
+    if o["style"] in ("flat", "hatch"):
+        block["color"] = list(o["color"])
+        if o["style"] == "hatch":
+            block.update(pattern=o["pattern"], line=list(o["line"]), spacing=o["spacing"], texture_size=[1.0, 1.0])
+        return block                                  # (the pattern is made in metres: uv = metres)
     name = o["material"]
     mat = (getattr(scene, "materials", None) or {}).get(name) if name else None
     if mat is not None:

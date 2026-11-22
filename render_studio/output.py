@@ -9,7 +9,10 @@ Kept in the document with the other settings (``settings["output"]``)::
       "dpi": 300,                  # for the paper sizes, and to say how big a print is
       "format": "png",             # png png16 jpeg tiff16 exr
       "jpeg_quality": 92,
-      "transparent": false         # the sky left transparent (png, png16, tiff16, exr)
+      "transparent": false,        # the sky left transparent (png, png16, tiff16, exr)
+      "projection": "normal",      # "normal", "flat" (a cylindrical panorama: verticals stay straight) or
+                                   # "360" (equirectangular, 2:1, all round); panoramas render with Cycles
+      "angle": 180                 # "flat": the horizontal angle covered, degrees
     }
 
 The width stays in ``settings["width"]``, as before.
@@ -30,6 +33,7 @@ SIZES = (
     ("square", "Square 2048 × 2048", 2048, 2048),
     ("portrait45", "Portrait 4:5, 1080 × 1350", 1080, 1350),
     ("story", "Vertical 9:16, 1080 × 1920", 1080, 1920),
+    ("pano", "Panorama 3:1, 4800 × 1600", 4800, 1600),
     ("a4", "A4 landscape (at the dpi)", "297mm", "210mm"),
     ("a4p", "A4 portrait (at the dpi)", "210mm", "297mm"),
     ("a3", "A3 landscape (at the dpi)", "420mm", "297mm"),
@@ -52,7 +56,9 @@ FORMATS = {
 }
 FORMAT_ORDER = ("png", "jpeg", "png16", "tiff16", "exr")
 
-DEFAULT = {"size": "view", "height": 1080, "dpi": 300, "format": "png", "jpeg_quality": 92, "transparent": False}
+PROJECTIONS = ("normal", "flat", "360")
+DEFAULT = {"size": "view", "height": 1080, "dpi": 300, "format": "png", "jpeg_quality": 92, "transparent": False,
+           "projection": "normal", "angle": 180}
 
 
 def _int(v, lo, hi, default):
@@ -77,6 +83,8 @@ def clean(raw) -> dict:
         out["format"] = raw["format"]
     out["jpeg_quality"] = _int(raw.get("jpeg_quality"), 10, 100, DEFAULT["jpeg_quality"])
     out["transparent"] = bool(raw.get("transparent", False)) and FORMATS[out["format"]][3]
+    out["projection"] = raw.get("projection") if raw.get("projection") in PROJECTIONS else "normal"
+    out["angle"] = _int(raw.get("angle"), 30, 360, DEFAULT["angle"])
     return out
 
 
@@ -104,11 +112,15 @@ def frame(width: int, out: dict, view_aspect: float) -> tuple:
     out = clean(out)
     if out["size"] == "view":
         w = max(MIN_PX, min(MAX_PX, int(width)))
-        return w, max(2, round(w / max(0.05, view_aspect)))
-    if out["size"] == "custom":
-        return max(MIN_PX, min(MAX_PX, int(width))), out["height"]
-    w, h = preset_size(out["size"], out["dpi"])
-    return min(MAX_PX, w), min(MAX_PX, h)
+        w, h = w, max(2, round(w / max(0.05, view_aspect)))
+    elif out["size"] == "custom":
+        w, h = max(MIN_PX, min(MAX_PX, int(width))), out["height"]
+    else:
+        w, h = preset_size(out["size"], out["dpi"])
+        w, h = min(MAX_PX, w), min(MAX_PX, h)
+    if out["projection"] == "360":                     # all round: twice as wide as high
+        h = max(2, w // 2)
+    return w, h
 
 
 def aspect(width: int, out: dict, view_aspect: float) -> float:
@@ -135,7 +147,7 @@ def blender_settings(out: dict) -> dict:
         s["quality"] = out["jpeg_quality"]
     s["color_mode"] = "RGBA" if out["transparent"] and alpha else "RGB"
     return {"format": out["format"], "extension": ext, "image_settings": s,
-            "transparent": out["transparent"] and alpha}
+            "transparent": out["transparent"] and alpha, "projection": out["projection"], "angle": out["angle"]}
 
 
 def extension(fmt: str) -> str:
@@ -147,10 +159,14 @@ def retouchable(fmt: str) -> bool:
     return FORMATS.get(fmt, FORMATS["png"])[4]
 
 
-def file_name(pattern: str, document: str, look: str, stamp: str, ext: str) -> str:
-    """A file name from ``pattern`` ({document} {look} {date}), safe for any system."""
+DEFAULT_PATTERN = "{document}-{scene}-{date}"
+
+
+def file_name(pattern: str, document: str, look: str, stamp: str, ext: str, scene: str = "view") -> str:
+    """A file name from ``pattern`` ({document} {scene} {look} {date}), safe for any system. ``scene``: the name of
+    the scene being rendered («view» for the current view)."""
     import re
-    name = (pattern or "{document}-{look}-{date}").replace("{document}", document or "render") \
+    name = (pattern or DEFAULT_PATTERN).replace("{document}", document or "render").replace("{scene}", scene or "view") \
         .replace("{look}", look or "").replace("{date}", stamp)
     name = re.sub(r'[\\/:*?"<>|\x00-\x1f]+', "_", name).strip(" .-_") or "render"
     return name + ext

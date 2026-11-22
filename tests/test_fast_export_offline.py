@@ -148,7 +148,7 @@ ok(panel._export_progress() is None, "no modal, no progress callback")
 # ---- opening the preview and rendering: the feedback comes first ----------------------------------
 from pathlib import Path
 class FakeLive:
-    def __init__(self): self.active = False; self.started = 0; self.stopped = 0; self.follow_camera = True; self.follow_changes = True; self.frozen_camera = None
+    def __init__(self): self.active = False; self.usable = False; self.started = 0; self.stopped = 0; self.follow_camera = True; self.follow_changes = True; self.frozen_camera = None
     def set_follow_camera(self, on): self.follow_camera = on
     def set_follow_changes(self, on): self.follow_changes = on
     def start(self):

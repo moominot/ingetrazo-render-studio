@@ -62,6 +62,11 @@ app = App(); ed = ME.MaterialEditor(app, "en")
 seen = lambda w: w.isVisibleTo(ed)
 spec = lambda n: (app.data.get("materials") or {}).get(n) or {}
 kind = lambda k: (ed.kind.setCurrentIndex(ed.kind.findData(k)), ed._flush())
+def maps_open():
+    """The map rows are folded behind each setting's little button: open them all (the editor closes them again at each material)."""
+    for t in ed.map_toggles.values():
+        t.setChecked(True)
+    ed._enable_glow()
 
 ed.select("Plain")
 ok(not seen(ed.pic_btn), "no picture: «Change picture…» is hidden")
@@ -72,14 +77,14 @@ row = ed.maps["roughness"]
 i = row.source.findData("picture")
 ok(not row.source.model().item(i).isEnabled(), "no picture: «Picture (B/W)» cannot be chosen")
 ok(not seen(row.invert) and not seen(row.contrast), "no map: Invert and contrast hidden")
-row.set_file(tmp / "ph" / "tiles_rough_1k.png"); ed._flush()
+row.set_file(tmp / "ph" / "tiles_rough_1k.png"); ed._flush(); maps_open()
 ok(seen(row.invert) and seen(row.contrast), "a black-and-white map: Invert and contrast shown")
 ok(seen(ed.map_size), "a map file on a material without a picture: Map image size shown")
 kind("water")
 ok(seen(ed.ripple) and seen(ed.sliders["bump"]) and not seen(ed.maps["bump"]) and not seen(ed.sliders["metallic"]),
    "water: ripple size and wave height, no relief map, no metal")
-ok(ed.form.labelForField(ed._rows["bump"]).text() == "Wave height", "water: Relief reads «Wave height»")
-kind("glow")
+ok(ed.form.labelForField(ed._rows["bump"]).text() == "Ripple height", "water: Relief reads «Ripple height»")
+kind("glow"); maps_open()
 ok(seen(ed.sliders["glow"]) and seen(ed.maps["glow"]) and not seen(ed.ripple), "glowing: glow and its map")
 ok(ed.form.labelForField(ed._rows["bump"]).text() == "Relief", "…and Relief is Relief again")
 kind("glass")
@@ -88,7 +93,7 @@ ed.maps["metallic"].set_file(tmp / "ph" / "tiles_rough_1k.png"); ed._flush()
 ok("metallic" not in (spec("Plain").get("maps") or {}), "a hidden setting's map is not saved (the render ignores it)")
 kind("generic")
 
-ed.select("Floor")
+ed.select("Floor"); maps_open()
 ok(seen(ed.pic_btn), "with a picture: «Change picture…» shown")
 ok(not seen(ed.sliders["bump"]) and seen(ed.maps["bump"]),
    "the texture set gives the relief: the Relief slider is hidden, its map row stays")

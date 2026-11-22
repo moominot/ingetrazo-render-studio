@@ -18,9 +18,10 @@ from .i18n import tr, translate_on_show  # noqa: F401
 
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, Signal
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel,
-                               QLineEdit, QPushButton, QSizePolicy, QSpinBox, QToolButton, QVBoxLayout, QWidget)
+from PySide6.QtCore import QSettings, Qt, Signal
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
+                               QListWidget, QListWidgetItem, QPushButton, QRadioButton, QSizePolicy, QSpinBox,
+                               QToolButton, QVBoxLayout, QWidget)
 
 from . import output as O
 
@@ -55,15 +56,35 @@ class OutputTab(QWidget):
         st = QSettings()
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
-        top = QHBoxLayout()
-        top.addWidget(_bold("Size"))
-        top.addStretch(1)
-        help_btn = QToolButton()
-        help_btn.setText("?")
-        help_btn.setToolTip("Sizes, file formats and saving every render")
-        help_btn.clicked.connect(self._help)
-        top.addWidget(help_btn)
-        lay.addLayout(top)
+        lay.addWidget(_bold("Projection"))
+        formp = QFormLayout()
+        formp.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        self._proj_form = formp
+        self.projection = QComboBox()
+        self.projection.addItem(tr("Normal view"), "normal")
+        self.projection.addItem(tr("Flat panorama"), "flat")
+        self.projection.addItem(tr("360° panorama"), "360")
+        self.projection.setToolTip("Normal: the 3D view's camera. Flat panorama: a wide picture where vertical lines stay "
+                                   "vertical (a stitched photo). 360°: all round, for a VR or panorama viewer. Panoramas "
+                                   "are rendered from the camera's place, with Cycles.")
+        self.projection.currentIndexChanged.connect(self._projection_chosen)
+        _shrinkable(self.projection)
+        formp.addRow("Projection", self.projection)
+        self.angle = QSpinBox()
+        self.angle.setRange(30, 360)
+        self.angle.setSingleStep(10)
+        self.angle.setSuffix("°")
+        self.angle.setValue(O.DEFAULT["angle"])
+        self.angle.setToolTip("How much of the horizon the flat panorama covers; its height follows the picture's shape.")
+        self.angle.valueChanged.connect(self._emit)
+        formp.addRow("Angle", self.angle)
+        self.proj_note = QLabel("")
+        self.proj_note.setWordWrap(True)
+        self.proj_note.setStyleSheet("color: gray; font-size: 11px")
+        formp.addRow(self.proj_note)
+        lay.addLayout(formp)
+
+        lay.addWidget(_bold("Size"))
         form = QFormLayout()
         form.setRowWrapPolicy(QFormLayout.WrapLongRows)
         self.size = QComboBox()
@@ -122,6 +143,7 @@ class OutputTab(QWidget):
         form.addRow(self.summary)
         lay.addLayout(form)
 
+
         lay.addWidget(_bold("File"))
         form2 = QFormLayout()
         form2.setRowWrapPolicy(QFormLayout.WrapLongRows)
@@ -152,14 +174,49 @@ class OutputTab(QWidget):
         form2.addRow(self.file_note)
         lay.addLayout(form2)
 
-        from .widgets import Collapsible
-        self.autosave_more = Collapsible(tr("Save every render"), "autosave_more")      # folded: not everyone needs it
-        form3 = self.autosave_more.form
+        lay.addWidget(_bold("What to render"))
+        mrow = QVBoxLayout()
+        mrow.setSpacing(2)
+        self.mode_view = QRadioButton("Current view")
+        self.mode_scenes = QRadioButton("Scenes")
+        self.mode_view.setToolTip("Render the view of the 3D window (or the one the preview keeps).")
+        self.mode_scenes.setToolTip("Render the scenes you tick below, one after another.")
+        mode = str(st.value(_SETTINGS + "output_mode", "view"))
+        (self.mode_scenes if mode == "scenes" else self.mode_view).setChecked(True)
+        self.mode_scenes.toggled.connect(self._mode_changed)
+        for r in (self.mode_view, self.mode_scenes):
+            r.setSizePolicy(QSizePolicy.Ignored, r.sizePolicy().verticalPolicy())      # (the tray is narrow)
+        mrow.addWidget(self.mode_view)
+        mrow.addWidget(self.mode_scenes)
+        lay.addLayout(mrow)
+        self.scenes_box = QWidget()
+        sb = QVBoxLayout(self.scenes_box)
+        sb.setContentsMargins(0, 0, 0, 0)
+        self.scene_list = QListWidget()
+        self.scene_list.setMaximumHeight(140)
+        self.scene_list.setToolTip("The scenes of the drawing (IngeTrazo's saved views): tick the ones to render.")
+        sb.addWidget(self.scene_list)
+        srow = QHBoxLayout()
+        self.scenes_all = QPushButton("All")
+        self.scenes_none = QPushButton("None")
+        self.scenes_all.clicked.connect(lambda: self._tick_scenes(True))
+        self.scenes_none.clicked.connect(lambda: self._tick_scenes(False))
+        srow.addWidget(self.scenes_all)
+        srow.addWidget(self.scenes_none)
+        srow.addStretch(1)
+        sb.addLayout(srow)
+        lay.addWidget(self.scenes_box)
+        self._ticked = set()
+        self._scenes_stale = True
+
+        lay.addWidget(_bold("Save"))
+        form3 = QFormLayout()
         form3.setRowWrapPolicy(QFormLayout.WrapLongRows)
-        self.autosave = QCheckBox("Save each render in a folder")
+        self.autosave = QCheckBox("Save each render")
+        self.autosave.setToolTip("The view you render is also saved in the folder, named as below. The scenes are always "
+                                 "saved there.")
         self.autosave.setChecked(str(st.value(_SETTINGS + "autosave", "false")).lower() in ("true", "1"))
         self.autosave.toggled.connect(self._remember_autosave)
-        form3.addRow(self.autosave)
         frow = QHBoxLayout()
         frow.setContentsMargins(0, 0, 0, 0)
         self.folder = QLineEdit(str(st.value(_SETTINGS + "autosave_dir", "") or ""))
@@ -172,13 +229,17 @@ class OutputTab(QWidget):
         fbox = QWidget()
         fbox.setLayout(frow)
         form3.addRow("Folder", fbox)
-        self.pattern = QLineEdit(str(st.value(_SETTINGS + "autosave_name", "{document}-{look}-{date}") or ""))
-        self.pattern.setToolTip("{document}: the document's name, {look}: the look, {date}: the date and time")
+        stored = str(st.value(_SETTINGS + "autosave_name", O.DEFAULT_PATTERN) or "")
+        if stored == "{document}-{look}-{date}":               # the name this tab started with: the new one
+            stored = O.DEFAULT_PATTERN
+        self.pattern = QLineEdit(stored or O.DEFAULT_PATTERN)
+        self.pattern.setToolTip("{document}: the document's name, {scene}: the scene's name («view» for the current "
+                                "view), {look}: the look, {date}: the date and time")
         self.pattern.editingFinished.connect(self._remember_autosave)
         form3.addRow("Name", self.pattern)
-        lay.addWidget(self.autosave_more)
-        if self.autosave.isChecked():
-            self.autosave_more.header.setChecked(True)
+        form3.addRow(self.autosave)
+        lay.addLayout(form3)
+        self._mode_changed()
         lay.addStretch(1)
         self._layout()
 
@@ -188,13 +249,15 @@ class OutputTab(QWidget):
         h = self._kept_height if self.size.currentData() == "view" else self.height.value()
         return O.clean({"size": self.size.currentData(), "height": h, "dpi": self.dpi.value(),
                         "format": self.format.currentData(), "jpeg_quality": self.jpeg_quality.value(),
-                        "transparent": self.transparent.isChecked()})
+                        "transparent": self.transparent.isChecked(),
+                        "projection": self.projection.currentData(), "angle": self.angle.value()})
 
     def apply(self, out: dict, width: int | None = None) -> None:
         """Put ``out`` (and the width) in the controls without saving them again."""
         out = O.clean(out)
         self._filling = True
-        widgets = (self.size, self.width, self.height, self.dpi, self.format, self.jpeg_quality, self.transparent)
+        widgets = (self.size, self.width, self.height, self.dpi, self.format, self.jpeg_quality, self.transparent,
+                   self.projection, self.angle)
         for w in widgets:
             w.blockSignals(True)
         try:
@@ -207,6 +270,8 @@ class OutputTab(QWidget):
             self.format.setCurrentIndex(max(0, self.format.findData(out["format"])))
             self.jpeg_quality.setValue(out["jpeg_quality"])
             self.transparent.setChecked(out["transparent"])
+            self.projection.setCurrentIndex(max(0, self.projection.findData(out["projection"])))
+            self.angle.setValue(out["angle"])
             self._fill_preset()
         finally:
             for w in widgets:
@@ -234,7 +299,7 @@ class OutputTab(QWidget):
         folder = self.folder.text().strip()
         if not self.autosave.isChecked() or not folder:
             return None
-        return Path(folder), self.pattern.text().strip() or "{document}-{look}-{date}"
+        return Path(folder), self.pattern.text().strip() or O.DEFAULT_PATTERN
 
     # ---- editing ---------------------------------------------------------------------------
     def _fill_preset(self) -> None:
@@ -318,6 +383,17 @@ class OutputTab(QWidget):
         self._layout()
         self._emit()
 
+    def _projection_chosen(self, _i) -> None:
+        """A flat panorama starts from the 3:1 size; a 360° one needs the 2:1 its picture has."""
+        if self._filling:
+            return
+        if self.projection.currentData() == "flat" and self.size.currentData() in ("view", "custom") and \
+                self.width.value() < 3000:
+            self.size.setCurrentIndex(self.size.findData("pano"))
+            self._fill_preset()
+        self._layout()
+        self._emit()
+
     def _format_chosen(self, _i) -> None:
         self._layout()
         self._emit()
@@ -330,11 +406,16 @@ class OutputTab(QWidget):
     def _layout(self) -> None:
         key = self.size.currentData()
         view = key == "view"
-        self.height.setEnabled(not view)
+        proj = self.projection.currentData()
+        self._proj_form.setRowVisible(self.angle, proj == "flat")
+        self.proj_note.setText({"normal": "", "flat": tr("A cylindrical panorama from the camera's place; rendered with Cycles."),
+                                "360": tr("All round, 2:1, from the camera's place; rendered with Cycles. The height is half the width.")}[proj])
+        self._proj_form.setRowVisible(self.proj_note, bool(proj != "normal"))
+        self.height.setEnabled(not view and proj != "360")
         self.swap.setEnabled(True)
         self.keep.setVisible(key == "custom")
         w, h = self.frame()
-        if view and self.height.value() != h:
+        if (view or self.projection.currentData() == "360") and self.height.value() != h:
             # The height the 3D view gives, shown in its (disabled) box.
             self.height.blockSignals(True)
             self.height.setValue(h)
@@ -356,6 +437,61 @@ class OutputTab(QWidget):
             tr("Saved as Blender wrote it (the retouching sliders only change the picture on screen). ")
             + (tr("Linear light, for compositing: it looks dark and flat until it is toned.") if fmt == "exr" else
                tr("16 bits per channel: more room to edit it elsewhere.")))
+
+    # ---- the scenes -------------------------------------------------------------------------------
+    def scenes_mode(self) -> bool:
+        return self.mode_scenes.isChecked()
+
+    def refresh_scenes(self) -> None:
+        """The drawing's scenes in the list (the ticks stay)."""
+        if self.scene_list.count():
+            self._ticked = {self.scene_list.item(i).text() for i in range(self.scene_list.count())
+                            if self.scene_list.item(i).checkState() == Qt.Checked}
+        first = not getattr(self, "_scenes_seen", False)
+        self.scene_list.clear()
+        self._views = []
+        try:
+            from .bulk_render import scene_choices
+            choices = scene_choices(self.panel.app.scene)
+        except Exception:  # noqa: BLE001 - no scenes in this IngeTrazo
+            choices = []
+        for view, label in choices:
+            item = QListWidgetItem(label)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Checked if (first or label in self._ticked) else Qt.Unchecked)
+            self.scene_list.addItem(item)
+            self._views.append(view)
+        self._scenes_seen = True
+        self._scenes_stale = False
+
+    def chosen_views(self) -> list:
+        """The scenes ticked, in the order of the list."""
+        if self._scenes_stale:
+            self.refresh_scenes()
+        return [self._views[i] for i in range(self.scene_list.count()) if self.scene_list.item(i).checkState() == Qt.Checked]
+
+    def _tick_scenes(self, on: bool) -> None:
+        for i in range(self.scene_list.count()):
+            self.scene_list.item(i).setCheckState(Qt.Checked if on else Qt.Unchecked)
+
+    def _mode_changed(self, *_a) -> None:
+        scenes = self.mode_scenes.isChecked()
+        self.scenes_box.setVisible(scenes)
+        self.autosave.setEnabled(not scenes)
+        QSettings().setValue(_SETTINGS + "output_mode", "scenes" if scenes else "view")
+        if scenes:
+            self.refresh_scenes()
+
+    def document_changed(self) -> None:
+        """The scenes may have changed: the list is made again when it is next in sight."""
+        self._scenes_stale = True
+        if self.isVisible() and self.mode_scenes.isChecked():
+            self.refresh_scenes()
+
+    def showEvent(self, ev) -> None:  # noqa: N802
+        super().showEvent(ev)
+        if self._scenes_stale and self.mode_scenes.isChecked():
+            self.refresh_scenes()
 
     def _remember_autosave(self, *_a) -> None:
         st = QSettings()

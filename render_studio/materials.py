@@ -19,6 +19,25 @@ from __future__ import annotations
 
 #: Default size of the ripples of water (0 fine … 1 coarse): about 7 waves a metre.
 DEFAULT_RIPPLE_SIZE = 0.8
+#: The scale of a body of water: key → (labels, ripple size 0..1, ripple height 0..1 (the Relief slider),
+#: swell wavelength in metres, swell height in metres at «Waves» 100 %). The ripples are the shader's
+#: fine detail; the swell is real geometry (render only), as long and as high as the body would make it.
+WATER_BODIES = {
+    "pool": ({"en": "Swimming pool", "ca": "Piscina", "es": "Piscina"}, 0.8, 0.30, 0.6, 0.012),
+    "lake": ({"en": "Lake, pond", "ca": "Llac, bassa", "es": "Lago, estanque"}, 0.70, 0.45, 4.0, 0.06),
+    "sea": ({"en": "Sea", "ca": "Mar", "es": "Mar"}, 0.40, 0.60, 14.0, 0.40),
+    "ocean": ({"en": "Ocean", "ca": "Oceà", "es": "Océano"}, 0.20, 0.75, 60.0, 1.60),
+}
+DEFAULT_WATER_BODY = "pool"
+#: How much of the body's swell height the «Waves» slider starts at.
+DEFAULT_WAVES = 0.5
+
+
+def water_body_label(key: str, lang: str = "en") -> str:
+    names = WATER_BODIES[key][0]
+    return names.get(lang) or names["en"]
+
+
 #: What choosing the type gives to start with (0 = opaque): see-through, not a solid slab.
 DEFAULT_TRANSPARENCY = {"glass": 0.85, "water": 0.7}
 
@@ -36,6 +55,17 @@ def auto_grass_density(height: float) -> float:
     (materials saved before 0.11.0): what the render used for that height."""
     h = max(0.005, float(height))
     return max(GRASS_DENSITY_TALL, min(GRASS_DENSITY_SHORT, GRASS_DENSITY_SHORT * 0.10 / h))
+
+#: The most tufts in one render (the same as ``studio_scene.GRASS_MAX_TUFTS``): past it the grass would have to
+#: be thinned, and its density per m² would no longer be the one asked for.
+GRASS_MAX_TUFTS = 600_000
+
+
+def grass_reach(density: float) -> float:
+    """The radius (m) of a circle of grass at ``density`` tufts per m² that keeps within the tuft limit."""
+    import math
+    return math.sqrt(GRASS_MAX_TUFTS / (math.pi * max(1.0, float(density))))
+
 
 TYPES = ("generic", "glass", "water", "glow", "grass")
 TYPE_LABELS = {"generic": "Generic", "glass": "Glass", "water": "Water", "glow": "Glowing", "grass": "Grass"}
@@ -69,7 +99,17 @@ PRESETS = {
     "glass_frosted": ({"en": "Frosted glass", "ca": "Vidre glaçat", "es": "Vidrio esmerilado"},
                       {"type": "glass", "roughness": 0.35, "metallic": 0.0, "bump": 0.0, "transparency": 0.6}),
     "water": ({"en": "Water", "ca": "Aigua", "es": "Agua"},
-              {"type": "water", "roughness": 0.02, "metallic": 0.0, "bump": 0.5, "ripple_size": 0.8, "transparency": 0.7}),
+              {"type": "water", "roughness": 0.02, "metallic": 0.0, "bump": 0.3, "ripple_size": 0.8, "transparency": 0.7,
+               "water_body": "pool", "waves": 0.5}),
+    "lake": ({"en": "Water: lake", "ca": "Aigua: llac", "es": "Agua: lago"},
+             {"type": "water", "roughness": 0.02, "metallic": 0.0, "bump": 0.45, "ripple_size": 0.7, "transparency": 0.6,
+              "water_body": "lake", "waves": 0.5}),
+    "sea": ({"en": "Water: sea", "ca": "Aigua: mar", "es": "Agua: mar"},
+            {"type": "water", "roughness": 0.03, "metallic": 0.0, "bump": 0.6, "ripple_size": 0.4, "transparency": 0.4,
+             "water_body": "sea", "waves": 0.5}),
+    "ocean": ({"en": "Water: ocean", "ca": "Aigua: oceà", "es": "Agua: océano"},
+              {"type": "water", "roughness": 0.03, "metallic": 0.0, "bump": 0.75, "ripple_size": 0.2, "transparency": 0.3,
+               "water_body": "ocean", "waves": 0.5}),
     "lawn": ({"en": "Lawn", "ca": "Gespa", "es": "Césped"},
              {"type": "grass", "roughness": 0.85, "metallic": 0.0, "bump": 0.0, "grass_height": 0.06,
               "grass_density": 260.0}),
@@ -107,7 +147,7 @@ def shown_controls(kind: str, *, picture: bool = False, set_relief: bool = False
     if kind == "generic":
         shown |= {"metallic", "map:metallic"}
     if kind == "water":
-        shown |= {"bump", "ripple_size"}
+        shown |= {"bump", "ripple_size", "water_body", "waves"}
     else:
         shown.add("map:bump")
         if not (set_relief and not relief_source):
@@ -120,8 +160,7 @@ def shown_controls(kind: str, *, picture: bool = False, set_relief: bool = False
         shown |= {"transparency", "map:opacity", "image"}
     if file_maps and not picture:
         shown.add("map_size")
-    if picture:
-        shown.add("picture")
+    shown.add("picture" if picture else "colour")      # what the material is made of: its picture's tools, or its colour
     return shown
 
 
@@ -171,6 +210,14 @@ def detected_spec(name: str | None, picture: str | None = None) -> dict | None:
     if key is None:
         return None
     spec = {k: v for k, v in PRESETS[key][1].items() if k != "transparency"}
+    if key == "water":                       # «Mar», «Llac»… say how big the water is
+        import re
+        text = f"{name or ''} {picture or ''}".lower()
+        body = ("ocean" if re.search(r"oc[eé]an", text) else
+                "sea" if re.search(r"(?<![a-záéíóúàèòïüñç])(?:mar|sea)(?![a-záéíóúàèòïüñç])", text) else
+                "lake" if re.search(r"llac|lago|lake|estany|estanque|bassa|pond", text) else None)
+        if body:
+            spec.update({k: v for k, v in PRESETS[body][1].items() if k != "transparency"})
     spec["preset"] = key
     spec["detected"] = True
     return spec
