@@ -23,10 +23,10 @@ from pathlib import Path
 from PySide6.QtCore import QLocale, QProcess, QProcessEnvironment, QSettings, Qt, QTimer, Signal
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame, QGroupBox,
-                               QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSpinBox, QTabWidget,
+                               QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMenu, QMessageBox, QPushButton, QScrollArea, QSpinBox, QTabWidget,
                                QToolButton, QVBoxLayout, QWidget)
 
-from . import lights as studio_lights, materials as mats, fast_export, output, pbr, presets, proxies, section, settings_store, studio_data, visibility, widgets
+from . import user_presets, lights as studio_lights, materials as mats, fast_export, output, pbr, presets, proxies, section, settings_store, studio_data, visibility, widgets
 from .live import LiveSession
 from .preview import ImageWindow  # noqa: F401 - re-exported: panel.ImageWindow
 from .widgets import SliderRow
@@ -36,6 +36,7 @@ _SETTINGS = "render_studio/"
 HERE = Path(__file__).resolve().parent
 _CHOOSE = "__choose__"
 HDRI_FILTER = "360° images (*.hdr *.exr *.jpg *.jpeg *.png)"
+BACKDROP_FILTER = "Pictures (*.jpg *.jpeg *.png *.webp *.tif *.tiff *.exr *.hdr)"
 HDRI_TIP = ("An equirectangular 360° image (.hdr, .exr, .jpg). Blender's own are 1K: "
             "good light, soft behind the model; for a sharp background use 4K or "
             "more (for example the free ones at polyhaven.com).")
@@ -96,6 +97,17 @@ def blender_version_ok(command, timeout: float = 60.0):
     return True, ""
 
 
+def apply_backdrop(block: dict, backdrop: dict | None) -> dict:
+    """The look's block with a fixed picture behind the model: ``backdrop`` = {path, fit
+    («fill», «fit», «stretch»), strength (multiplier)}. The look keeps lighting the scene."""
+    if not backdrop or not backdrop.get("path"):
+        return block
+    fit = backdrop.get("fit") if backdrop.get("fit") in ("fill", "fit", "stretch") else "fill"
+    block.update(backdrop=str(backdrop["path"]), backdrop_fit=fit,
+                 backdrop_strength=float(backdrop.get("strength", 1.0)))
+    return block
+
+
 def apply_hdri(block: dict, hdri: dict | None) -> dict:
     """The look's block with a 360° background: ``hdri`` = {path, rotation
     (degrees), strength (multiplier), light (it lights the scene)}. When it
@@ -114,7 +126,7 @@ def apply_hdri(block: dict, hdri: dict | None) -> dict:
 def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, *,
                      engine: str, quality: int, width: int, height: int, ground: bool = True,
                      ground_shadow: bool = False,
-                     hdri: dict | None = None, materials: dict | None = None,
+                     hdri: dict | None = None, backdrop: dict | None = None, materials: dict | None = None,
                      serve: bool = False, live: bool = False, reuse_model: bool = False,
                      output: dict | None = None, doc_path=None, section_opts: dict | None = None,
                      progress=None):
@@ -131,6 +143,8 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
     from core import render_blender as rb
     block, ambience = presets.studio(preset_key)
     block = apply_hdri(block, hdri)
+    if not (hdri and hdri.get("path")):
+        block = apply_backdrop(block, backdrop)
     block = presets.apply_sliders(block, sliders)
     try:
         materials = mats.with_detected(scene, materials)     # «Gespa» grows grass, «Aigua» ripples
@@ -321,55 +335,98 @@ class StudioPanel(QWidget):
         outer.setContentsMargins(6, 6, 6, 6)
         self.need_box = self._need_blender_box()
         outer.addWidget(self.need_box)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
-        host = QWidget()
-        col = QVBoxLayout(host)
-        col.setContentsMargins(0, 0, 4, 0)
+        # Settings are in pages, as a person looks for them: Main (presets, look, quality), Image (the picture's
+        # own corrections), Sky (background, clouds, sun, ground). The simple controls show; the rest folds.
+        def page():
+            host = QWidget()
+            lay = QVBoxLayout(host)
+            lay.setContentsMargins(0, 0, 4, 0)
+            return host, lay
+        host_main, col_main = page()
+        host_image, col_image = page()
+        host_sky, col_sky = page()
+        col = col_sky
 
-        # The look and its sliders: they change the SCENE (the preview and Render both draw it).
-        box_look = QGroupBox("Look and light")
+        # Your presets: a named copy of the settings, to come back to or to share as a file.
+        box_presets = QGroupBox("Presets")
+        form_p = QFormLayout(box_presets)
+        self.user_presets = QComboBox()
+        self.user_presets.setToolTip("Your saved presets. Choosing one puts its settings (look, adjustments, "
+                                     "background, ground, engine, quality, output) in the panel.")
+        self.user_presets.activated.connect(self._apply_user_preset)
+        self.save_preset_btn = QPushButton("Save as preset…")
+        self.save_preset_btn.setToolTip("Keeps the settings as they are now under a name, to use them again in any drawing.")
+        self.save_preset_btn.clicked.connect(self.save_user_preset)
+        self.preset_menu_btn = QToolButton()
+        self.preset_menu_btn.setText("⋯")
+        self.preset_menu_btn.setPopupMode(QToolButton.InstantPopup)
+        self.preset_menu_btn.setToolTip("Delete a preset, or share them as files")
+        menu = QMenu(self.preset_menu_btn)
+        self.act_delete_preset = menu.addAction(tr("Delete this preset"), self.delete_user_preset)
+        menu.addAction(tr("Export these settings to a file…"), self.export_user_preset)
+        menu.addAction(tr("Import a preset from a file…"), self.import_user_preset)
+        self.preset_menu_btn.setMenu(menu)
+        prow = QHBoxLayout()
+        prow.addWidget(self.user_presets, 1)
+        prow.addWidget(self.preset_menu_btn)
+        form_p.addRow(prow)
+        form_p.addRow(self.save_preset_btn)
+        col_main.addWidget(box_presets)
+        self._refresh_user_presets()
+
+        # The look: the scene's mood. Its sliders (the adjustments) are in the Image and Sky pages.
+        box_look = QGroupBox("Look")
         form = QFormLayout(box_look)
-        form.addRow(self._caption("These change the scene itself: the preview and Render both show them."))
         self.preset = QComboBox()
         for key in presets.ORDER:
             self.preset.addItem(presets.label(key, lang), key)
         self.preset.setCurrentIndex(max(0, self.preset.findData(st.value(_SETTINGS + "preset", "clear"))))
         self.preset.setToolTip("The light and the mood of the picture. Changing it puts that look's own values "
-                               "in the sliders below.")
+                               "in the adjustments of the Image and Sky pages.")
         form.addRow("Look", self.preset)
+        form.addRow(self._caption("These change the scene itself: the preview and Render both show them."))
         self.sliders, self.slider_rows = {}, {}
+        box_pic = QGroupBox("Corrections")
+        form_pic = QFormLayout(box_pic)
+        self.fx = widgets.Collapsible(tr("Effects"), "fx")
+        box_skyadj = QGroupBox("Sky and sun")
+        form_skyadj = QFormLayout(box_skyadj)
         for key, (label, lo, hi, default, _unit) in presets.SLIDERS.items():
             block, _amb = presets.studio(self.preset.currentData())
             value = default if default is not None else block.get(key, 0.0)
-            s = _slider(lo, hi, float(value))
-            row = SliderRow(s, presets.SLIDER_FORMATS[key], presets.SLIDER_HINTS[key])
-            self.sliders[key], self.slider_rows[key] = s, row
-            form.addRow(label, row)
-        self.ground = QCheckBox("Generated ground")
-        self.ground.setToolTip(
-            "On: a ground is made under the model, with the look's colour, melting into the horizon. "
-            "Off: no ground is added (the model's own terrain, or the 360° background's ground, shows).")
-        self.ground.setChecked(str(st.value(_SETTINGS + "ground", "true")).lower() != "false")
-        self.ground.toggled.connect(lambda on: QSettings().setValue(_SETTINGS + "ground", "true" if on else "false"))
-        form.addRow("", self.ground)
-        self.ground_shadow = QCheckBox("Shadow on the floor")
-        self.ground_shadow.setToolTip(
-            "With no generated ground: the model still throws its shadow on the floor, at its foot, and "
-            "nothing else of the floor is drawn (the background, or the 360° image, shows through). "
-            "Needs the sun or a light that casts shadows.")
-        self.ground_shadow.setChecked(str(st.value(_SETTINGS + "ground_shadow", "true")).lower() != "false")
-        self.ground_shadow.toggled.connect(lambda on: QSettings().setValue(_SETTINGS + "ground_shadow", "true" if on else "false"))
-        self.ground.toggled.connect(lambda on: self.ground_shadow.setEnabled(not on))
-        self.ground_shadow.setEnabled(not self.ground.isChecked())
-        form.addRow("", self.ground_shadow)
+            s_ = _slider(lo, hi, float(value))
+            row = SliderRow(s_, presets.SLIDER_FORMATS[key], presets.SLIDER_HINTS[key])
+            self.sliders[key], self.slider_rows[key] = s_, row
+            target = form_skyadj if presets.SLIDER_PAGE[key] == "sky" else (
+                form_pic if key in presets.SIMPLE_SLIDERS else self.fx.form)
+            target.addRow(label, row)
+        form_pic.addRow(self.fx)
+        col_image.addWidget(box_pic)
+        self.reset_btn = QPushButton("Reset adjustments to the look")
+        self.reset_btn.setToolTip("Puts every adjustment (Image and Sky pages) back to the values of the chosen look.")
+        self.reset_btn.clicked.connect(lambda: self._preset_changed(0))
+        form.addRow(self.reset_btn)
         self.preset.currentIndexChanged.connect(self._preset_changed)
-        col.addWidget(box_look)
+        col_main.addWidget(box_look)
 
-        # The 360° background.
-        box_bg = QGroupBox("360° background")
+        # The background: the look's own sky, a 360° panorama, or one fixed picture.
+        box_bg = QGroupBox("Background")
         form2 = QFormLayout(box_bg)
+        self.bg_mode = QComboBox()
+        self.bg_mode.addItem(tr("Sky of the look"), "sky")
+        self.bg_mode.addItem(tr("360° panorama"), "pano")
+        self.bg_mode.addItem(tr("Fixed picture"), "picture")
+        saved_pano = str(st.value(_SETTINGS + "hdri", "") or "")
+        saved_pic = str(st.value(_SETTINGS + "backdrop", "") or "")
+        mode0 = str(st.value(_SETTINGS + "bg_mode", "pano" if saved_pano else ("picture" if saved_pic else "sky")))
+        self.bg_mode.setCurrentIndex(max(0, self.bg_mode.findData(mode0)))
+        self.bg_mode.setToolTip("What is seen behind the model. Sky of the look: the sky the look makes. "
+                                "360° panorama: a photo all round you, which also lights the model. "
+                                "Fixed picture: one flat picture behind it, which stays put when the view turns.")
+        form2.addRow("Show", self.bg_mode)
+        self.bg_note = self._caption("")
+        self.bg_note.setStyleSheet("color: #b36b00; font-size: 11px")
+        form2.addRow(self.bg_note)
         self.hdri = QComboBox()
         self.hdri.setToolTip(HDRI_TIP)
         self.hdri.addItem(tr("None"), "")
@@ -379,7 +436,7 @@ class StudioPanel(QWidget):
             if path and Path(path).is_file() and self.hdri.findData(path) < 0:
                 self.hdri.addItem(Path(path).name, path)
         self.hdri.addItem(tr("Choose a file…"), _CHOOSE)
-        saved = str(st.value(_SETTINGS + "hdri", "") or "")
+        saved = saved_pano
         if saved and self.hdri.findData(saved) < 0 and Path(saved).is_file():
             self.hdri.insertItem(self.hdri.count() - 1, Path(saved).name, saved)
         self.hdri.setCurrentIndex(max(0, self.hdri.findData(saved)))
@@ -393,26 +450,84 @@ class StudioPanel(QWidget):
         self.hdri_strength_row = SliderRow(self.hdri_strength, "{:+.1f} stops",
                                            "Its brightness, against the lamps and the look's light")
         form2.addRow("Brightness", self.hdri_strength_row)
+        # the fixed picture's own controls
+        self.backdrop = QComboBox()
+        self.backdrop.setToolTip("A picture (.jpg, .png, .exr…) shown flat behind the model.")
+        self.backdrop.addItem(tr("None"), "")
+        for path in st.value(_SETTINGS + "backdrop_recent", []) or []:
+            if path and Path(path).is_file() and self.backdrop.findData(path) < 0:
+                self.backdrop.addItem(Path(path).name, path)
+        self.backdrop.addItem(tr("Choose a file…"), _CHOOSE)
+        if saved_pic and self.backdrop.findData(saved_pic) < 0 and Path(saved_pic).is_file():
+            self.backdrop.insertItem(self.backdrop.count() - 1, Path(saved_pic).name, saved_pic)
+        self.backdrop.setCurrentIndex(max(0, self.backdrop.findData(saved_pic)))
+        self._backdrop_prev = self.backdrop.currentIndex()
+        self.backdrop.currentIndexChanged.connect(self._backdrop_changed)
+        form2.addRow("Picture", self.backdrop)
+        self.backdrop_fit = QComboBox()
+        self.backdrop_fit.addItem(tr("Fill the frame (crops)"), "fill")
+        self.backdrop_fit.addItem(tr("Whole picture"), "fit")
+        self.backdrop_fit.addItem(tr("Stretch"), "stretch")
+        self.backdrop_fit.setCurrentIndex(max(0, self.backdrop_fit.findData(st.value(_SETTINGS + "backdrop_fit", "fill"))))
+        self.backdrop_fit.setToolTip("How the picture sits in the frame: it covers it (and what overflows is cropped), "
+                                     "it shows whole (the look's sky around it) or it is stretched to the frame.")
+        form2.addRow("Fit", self.backdrop_fit)
+        self.backdrop_strength = _slider(-3.0, 3.0, float(st.value(_SETTINGS + "backdrop_strength", 0.0)), 120)
+        self.backdrop_strength_row = SliderRow(self.backdrop_strength, "{:+.1f} stops",
+                                               "How bright the picture is in the render")
+        form2.addRow("Picture brightness", self.backdrop_strength_row)
+        # advanced
+        self.bg_more = widgets.Collapsible(tr("Advanced"), "bg_more")
         self.hdri_height = _slider(0.5, 30.0, float(st.value(_SETTINGS + "hdri_height", 2.5)), 295)
         self.hdri_height_row = SliderRow(
             self.hdri_height, "{:.1f} m",
             "How high above the ground the image was taken from (a street panorama: about 2.5 m; a roof or "
             "a drone: more). It sets how the ground of the image is laid under the model: wrong, and the ground "
             "looks stretched or too close.")
-        form2.addRow("Viewpoint height", self.hdri_height_row)
+        self.bg_more.form.addRow("Viewpoint height", self.hdri_height_row)
         self.hdri_light = QCheckBox("Lights the scene")
         self.hdri_light.setToolTip("On: the image lights the model (its sun casts the shadows). "
                                    "Off: the look lights it, the image is only seen behind it.")
         self.hdri_light.setChecked(str(st.value(_SETTINGS + "hdri_light", "true")).lower() != "false")
         self.hdri_light.toggled.connect(self._hdri_enable)
-        form2.addRow("", self.hdri_light)
-        self._hdri_enable()
+        self.bg_more.form.addRow("", self.hdri_light)
+        form2.addRow(self.bg_more)
+        self._bg_rows = {
+            "pano": [self.hdri, self.hdri_rotation_row, self.hdri_strength_row],
+            "picture": [self.backdrop, self.backdrop_fit, self.backdrop_strength_row],
+        }
+        self._form_bg = form2
+        self.bg_mode.currentIndexChanged.connect(self._bg_enable)
         col.addWidget(box_bg)
+
+        # The ground under the model.
+        box_ground = QGroupBox("Ground")
+        form_g = QFormLayout(box_ground)
+        self.ground = QCheckBox("Generated ground")
+        self.ground.setToolTip(
+            "On: a ground is made under the model, with the look's colour, melting into the horizon. "
+            "Off: no ground is added (the model's own terrain, or the 360° background's ground, shows).")
+        self.ground.setChecked(str(st.value(_SETTINGS + "ground", "true")).lower() != "false")
+        self.ground.toggled.connect(lambda on: QSettings().setValue(_SETTINGS + "ground", "true" if on else "false"))
+        form_g.addRow("", self.ground)
+        self.ground_shadow = QCheckBox("Shadow on the floor")
+        self.ground_shadow.setToolTip(
+            "With no generated ground: the model still throws its shadow on the floor, at its foot, and "
+            "nothing else of the floor is drawn (the background, or the 360° image, shows through). "
+            "Needs the sun or a light that casts shadows.")
+        self.ground_shadow.setChecked(str(st.value(_SETTINGS + "ground_shadow", "true")).lower() != "false")
+        self.ground_shadow.toggled.connect(lambda on: QSettings().setValue(_SETTINGS + "ground_shadow", "true" if on else "false"))
+        self.ground.toggled.connect(lambda on: self.ground_shadow.setEnabled(not on))
+        self.ground_shadow.setEnabled(not self.ground.isChecked())
+        form_g.addRow("", self.ground_shadow)
+        col.addWidget(box_ground)
+        col_sky.insertWidget(1, box_skyadj)          # after the background, before the ground
 
         # What only the final render uses.
         box_final = QGroupBox("Final render")
         form3 = QFormLayout(box_final)
         form3.addRow(self._caption("Engine and Quality are for Render; the preview has its own engine."))
+        self.final_more = widgets.Collapsible(tr("Advanced"), "final_more")
         self.preview_engine = QComboBox()
         self.preview_engine.addItem(tr("Automatic"), "auto")
         self.preview_engine.addItem(tr("EEVEE — fast"), "eevee")
@@ -423,7 +538,7 @@ class StudioPanel(QWidget):
             "still (Follow the camera and Follow changes both off: nothing is sent to Blender again, "
             "and a big model looks like the final render). EEVEE or Cycles: always that one.")
         self.preview_engine.currentIndexChanged.connect(lambda _i: QSettings().setValue(_SETTINGS + "preview_engine", self.preview_engine.currentData()))
-        form3.addRow("Preview engine", self.preview_engine)
+        self.final_more.form.addRow("Preview engine", self.preview_engine)
         self.engine = QComboBox()
         self.engine.addItem(tr("EEVEE — fast"), "eevee")
         self.engine.addItem(tr("Cycles — best quality"), "cycles")
@@ -437,20 +552,30 @@ class StudioPanel(QWidget):
         self.quality.setCurrentIndex(int(st.value(_SETTINGS + "quality", 1)))
         self.quality.setToolTip("How many samples: more is less noisy and slower.")
         form3.addRow("Quality", self.quality)
+        form3.addRow(self.final_more)
         # The picture's size and file: the Output tab (its width is the panel's ``width``).
         from .output_panel import OutputTab
         self.output_tab = OutputTab(self, width=int(st.value(_SETTINGS + "width", 1920)))
         self.width = self.output_tab.width
-        col.addWidget(box_final)
-        col.addStretch(1)
-        scroll.setWidget(host)
-        scroll.setMinimumHeight(min(host.sizeHint().height() + 8, 520))
+        col_main.addWidget(box_final)
+        for lay in (col_main, col_image):
+            lay.addStretch(1)
         # Tabs: the global settings, then the lights (more to come: place and
         # sun, output). What is under them (materials, preview, status) serves all.
         from .lights_panel import LightsTab
         self.tabs = QTabWidget()
         self.tabs.setDocumentMode(True)
-        self.tabs.addTab(scroll, "Settings")
+
+        def scrolled(widget):
+            sc = QScrollArea()
+            sc.setWidgetResizable(True)
+            sc.setFrameShape(QFrame.NoFrame)
+            sc.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            sc.setWidget(widget)
+            return sc
+        self.tabs.addTab(scrolled(host_main), "Main")
+        self.tabs.addTab(scrolled(host_image), "Image")
+        self.tabs.addTab(scrolled(host_sky), "Sky")
         self.lights_tab = LightsTab(app)
         lscroll = QScrollArea()
         lscroll.setWidgetResizable(True)
@@ -462,15 +587,18 @@ class StudioPanel(QWidget):
         self.sun_tab = SunTab(app, self)
         from .section_panel import SectionTab
         self.section_tab = SectionTab(app, live=self._preview_open)
-        for tab_widget, title in ((self.sun_tab, "Sun"), (self.section_tab, "Section"), (self.output_tab, "Output")):
-            sc = QScrollArea()
-            sc.setWidgetResizable(True)
-            sc.setFrameShape(QFrame.NoFrame)
-            sc.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-            sc.setWidget(tab_widget)
-            self.tabs.addTab(sc, title)
+        # The sun's place and date belong to the sky: folded under it.
+        self.sun_more = widgets.Collapsible(tr("Sun position and date"), "sun_more")
+        self.sun_more.form.addRow(self.sun_tab)
+        col_sky.addWidget(self.sun_more)
+        col_sky.addStretch(1)
+        for tab_widget, title in ((self.section_tab, "Section"), (self.output_tab, "Output")):
+            self.tabs.addTab(scrolled(tab_widget), title)
         self.tabs.setCurrentIndex(min(self.tabs.count() - 1, max(0, int(st.value(_SETTINGS + "tab", 0) or 0))))
         self.tabs.currentChanged.connect(lambda i: QSettings().setValue(_SETTINGS + "tab", int(i)))
+        for combo in self.findChildren(QComboBox):       # a long name must not widen a narrow tray
+            combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+            combo.setMinimumContentsLength(8)
         outer.addWidget(self.tabs, 1)
 
         self.help_btn = QToolButton()
@@ -704,7 +832,7 @@ class StudioPanel(QWidget):
         return write_studio_job(
             self.app.scene, self.app.viewport.camera, work, self.preset.currentData(),
             self.slider_values(), engine=self.live_engine(), quality=0, width=width,
-            height=height, hdri=self.hdri_settings(), ground=self.ground.isChecked(),
+            height=height, hdri=self.hdri_settings(), backdrop=self.backdrop_settings(), ground=self.ground.isChecked(),
             ground_shadow=self.ground_shadow.isChecked(),
             materials=self.material_specs() if materials is None else materials, serve=True,
             live=True, reuse_model=reuse_model, doc_path=self.doc_path(),
@@ -772,7 +900,7 @@ class StudioPanel(QWidget):
             job, script = write_studio_job(
                 self.app.viewport.scene, self.render_camera(), work, self.preset.currentData(),
                 self.slider_values(), engine=self.engine.currentData(), quality=self.quality.currentIndex(),
-                width=width, height=height, hdri=self.hdri_settings(), ground=self.ground.isChecked(),
+                width=width, height=height, hdri=self.hdri_settings(), backdrop=self.backdrop_settings(), ground=self.ground.isChecked(),
                 ground_shadow=self.ground_shadow.isChecked(), materials=self.material_specs(),
                 output=self.output_tab.settings(), doc_path=self.doc_path(),
                 section_opts=self.section_tab.settings(), progress=self._export_progress())
@@ -968,7 +1096,7 @@ class StudioPanel(QWidget):
         self._save_timer.setSingleShot(True)
         self._save_timer.setInterval(700)
         self._save_timer.timeout.connect(self._save_document_settings)
-        for combo in (self.preset, self.engine, self.quality, self.hdri):
+        for combo in (self.preset, self.engine, self.quality, self.hdri, self.bg_mode, self.backdrop, self.backdrop_fit):
             combo.currentIndexChanged.connect(self._schedule_save)
         self.width.valueChanged.connect(self._schedule_save)
         self.output_tab.changed.connect(self._schedule_save)
@@ -977,11 +1105,15 @@ class StudioPanel(QWidget):
         self.preset.currentIndexChanged.connect(lambda _i: self.sun_tab._show_sun())
         self.hdri.currentIndexChanged.connect(lambda _i: self.sun_tab._show_sun())
         self.hdri_light.toggled.connect(lambda _on: self.sun_tab._show_sun())
-        for sl in (*self.sliders.values(), self.hdri_rotation, self.hdri_strength, self.hdri_height):
+        self.bg_mode.currentIndexChanged.connect(lambda _i: self.sun_tab._show_sun())
+        self.output_tab.changed.connect(self._bg_enable)
+        for sl in (*self.sliders.values(), self.hdri_rotation, self.hdri_strength, self.hdri_height,
+                   self.backdrop_strength):
             sl.valueChanged.connect(self._schedule_save)
         self.hdri_light.toggled.connect(self._schedule_save)
         self.ground.toggled.connect(self._schedule_save)
         self.ground_shadow.toggled.connect(self._schedule_save)
+        self._bg_enable()
         self._scene_id = id(self.app.scene) if hasattr(self.app, "scene") else None
         self._known = self._stored_settings()
         if self._known is not None:
@@ -996,6 +1128,7 @@ class StudioPanel(QWidget):
     def settings_dict(self) -> dict:
         """The panel's settings in the document format."""
         hdri = self.hdri.currentData()
+        pic = self.backdrop.currentData()
         return {
             "version": settings_store.VERSION,
             "look": self.preset.currentData(),
@@ -1011,7 +1144,10 @@ class StudioPanel(QWidget):
                       "brightness": round(_value(self.hdri_strength), 3),
                       "height": round(_value(self.hdri_height), 2),
                       "light": self.hdri_light.isChecked()}
-                     if hdri and hdri != _CHOOSE else None),
+                     if hdri and hdri != _CHOOSE and self.bg_mode.currentData() == "pano" else None),
+            "backdrop": ({"path": pic, "fit": self.backdrop_fit.currentData(),
+                          "brightness": round(_value(self.backdrop_strength), 3)}
+                         if pic and pic != _CHOOSE and self.bg_mode.currentData() == "picture" else None),
         }
 
     def apply_settings(self, data: dict) -> None:
@@ -1023,6 +1159,7 @@ class StudioPanel(QWidget):
         self._applying = True
         widgets = [self.preset, self.engine, self.quality, self.width, self.hdri, self.ground, self.ground_shadow,
                    self.hdri_rotation, self.hdri_strength, self.hdri_height, self.hdri_light,
+                   self.bg_mode, self.backdrop, self.backdrop_fit, self.backdrop_strength,
                    *self.sliders.values()]
         for w in widgets:
             w.blockSignals(True)
@@ -1055,13 +1192,29 @@ class StudioPanel(QWidget):
             else:
                 self.hdri.setCurrentIndex(0)
             self._hdri_prev = self.hdri.currentIndex()
+            b = data.get("backdrop")
+            if b and Path(b["path"]).is_file():
+                i = self.backdrop.findData(b["path"])
+                if i < 0:
+                    i = self.backdrop.count() - 1
+                    self.backdrop.insertItem(i, Path(b["path"]).name, b["path"])
+                self.backdrop.setCurrentIndex(i)
+                self.backdrop_fit.setCurrentIndex(max(0, self.backdrop_fit.findData(b["fit"])))
+                self.backdrop_strength.setValue(int(round((b["brightness"] + 3.0) / 6.0 * self.backdrop_strength.maximum())))
+            else:
+                self.backdrop.setCurrentIndex(0)
+            self._backdrop_prev = self.backdrop.currentIndex()
+            self.bg_mode.setCurrentIndex(self.bg_mode.findData(
+                "pano" if self.hdri.currentData() else ("picture" if self.backdrop.currentData() else "sky")))
         finally:
             for w in widgets:
                 w.blockSignals(False)
             self._applying = False
-        for row in (*self.slider_rows.values(), self.hdri_rotation_row, self.hdri_strength_row, self.hdri_height_row):
+        for row in (*self.slider_rows.values(), self.hdri_rotation_row, self.hdri_strength_row, self.hdri_height_row,
+                    self.backdrop_strength_row):
             row.update_value()                       # their signals were blocked
         self._hdri_enable()
+        self._bg_enable()
         self._update_summary()
 
     def _schedule_save(self, *_a):
@@ -1122,6 +1275,7 @@ class StudioPanel(QWidget):
         self.hdri.setCurrentIndex(i)
         self.hdri.blockSignals(False)
         self._hdri_prev = i
+        self.bg_mode.setCurrentIndex(self.bg_mode.findData("pano"))     # choosing an image means to show it
         st = QSettings()
         st.setValue(_SETTINGS + "hdri_dir", str(Path(path).parent))
         if "datafiles" not in path:
@@ -1130,7 +1284,7 @@ class StudioPanel(QWidget):
         self._hdri_enable()
 
     def _hdri_enable(self, *_a):
-        on = bool(self.hdri.currentData())
+        on = bool(self.hdri.currentData()) and self.bg_mode.currentData() == "pano"
         for w in (self.hdri_rotation_row, self.hdri_strength_row, self.hdri_height_row, self.hdri_light):
             w.setEnabled(on)
         lit = on and self.hdri_light.isChecked()
@@ -1139,9 +1293,148 @@ class StudioPanel(QWidget):
             if key in self.slider_rows:
                 self.slider_rows[key].setEnabled(not lit)
 
+    # -- your presets ---------------------------------------------------------------
+    def _user_presets(self) -> dict:
+        return user_presets.load_all(QSettings().value(_SETTINGS + "user_presets", ""))
+
+    def _refresh_user_presets(self, select: str = "") -> None:
+        names = sorted(self._user_presets(), key=str.lower)
+        self.user_presets.blockSignals(True)
+        self.user_presets.clear()
+        self.user_presets.addItem(tr("My presets…") if names else tr("No presets saved yet"), "")
+        for n in names:
+            self.user_presets.addItem(n, n)
+        self.user_presets.setCurrentIndex(max(0, self.user_presets.findData(select)))
+        self.user_presets.blockSignals(False)
+        self.act_delete_preset.setEnabled(bool(names))
+
+    def _store_user_preset(self, name: str, preset: dict) -> None:
+        allp = self._user_presets()
+        allp[name] = preset
+        QSettings().setValue(_SETTINGS + "user_presets", user_presets.dump_all(allp))
+        self._refresh_user_presets(name)
+
+    def save_user_preset(self):
+        """Ask for a name and keep the settings as they are now (asks before replacing one)."""
+        default = self.user_presets.currentData() or ""
+        name, ok = QInputDialog.getText(self, tr("Save as preset…"), tr("Name of the preset"), text=default)
+        name = user_presets.clean_name(name)
+        if not ok or not name:
+            return
+        if name in self._user_presets() and QMessageBox.question(
+                self, tr("Save as preset…"), tr("A preset called «{name}» exists. Replace it?", name=name)) != QMessageBox.Yes:
+            return
+        preset = user_presets.make(self.settings_dict())
+        if preset is not None:
+            self._store_user_preset(name, preset)
+            self._set_status(tr("Preset «{name}» saved.", name=name))
+
+    def _apply_user_preset(self, _i=0):
+        name = self.user_presets.currentData()
+        preset = self._user_presets().get(name) if name else None
+        if preset is None:
+            return
+        data = dict(preset)
+        data["section"] = self.section_tab.settings()           # the cut belongs to the model, not to a look
+        data["width"] = self.width.value()
+        self.apply_settings(data)
+        self._schedule_save()
+        self._set_status(tr("Preset «{name}» applied.", name=name))
+
+    def delete_user_preset(self):
+        name = self.user_presets.currentData()
+        if not name:
+            return
+        if QMessageBox.question(self, tr("Delete this preset"), tr("Delete the preset «{name}»?", name=name)) != QMessageBox.Yes:
+            return
+        allp = self._user_presets()
+        allp.pop(name, None)
+        QSettings().setValue(_SETTINGS + "user_presets", user_presets.dump_all(allp))
+        self._refresh_user_presets()
+
+    def export_user_preset(self):
+        """The settings as they are now, in a file to share (named after the chosen preset, if any)."""
+        name = self.user_presets.currentData() or "Render Studio"
+        start = str(Path(str(QSettings().value(_SETTINGS + "preset_dir", "") or "")) / f"{name}.rspreset.json")
+        path, _f = QFileDialog.getSaveFileName(self, tr("Export these settings to a file…"), start, "Render Studio preset (*.json)")
+        if not path:
+            return
+        try:
+            Path(path).write_text(user_presets.to_file(name, self.settings_dict()), encoding="utf-8")
+        except OSError as exc:
+            self._set_status(tr("Could not write the file: {error}", error=exc))
+            return
+        QSettings().setValue(_SETTINGS + "preset_dir", str(Path(path).parent))
+        self._set_status(tr("Settings exported to {path}", path=path))
+
+    def import_user_preset(self):
+        start = str(QSettings().value(_SETTINGS + "preset_dir", "") or "")
+        path, _f = QFileDialog.getOpenFileName(self, tr("Import a preset from a file…"), start, "Render Studio preset (*.json)")
+        if not path:
+            return
+        try:
+            got = user_presets.from_file(Path(path).read_text(encoding="utf-8"))
+        except OSError:
+            got = None
+        if got is None:
+            self._set_status(tr("That file is not a Render Studio preset."))
+            return
+        name, preset = got
+        self._store_user_preset(name, preset)
+        self._set_status(tr("Preset «{name}» imported. Choose it in the list to use it.", name=name))
+
+    def _bg_enable(self, *_a):
+        """Show the controls of the chosen background only (and say when the output hides it)."""
+        mode = self.bg_mode.currentData()
+        for key, rows in self._bg_rows.items():
+            for w in rows:
+                self._form_bg.setRowVisible(w, mode == key)
+        self._form_bg.setRowVisible(self.bg_more, mode == "pano")
+        self._hdri_enable()
+        hidden = mode != "sky" and bool(self.output_tab.transparent.isChecked())
+        self.bg_note.setText(tr("The Output tab leaves the sky transparent, so this background will not show in the "
+                                "render. Untick «Transparent sky» there.") if hidden else "")
+        self._form_bg.setRowVisible(self.bg_note, hidden)
+
+    def _backdrop_changed(self, i):
+        if self.backdrop.itemData(i) == _CHOOSE:
+            start = str(QSettings().value(_SETTINGS + "backdrop_dir", "") or "")
+            path, _f = QFileDialog.getOpenFileName(self, tr("Fixed picture"), start, BACKDROP_FILTER)
+            if path:
+                self.set_backdrop_path(path)
+            else:
+                self.backdrop.blockSignals(True)
+                self.backdrop.setCurrentIndex(self._backdrop_prev)
+                self.backdrop.blockSignals(False)
+        self._backdrop_prev = self.backdrop.currentIndex()
+
+    def set_backdrop_path(self, path: str):
+        """Use ``path`` as the fixed picture (and remember it among the recent ones)."""
+        i = self.backdrop.findData(path)
+        if i < 0:
+            i = self.backdrop.count() - 1             # before "Choose a file…"
+            self.backdrop.insertItem(i, Path(path).name, path)
+        self.backdrop.blockSignals(True)
+        self.backdrop.setCurrentIndex(i)
+        self.backdrop.blockSignals(False)
+        self._backdrop_prev = i
+        self.bg_mode.setCurrentIndex(self.bg_mode.findData("picture"))
+        st = QSettings()
+        st.setValue(_SETTINGS + "backdrop_dir", str(Path(path).parent))
+        recent = [p for p in (st.value(_SETTINGS + "backdrop_recent", []) or []) if p != path]
+        st.setValue(_SETTINGS + "backdrop_recent", ([path] + recent)[:6])
+        self._schedule_save()
+
+    def backdrop_settings(self) -> dict | None:
+        path = self.backdrop.currentData()
+        if self.bg_mode.currentData() != "picture" or not path or path == _CHOOSE:
+            return None
+        return {"path": path, "fit": self.backdrop_fit.currentData(),
+                "strength": 2.0 ** _value(self.backdrop_strength)}
+
     def hdri_settings(self) -> dict | None:
         path = self.hdri.currentData()
-        if not path or path == _CHOOSE:
+        if self.bg_mode.currentData() != "pano" or not path or path == _CHOOSE:
             return None
         return {"path": path, "rotation": _value(self.hdri_rotation),
                 "strength": 2.0 ** _value(self.hdri_strength), "height": _value(self.hdri_height),
@@ -1206,6 +1499,11 @@ class StudioPanel(QWidget):
         st.setValue(_SETTINGS + "hdri_strength", _value(self.hdri_strength))
         st.setValue(_SETTINGS + "hdri_height", _value(self.hdri_height))
         st.setValue(_SETTINGS + "hdri_light", self.hdri_light.isChecked())
+        st.setValue(_SETTINGS + "bg_mode", self.bg_mode.currentData())
+        pic = self.backdrop.currentData()
+        st.setValue(_SETTINGS + "backdrop", pic if pic != _CHOOSE else "")
+        st.setValue(_SETTINGS + "backdrop_fit", self.backdrop_fit.currentData())
+        st.setValue(_SETTINGS + "backdrop_strength", _value(self.backdrop_strength))
 
     # -- rendering ----------------------------------------------------------------
     def _aspect(self) -> float:
@@ -1267,7 +1565,7 @@ class StudioPanel(QWidget):
                 self.app.viewport.scene, camera or self.app.viewport.camera, self.work,
                 self.preset.currentData(), self.slider_values(),
                 engine=self.engine.currentData(), quality=self.quality.currentIndex(),
-                width=width, height=height, hdri=self.hdri_settings(), ground=self.ground.isChecked(),
+                width=width, height=height, hdri=self.hdri_settings(), backdrop=self.backdrop_settings(), ground=self.ground.isChecked(),
                 ground_shadow=self.ground_shadow.isChecked(),
                 materials=self.material_specs(), output=out, doc_path=self.doc_path(),
                 section_opts=self.section_tab.settings(), progress=self._export_status)

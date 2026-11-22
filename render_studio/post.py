@@ -23,6 +23,10 @@ ADJUSTMENTS = (
 )
 
 
+#: The retouch sliders always in view; the others are folded under «More».
+SIMPLE = ("exposure", "contrast", "saturation")
+
+
 def _to_linear(c):
     return np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
 

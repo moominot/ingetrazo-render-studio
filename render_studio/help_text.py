@@ -81,8 +81,13 @@ a change makes the preview update; the preview window's <b>retouch</b> sliders c
 instantly, without rendering again. Every slider shows its value and a line saying what it does.</p>
 
 <h4>The panel</h4>
-<p>Three groups: <b>Look and light</b> (the scene), <b>360° background</b> and <b>Final render</b> (only Render uses
-the engine, quality and width; the preview is always a quick draft).</p>
+<p>The panel has pages: <b>Main</b> (your presets, the look, the engine and quality), <b>Image</b> (exposure, warmth,
+saturation; <i>Effects</i>: vignette and depth of field), <b>Sky</b> (background, clouds and sun, ground, and the sun's
+place and date), <b>Lights</b>, <b>Section</b> and <b>Output</b>. The simple controls are in view; the rest is folded
+under <i>Advanced</i> or <i>Effects</i>. Only Render uses the engine, quality and width; the preview is always a quick
+draft. <b>Presets</b>: <i>Save as preset…</i> keeps the settings under a name to use in any drawing; <i>⋯</i> deletes a
+preset or exports and imports them as files to share. <b>Reset adjustments to the look</b> puts every slider back to
+the look's values.</p>
 <table cellspacing='0' cellpadding='3' width='100%'>
 <tr><td valign='top'><b>Look</b></td><td>The light and mood: see the list below. Changing it puts that look's own
 values into the sliders it sets.</td></tr>
@@ -95,6 +100,11 @@ it, up to 2. Not available while a 360° background lights the scene.</td></tr>
 <tr><td valign='top'><b>Warmth</b></td><td>Colour of the light, from cool and bluish (-1) to warm and yellowish (+1).</td></tr>
 <tr><td valign='top'><b>Saturation</b></td><td>Intensity of the colours in the render: 0 is black and white, 1.6 is vivid.</td></tr>
 <tr><td valign='top'><b>Vignette</b></td><td>Darkens the corners of the render to draw the eye to the centre.</td></tr>
+<tr><td valign='top'><b>Depth of field</b></td><td>Blurs what is nearer or farther than the middle of the view, 0 to 100 % (0 =
+everything sharp). It focuses on the point the camera looks at.</td></tr>
+<tr><td valign='top'><b>Background</b></td><td><b>Sky of the look</b>, a <b>360° panorama</b> (see below) or a <b>Fixed
+picture</b>: one flat image behind the model that stays put when the view turns, shown filling the frame (cropped),
+whole (the look's sky around it) or stretched. If the Output tab leaves the sky transparent, no background shows.</td></tr>
 <tr><td valign='top'><b>Engine</b></td><td><b>EEVEE</b> is fast (about 3 seconds). <b>Cycles</b> gives the best
 quality (about 5 seconds on an RTX graphics card, slower without one), with truer light bouncing.</td></tr>
 <tr><td valign='top'><b>Quality</b></td><td>Draft, Medium or High: the number of samples. EEVEE uses 16 / 64 / 128 and

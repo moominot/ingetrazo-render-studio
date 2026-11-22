@@ -338,7 +338,14 @@ menu (Make proxy, Show original, Show proxy, Open original in a new tab).
 
 ![Proxies: envelopes in the drawing, full models in the render](docs/proxies.png)
 
-## 360° background (HDRI)
+## Background: 360° panorama or fixed picture
+
+The **Background** group of the Settings tab chooses what is seen behind the model: **Sky of the look**,
+a **360° panorama**, or a **Fixed picture** (one flat image that stays put when the view turns; the look keeps
+lighting the model). The picture can **fill the frame** (cropping), show **whole** (the look's sky around it)
+or be stretched. If the Output tab leaves the sky transparent, no background shows (the panel warns).
+
+### 360° panorama (HDRI)
 
 Any equirectangular image (.hdr, .exr, .jpg) as the world:
 - **Lights the scene** (on): the image lights the model, and its sun casts
@@ -371,14 +378,21 @@ choose a 4K or larger file, for example a free one from polyhaven.com.
 
 ## Panel
 
-`Render Studio…` in the extensions menu opens the panel. It has four tabs: **Settings**,
-**Lights** (see [Lights](#lights)), **Sun** ([Sun](#sun)) and **Output** ([Output](#output)); what is under
-them (Materials…, Open preview…, the status) serves all. The Settings tab is in three groups:
-- **Look and light** (the scene: the preview and Render both draw it): the look, and sliders for exposure
-  (EV), clouds, sun, warmth, saturation and vignette, each with its value and a line saying what it does;
-- **360° background** (HDRI), with rotation, brightness and "Lights the scene";
-- **Final render** (only Render uses it): the engine, EEVEE (fast, about 3 s) or Cycles (best, about 5 s
-  on an RTX GPU) and the quality. The size is in the Output tab.
+`Render Studio…` in the extensions menu opens the panel. It has six tabs: **Main**, **Image**, **Sky**,
+**Lights** (see [Lights](#lights)), **Section** and **Output** ([Output](#output)); the sun's place and date
+([Sun](#sun)) are folded in **Sky**. What is under them (Materials…, Open preview…, the status) serves all.
+The simple controls are in view and the rest folded under *Advanced* / *Effects*:
+- **Main**: your **presets** (*Save as preset…* keeps the settings under a name for any drawing; *⋯* deletes,
+  exports and imports them as `.json` files to share), the **look** with a button that resets every adjustment
+  to the look's values, and the **final render** (engine and quality; *Advanced*: the preview's engine);
+- **Image**: exposure, warmth and saturation; *Effects*: vignette and **depth of field** (focused on the middle of
+  the view);
+- **Sky**: the **background** (sky of the look, 360° panorama or fixed picture), clouds and sun, the **ground**
+  and, folded, the sun's place and date;
+- **Lights**, **Section** and **Output** (size, file, save every render).
+
+The preview window keeps Render and *Render and save…* in view; *More* opens the live view's options, *New scene
+from this view…* and *Open in Blender…*, and the retouch of a finished picture folds its warmth and vignette.
 
 The panel has **Render** and **Render and save…** (the final picture right away, without the live preview: the window opens only to show it) and **Open preview…** (the live view).
 
@@ -506,6 +520,7 @@ plugin_data["render_studio"] = {
     "sliders": { "exposure_bias": 0.0, "clouds": 0.25, "sun_scale": 1.0,
                  "warmth": 0.0, "saturation": 1.06, "vignette": 0.16 },
     "hdri": null,               # or {"path": "...", "rotation": 0..360, "brightness": stops, "light": true}
+    "backdrop": null,           # or {"path": "...", "fit": "fill"|"fit"|"stretch", "brightness": stops}
     "output": { "size": "view", # view, hd, fullhd, qhd, uhd, square, portrait45, story, a4, a4p, a3, a3p,
                                 # a2, a1, custom
                 "height": 1080, "dpi": 300,

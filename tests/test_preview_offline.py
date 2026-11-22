@@ -113,7 +113,9 @@ ok(w.mode == "preview" and see(w.bar_preview) and not see(w.bar_final), "the win
 ok(see(w.render_btn) and see(w.render_save_btn) and w.render_btn.isEnabled() and "Render and save" in w.render_save_btn.text(),
    "…with Render and Render and save…")
 ok(not any(see(s) for s in w.adj.values()), "…and the retouch sliders are hidden")
-ok(see(w.follow_camera_box) and see(w.follow_changes_box), "…and the live view's two switches")
+ok(not see(w.follow_camera_box) and see(w.render_btn), "…the live view's options folded under More, Render in view")
+w.more_btn.setChecked(True)
+ok(see(w.follow_camera_box) and see(w.follow_changes_box) and see(w.scene_btn) and see(w.expert_btn), "…More opens the live view's switches and the extra buttons")
 ok(w.summary.text() == "Render: EEVEE · Medium · 1920 × 1080 px · PNG, 8 bits", f"…and says what Render will use («{w.summary.text()}»)")
 panel.quality.setCurrentIndex(2); panel.engine.setCurrentIndex(panel.engine.findData("cycles")); panel.width.setValue(1280)
 ok(w.summary.text() == "Render: Cycles · High · 1280 × 720 px · PNG, 8 bits", f"…following the panel («{w.summary.text()}»)")
@@ -125,6 +127,7 @@ ok(see(w.bar) and see(w.cancel_btn) and not w.render_btn.isEnabled() and not w.r
 w.set_progress(0.42); ok(w.bar.value() == 42, "…the bar follows")
 w.set_image(big); qa.processEvents()
 ok(w.mode == "final" and see(w.bar_final) and not see(w.bar_preview) and not see(w.bar), "the finished picture: the retouch tools replace the Render buttons")
+w.retouch_more.header.setChecked(True)
 ok(all(see(s) for s in w.adj.values()) and see(w.save_btn) and see(w.back_btn) and see(w.reset_btn), "…sliders, Save image…, Back to preview, Reset")
 ok(w.view.is_fitted() and w.view.picture_size() == (960, 540), "…the picture fitted")
 # retouch
@@ -171,7 +174,7 @@ ok(panel.slider_rows["clouds"].value_label.text() == f"{presets.studio('night')[
 panel.apply_settings(panel.settings_dict() | {"sliders": {"clouds": 0.8}});
 ok(panel.slider_rows["clouds"].value_label.text() == "80%", "…and settings put in from the document")
 titles = [g.title() for g in panel.findChildren(P.QGroupBox)]
-ok(titles == ["Look and light", "360° background", "Final render"], f"the panel is in three groups ({titles})")
+ok(set(titles) == {"Presets", "Look", "Corrections", "Sky and sun", "Background", "Ground", "Final render"}, f"the panel's groups ({titles})")
 ok({"preview", "rendering", "final"} <= set(__import__("render_studio.preview", fromlist=["x"]).NOTES), "each state has its own note")
 _restore_settings()
 print(f"\n{len(fails)} failure(s)")

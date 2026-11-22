@@ -195,3 +195,49 @@ class ZoomView(QGraphicsView):
         super().resizeEvent(ev)
         if self._fit:
             self.fit()
+
+
+class Collapsible(QWidget):
+    """A section that starts closed: a header you click to show the advanced controls under it.
+    ``form`` is the QFormLayout to fill; the open/closed state is remembered under ``key``."""
+
+    def __init__(self, title: str, key: str = "", parent=None):
+        super().__init__(parent)
+        from PySide6.QtCore import QSettings
+        from PySide6.QtWidgets import QFormLayout, QToolButton
+        self._key = "render_studio/open_" + key if key else ""
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 2, 0, 0)
+        lay.setSpacing(2)
+        self.header = QToolButton()
+        self.header.setText(title)
+        self.header.setCheckable(True)
+        self.header.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.header.setStyleSheet("QToolButton { border: none; font-weight: bold; text-align: left; }")
+        from PySide6.QtWidgets import QSizePolicy
+        self.header.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)     # a long title must not widen a narrow tray
+        self.header.setMinimumWidth(90)
+        lay.addWidget(self.header)
+        self.body = QWidget()
+        self.form = QFormLayout(self.body)
+        self.form.setContentsMargins(12, 0, 0, 0)
+        lay.addWidget(self.body)
+        opened = False
+        if self._key:
+            try:
+                opened = str(QSettings().value(self._key, "false")).lower() == "true"
+            except Exception:  # noqa: BLE001
+                pass
+        self.header.toggled.connect(self._toggled)
+        self.header.setChecked(opened)
+        self._toggled(opened)
+
+    def _toggled(self, on: bool) -> None:
+        self.header.setArrowType(Qt.DownArrow if on else Qt.RightArrow)
+        self.body.setVisible(on)
+        if self._key:
+            try:
+                from PySide6.QtCore import QSettings
+                QSettings().setValue(self._key, "true" if on else "false")
+            except Exception:  # noqa: BLE001
+                pass

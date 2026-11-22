@@ -269,6 +269,89 @@ def set_hdri(scene, path, rotation_deg=0.0, strength=1.0, light=True):
     return image
 
 
+_DOF = {"amount": 0.0}          # the job's depth of field, kept for the live view's cameras
+
+
+def set_dof(scene, cam_cfg, amount):
+    """Depth of field: ``amount`` 0..1 (0 = off) from a wide f/32 down to a shallow f/1.4, focused on the
+    middle of the view (the distance from the eye to the camera's target)."""
+    cam = scene.camera
+    if cam is None or cam.type != "CAMERA":
+        return
+    d = cam.data.dof
+    amount = max(0.0, min(1.0, float(amount or 0.0)))
+    d.use_dof = amount > 0.01 and bool(cam_cfg.get("perspective", True))
+    if d.use_dof:
+        eye, target = Vector(cam_cfg["eye"]), Vector(cam_cfg["target"])
+        d.focus_distance = max(0.05, (target - eye).length)
+        d.aperture_fstop = 32.0 * (1.4 / 32.0) ** amount
+
+
+def set_backdrop(scene, path, fit="fill", strength=1.0, aspect=1.5):
+    """A fixed picture behind the model (not a 360° one): the camera sees it as a flat backdrop that does
+    not move when the view turns; the look keeps lighting everything. ``fit``: «fill» covers the whole
+    frame (crops what overflows), «fit» shows the whole picture (the look's sky around it), «stretch» fills
+    the frame out of proportion. ``aspect``: the frame's width / height. Returns the image, or None."""
+    try:
+        image = bpy.data.images.load(str(path), check_existing=True)
+    except (RuntimeError, OSError) as exc:
+        say("backdrop unreadable", path, exc)
+        return None
+    if scene.world is None:
+        core["set_plain_world"](scene, (0.05, 0.05, 0.05), 1.0, "backdrop")
+    nodes, links = _world_nodes(scene)
+    out = next((n for n in nodes if n.type == "OUTPUT_WORLD"), None)
+    if out is None:
+        out = nodes.new("ShaderNodeOutputWorld")
+    look_link = next(iter(out.inputs["Surface"].links), None)
+    ia = (image.size[0] / float(image.size[1])) if image.size[0] and image.size[1] else aspect
+    sx = sy = 1.0
+    if fit == "fill":                          # the picture covers the frame
+        if ia > aspect:
+            sx = aspect / ia
+        else:
+            sy = ia / aspect
+    elif fit == "fit":                         # the whole picture inside the frame
+        if ia > aspect:
+            sy = ia / aspect
+        else:
+            sx = aspect / ia
+    coord = nodes.new("ShaderNodeTexCoord")
+    mapping = nodes.new("ShaderNodeMapping")
+    mapping.name = "backdrop_mapping"
+    mapping.inputs["Scale"].default_value = (sx, sy, 1.0)
+    mapping.inputs["Location"].default_value = (0.5 - 0.5 * sx, 0.5 - 0.5 * sy, 0.0)
+    links.new(coord.outputs["Window"], mapping.inputs["Vector"])
+    tex = nodes.new("ShaderNodeTexImage")
+    tex.name = "backdrop"
+    tex.image = image
+    tex.extension = "CLIP" if fit == "fit" else "EXTEND"
+    tex.interpolation = "Cubic"
+    links.new(mapping.outputs["Vector"], tex.inputs["Vector"])
+    bg = nodes.new("ShaderNodeBackground")
+    bg.name = "backdrop_background"
+    bg.inputs["Strength"].default_value = strength
+    links.new(tex.outputs["Color"], bg.inputs["Color"])
+    if look_link is None:
+        links.new(bg.outputs["Background"], out.inputs["Surface"])
+    else:
+        look_shader = look_link.from_socket
+        path_node = nodes.new("ShaderNodeLightPath")
+        cam = nodes.new("ShaderNodeMath"); cam.operation = "MULTIPLY"
+        links.new(path_node.outputs["Is Camera Ray"], cam.inputs[0])
+        if fit == "fit":                       # outside the picture: the look's sky
+            links.new(tex.outputs["Alpha"], cam.inputs[1])
+        else:
+            cam.inputs[1].default_value = 1.0
+        mix = nodes.new("ShaderNodeMixShader")
+        links.new(cam.outputs["Value"], mix.inputs["Fac"])
+        links.new(look_shader, mix.inputs[1])
+        links.new(bg.outputs["Background"], mix.inputs[2])
+        links.new(mix.outputs["Shader"], out.inputs["Surface"])
+    say("backdrop", os.path.basename(str(path)), f"{image.size[0]}x{image.size[1]}", fit)
+    return image
+
+
 def find_sun(image, small=(512, 256)):
     """Where a 360° image has its sun: ``(direction, rgb, peak)``, or None when it has none.
     ``direction`` is the unit vector, in the image's own frame (before any rotation), TOWARD the
@@ -2502,6 +2585,8 @@ def build(job):
     figures = core["find_figures"]()
     w, h = int(job["width"]), int(job["height"])
     core["set_camera"](scene, job["camera"], w, h)
+    _DOF["amount"] = st.get("dof", 0.0)
+    set_dof(scene, job["camera"], _DOF["amount"])
     core["face_figures"](figures, job["camera"])
     ambience = job.get("ambience", "day")
     sun_dir = job.get("sun") if ambience == "day" else None
@@ -2557,6 +2642,12 @@ def build(job):
                          st.get("sun_angle"))
             except Exception as exc:               # never lose the render over it
                 say("hdri sun failed", exc)
+    elif st.get("backdrop"):
+        try:
+            set_backdrop(scene, st["backdrop"], st.get("backdrop_fit", "fill"), float(st.get("backdrop_strength", 1.0)),
+                         float(job["width"]) / max(1.0, float(job["height"])))
+        except Exception as exc:                   # never lose the render over it
+            say("backdrop failed", exc)
     ground = job.get("ground")
     if ground and not (st.get("hdri") and st.get("hdri_light", True)):
         world_ground(scene, st.get("ground_color") or ground["color"],
@@ -2685,6 +2776,7 @@ def serve(scene, figures):
         w, h = int(req["width"]), int(req["height"])
         r = scene.render
         core["set_camera"](scene, req["camera"], w, h)
+        set_dof(scene, req["camera"], _DOF["amount"])
         core["face_figures"](figures, req["camera"])
         core["set_samples"](scene, int(req.get("samples", 16)))
         r.resolution_x, r.resolution_y = w, h

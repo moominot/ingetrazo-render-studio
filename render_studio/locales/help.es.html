@@ -24,8 +24,7 @@ un cambio hace que la vista previa se actualice; los controles de <b>retoque</b>
 al instante, sin volver a renderizar. Cada control muestra su valor y una línea que dice qué hace.</p>
 
 <h4>El panel</h4>
-<p>Tres grupos: <b>Aspecto y luz</b> (la escena), <b>Fondo de 360°</b> y <b>Render final</b> (solo Renderizar usa
-el motor, la calidad y el ancho; la vista previa es siempre un borrador rápido).</p>
+<p>El panel tiene páginas: <b>Principal</b> (tus preajustes, el aspecto, el motor y la calidad), <b>Imagen</b> (exposición, calidez, saturación; <i>Efectos</i>: viñeta y profundidad de campo), <b>Cielo</b> (fondo, nubes y sol, suelo, y el lugar y la fecha del sol), <b>Luces</b>, <b>Sección</b> y <b>Salida</b>. Los controles sencillos están a la vista; el resto está plegado bajo <i>Avanzado</i> o <i>Efectos</i>. Solo Renderizar usa el motor, la calidad y el ancho; la vista previa es siempre un borrador rápido. <b>Preajustes</b>: <i>Guardar como preajuste…</i> guarda los ajustes con un nombre para usarlos en cualquier dibujo; <i>⋯</i> borra un preajuste o los exporta e importa como archivos para compartirlos. <b>Restablecer los ajustes al aspecto</b> devuelve todos los controles deslizantes a los valores del aspecto.</p>
 <table cellspacing='0' cellpadding='3' width='100%'>
 <tr><td valign='top'><b>Aspecto</b></td><td>La luz y el ambiente: véase la lista de abajo. Cambiarlo pone los valores propios de ese aspecto
 en los controles que fija.</td></tr>
@@ -38,6 +37,8 @@ hasta 2. No disponible mientras un fondo de 360° ilumina la escena.</td></tr>
 <tr><td valign='top'><b>Calidez</b></td><td>Color de la luz, de fría y azulada (-1) a cálida y amarillenta (+1).</td></tr>
 <tr><td valign='top'><b>Saturación</b></td><td>Intensidad de los colores en el render: 0 es blanco y negro, 1,6 es vivo.</td></tr>
 <tr><td valign='top'><b>Viñeta</b></td><td>Oscurece las esquinas del render para llevar la mirada al centro.</td></tr>
+<tr><td valign='top'><b>Profundidad de campo</b></td><td>Desenfoca lo que está más cerca o más lejos del centro de la vista, de 0 a 100 % (0 = todo nítido). Enfoca el punto al que mira la cámara.</td></tr>
+<tr><td valign='top'><b>Fondo</b></td><td><b>Cielo del aspecto</b>, un <b>panorama 360°</b> (ver abajo) o una <b>Imagen fija</b>: una imagen plana detrás del modelo que no se mueve al girar la vista; llena el marco (recortada), se ve entera (con el cielo del aspecto alrededor) o se estira. Si la pestaña Salida deja el cielo transparente, no se ve ningún fondo.</td></tr>
 <tr><td valign='top'><b>Motor</b></td><td><b>EEVEE</b> es rápido (unos 3 segundos). <b>Cycles</b> da la mejor
 calidad (unos 5 segundos en una tarjeta gráfica RTX, más lento sin ella), con un rebote de luz más verdadero.</td></tr>
 <tr><td valign='top'><b>Calidad</b></td><td>Borrador, Media o Alta: el número de muestras. EEVEE usa 16 / 64 / 128 y

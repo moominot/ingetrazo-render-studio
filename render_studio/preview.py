@@ -102,8 +102,12 @@ class ImageWindow(QWidget):
 
         # -- preview: the two switches of the live view, and Render
         self.bar_preview = QWidget()
-        pl = QHBoxLayout(self.bar_preview)
-        pl.setContentsMargins(0, 0, 0, 0)
+        pv = QVBoxLayout(self.bar_preview)
+        pv.setContentsMargins(0, 0, 0, 0)
+        self.more_row = QWidget()                 # the live view's options: folded, the usual use needs none
+        ml = QHBoxLayout(self.more_row)
+        ml.setContentsMargins(0, 0, 0, 0)
+        pl = ml
         st = QSettings()
         self.follow_camera_box = QCheckBox("Follow the camera")
         self.follow_camera_box.setToolTip("On: frames come while you move the 3D view, then a cleaner image when "
@@ -129,7 +133,6 @@ class ImageWindow(QWidget):
         self.summary.setStyleSheet("color: gray")
         self.summary.setToolTip("The engine, quality and width set in the panel: Render uses them "
                                 "(the preview is always a quick draft).")
-        pl.addWidget(self.summary)
         self.scene_btn = QPushButton("New scene from this view…")
         self.scene_btn.setToolTip("Saves the view this preview shows (the camera it keeps while Follow the camera is off, "
                                   "else the 3D view's) as a scene of the drawing, to come back to it or render it later.")
@@ -149,8 +152,23 @@ class ImageWindow(QWidget):
         self.render_btn.setToolTip("Makes the final picture with the panel's engine, quality and width, then "
                                    "shows the retouch tools and Save image….")
         self.render_btn.clicked.connect(lambda: self.panel and self.panel.render())
-        pl.addWidget(self.render_save_btn)
-        pl.addWidget(self.render_btn)
+        main = QHBoxLayout()
+        self.more_btn = QToolButton()
+        self.more_btn.setText("More")
+        self.more_btn.setCheckable(True)
+        self.more_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.more_btn.setStyleSheet("QToolButton { border: none; }")
+        self.more_btn.setToolTip("Live view options (follow the camera, follow changes), a new scene from this view, "
+                                 "and opening the scene in Blender")
+        self.more_btn.toggled.connect(self._more_toggled)
+        main.addWidget(self.more_btn)
+        main.addWidget(self.summary, 1)
+        main.addWidget(self.render_save_btn)
+        main.addWidget(self.render_btn)
+        pv.addLayout(main)
+        pv.addWidget(self.more_row)
+        self.more_btn.setChecked(str(st.value(_SETTINGS + "preview_more", "false")).lower() == "true")
+        self._more_toggled(self.more_btn.isChecked())
         lay.addWidget(self.bar_preview)
 
         # -- final: the retouch sliders and Save
@@ -160,18 +178,25 @@ class ImageWindow(QWidget):
         box = QGroupBox("Retouch the finished picture: instant, nothing is rendered again")
         form = QVBoxLayout(box)
         self.adj, self.adj_rows = {}, {}
+        from .widgets import Collapsible
+        self.retouch_more = Collapsible(tr("More"), "retouch_more")
+        self.retouch_more.form.setContentsMargins(0, 0, 0, 0)
         for key, label, lo, hi, fmt, hint in post.ADJUSTMENTS:
             s = slider(lo, hi, post.NEUTRAL[key])
             s.valueChanged.connect(self._refresh)
             row = SliderRow(s, fmt, hint)
             self.adj[key], self.adj_rows[key] = s, row
-            line = QHBoxLayout()
-            name = QLabel(label)
-            name.setMinimumWidth(96)
-            name.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-            line.addWidget(name)
-            line.addWidget(row, 1)
-            form.addLayout(line)
+            if key in post.SIMPLE:
+                line = QHBoxLayout()
+                name = QLabel(label)
+                name.setMinimumWidth(96)
+                name.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+                line.addWidget(name)
+                line.addWidget(row, 1)
+                form.addLayout(line)
+            else:
+                self.retouch_more.form.addRow(label, row)
+        form.addWidget(self.retouch_more)
         fl.addWidget(box)
         frow = QHBoxLayout()
         self.reset_btn = QPushButton("Reset retouch")
@@ -210,6 +235,14 @@ class ImageWindow(QWidget):
         self.note.setText(tr(NOTES[mode]) if has_panel or mode == "final" else "")
         if mode == "final":
             self.status.setText("")
+
+    def _more_toggled(self, on: bool) -> None:
+        self.more_btn.setArrowType(Qt.DownArrow if on else Qt.RightArrow)
+        self.more_row.setVisible(on)
+        try:
+            QSettings().setValue(_SETTINGS + "preview_more", "true" if on else "false")
+        except Exception:  # noqa: BLE001
+            pass
 
     def set_status(self, text: str) -> None:
         self.status.setText(text)

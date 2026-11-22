@@ -27,6 +27,8 @@ format is a public contract; ``version`` goes up if it ever changes::
         "hdri": null,                    # or {"path": "...", "rotation": 0..360 degrees,
                                          #     "brightness": stops, "height": metres (0.5..30, default 2.5),
                                          #     "light": true|false}
+        "backdrop": null,                # or {"path": "...", "fit": "fill"|"fit"|"stretch", "brightness": stops};
+                                         #     one flat picture behind the model (not with a 360° one)
         "output": {"size": "view", "height": 1080, "dpi": 300, "format": "png",
                    "jpeg_quality": 92, "transparent": false},      # see output.py
         "section": {"cap": true, "material": null, "light": "open"}   # see section.py
@@ -76,6 +78,7 @@ def clean(raw) -> dict | None:
         "ground_shadow": bool(raw.get("ground_shadow", True)),
         "sliders": sliders,
         "hdri": None,
+        "backdrop": None,
         "output": output.clean(raw.get("output")),
         "section": section.clean(raw.get("section")),
     }
@@ -86,6 +89,11 @@ def clean(raw) -> dict | None:
                        "brightness": _num(h.get("brightness"), -3.0, 3.0, 0.0),
                        "height": _num(h.get("height"), 0.5, 30.0, 2.5),
                        "light": bool(h.get("light", True))}
+    b = raw.get("backdrop")
+    if isinstance(b, dict) and isinstance(b.get("path"), str) and b["path"] and not out["hdri"]:
+        out["backdrop"] = {"path": b["path"],
+                           "fit": b.get("fit") if b.get("fit") in ("fill", "fit", "stretch") else "fill",
+                           "brightness": _num(b.get("brightness"), -3.0, 3.0, 0.0)}
     return out
 
 

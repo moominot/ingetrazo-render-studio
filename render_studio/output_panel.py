@@ -152,8 +152,9 @@ class OutputTab(QWidget):
         form2.addRow(self.file_note)
         lay.addLayout(form2)
 
-        lay.addWidget(_bold("Save every render"))
-        form3 = QFormLayout()
+        from .widgets import Collapsible
+        self.autosave_more = Collapsible(tr("Save every render"), "autosave_more")      # folded: not everyone needs it
+        form3 = self.autosave_more.form
         form3.setRowWrapPolicy(QFormLayout.WrapLongRows)
         self.autosave = QCheckBox("Save each render in a folder")
         self.autosave.setChecked(str(st.value(_SETTINGS + "autosave", "false")).lower() in ("true", "1"))
@@ -175,7 +176,9 @@ class OutputTab(QWidget):
         self.pattern.setToolTip("{document}: the document's name, {look}: the look, {date}: the date and time")
         self.pattern.editingFinished.connect(self._remember_autosave)
         form3.addRow("Name", self.pattern)
-        lay.addLayout(form3)
+        lay.addWidget(self.autosave_more)
+        if self.autosave.isChecked():
+            self.autosave_more.header.setChecked(True)
         lay.addStretch(1)
         self._layout()
 

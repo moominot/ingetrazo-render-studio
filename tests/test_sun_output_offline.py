@@ -198,7 +198,7 @@ for kind in L.TYPES:
     light_ops.add_free(app, L.new_light(kind, pos=(0, 0, 3)))
 panel.need_box.setVisible(False)
 panel.resize(240, 900); panel.show()
-for i, name in ((1, "Lights"), (2, "Sun"), (3, "Output")):
+for i, name in ((2, "Sky"), (3, "Lights"), (5, "Output")):
     panel.tabs.setCurrentIndex(i); qa.processEvents()
     area = panel.tabs.currentWidget()
     inner = area.widget()

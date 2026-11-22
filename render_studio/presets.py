@@ -87,7 +87,15 @@ SLIDERS = {
     "warmth": ("Warmth", -1.0, 1.0, 0.0, ""),
     "saturation": ("Saturation", 0.0, 1.6, None, "×"),
     "vignette": ("Vignette", 0.0, 0.6, None, ""),
+    "dof": ("Depth of field", 0.0, 1.0, 0.0, "%"),
 }
+
+
+#: The sliders always in view; the others are folded under «More adjustments».
+SIMPLE_SLIDERS = ("exposure_bias", "clouds", "sun_scale", "warmth", "saturation")
+#: The panel page each slider lives on (the Image tab holds the picture's, the Sky tab the sky's).
+SLIDER_PAGE = {"exposure_bias": "image", "warmth": "image", "saturation": "image", "vignette": "image",
+               "dof": "image", "clouds": "sky", "sun_scale": "sky"}
 
 
 #: How each panel slider's value reads, and what it does (a gray line under it). They change the
@@ -95,7 +103,7 @@ SLIDERS = {
 #: change the finished picture instead.
 SLIDER_FORMATS = {
     "exposure_bias": "{:+.1f} EV", "clouds": "{:.0%}", "sun_scale": "×{:.2f}",
-    "warmth": "{:+.2f}", "saturation": "×{:.2f}", "vignette": "{:.2f}",
+    "warmth": "{:+.2f}", "saturation": "×{:.2f}", "vignette": "{:.2f}", "dof": "{:.0%}",
 }
 SLIDER_HINTS = {
     "exposure_bias": "Brighter or darker, in stops (on top of the auto exposure)",
@@ -104,6 +112,7 @@ SLIDER_HINTS = {
     "warmth": "Colour of the light: cooler, bluish ← → warmer, yellowish",
     "saturation": "How vivid the colours are in the render",
     "vignette": "Darkens the corners of the render",
+    "dof": "Blurs what is nearer or farther than the middle of the view (0 = everything sharp)",
 }
 
 
@@ -125,4 +134,6 @@ def apply_sliders(block: dict, sliders: dict) -> dict:
         out["saturation"] = float(sliders["saturation"])
     if sliders.get("vignette") is not None:
         out["vignette"] = float(sliders["vignette"])
+    if sliders.get("dof") is not None:
+        out["dof"] = max(0.0, min(1.0, float(sliders["dof"])))
     return out

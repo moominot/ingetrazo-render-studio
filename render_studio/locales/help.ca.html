@@ -24,8 +24,7 @@ un canvi fa que la previsualització s'actualitzi; els controls de <b>retoc</b> 
 a l'instant, sense tornar a renderitzar. Cada control mostra el seu valor i una línia que diu què fa.</p>
 
 <h4>El tauler</h4>
-<p>Tres grups: <b>Aspecte i llum</b> (l'escena), <b>Fons de 360°</b> i <b>Render final</b> (només Renderitza usa
-el motor, la qualitat i l'amplada; la previsualització és sempre un esborrany ràpid).</p>
+<p>El tauler té pàgines: <b>Principal</b> (els teus predefinits, l'aspecte, el motor i la qualitat), <b>Imatge</b> (exposició, escalfor, saturació; <i>Efectes</i>: vinyeta i profunditat de camp), <b>Cel</b> (fons, núvols i sol, terra, i el lloc i la data del sol), <b>Llums</b>, <b>Secció</b> i <b>Sortida</b>. Els controls senzills són a la vista; la resta és plegada sota <i>Avançat</i> o <i>Efectes</i>. Només Renderitza usa el motor, la qualitat i l'amplada; la previsualització és sempre un esborrany ràpid. <b>Predefinits</b>: <i>Desa com a predefinit…</i> guarda els ajustaments amb un nom per fer-los servir en qualsevol dibuix; <i>⋯</i> esborra un predefinit o els exporta i importa com a fitxers per compartir-los. <b>Restableix els ajustaments a l'aspecte</b> torna tots els controls lliscants als valors de l'aspecte.</p>
 <table cellspacing='0' cellpadding='3' width='100%'>
 <tr><td valign='top'><b>Aspecte</b></td><td>La llum i l'ambient: vegeu la llista de sota. Canviar-lo posa els valors propis d'aquest aspecte
 als controls que fixa.</td></tr>
@@ -38,6 +37,8 @@ fins a 2. No disponible mentre un fons de 360° il·lumina l'escena.</td></tr>
 <tr><td valign='top'><b>Calidesa</b></td><td>Color de la llum, de freda i blavosa (-1) a càlida i groguenca (+1).</td></tr>
 <tr><td valign='top'><b>Saturació</b></td><td>Intensitat dels colors al render: 0 és blanc i negre, 1,6 és viu.</td></tr>
 <tr><td valign='top'><b>Vinyeta</b></td><td>Enfosqueix les cantonades del render per portar la mirada al centre.</td></tr>
+<tr><td valign='top'><b>Profunditat de camp</b></td><td>Esvaeix el que és més a prop o més lluny del centre de la vista, de 0 a 100 % (0 = tot nítid). Enfoca el punt cap on mira la càmera.</td></tr>
+<tr><td valign='top'><b>Fons</b></td><td><b>Cel de l'aspecte</b>, un <b>panorama 360°</b> (vegeu a sota) o una <b>Imatge fixa</b>: una imatge plana darrere del model que no es mou quan gira la vista; omple el marc (retallada), es veu sencera (amb el cel de l'aspecte al voltant) o s'estira. Si la pestanya Sortida deixa el cel transparent, no es veu cap fons.</td></tr>
 <tr><td valign='top'><b>Motor</b></td><td><b>EEVEE</b> és ràpid (uns 3 segons). <b>Cycles</b> dona la millor
 qualitat (uns 5 segons en una targeta gràfica RTX, més lent sense), amb un rebot de llum més veritable.</td></tr>
 <tr><td valign='top'><b>Qualitat</b></td><td>Esborrany, Mitjana o Alta: el nombre de mostres. EEVEE usa 16 / 64 / 128 i
