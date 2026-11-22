@@ -16,6 +16,7 @@ format is a public contract; ``version`` goes up if it ever changes::
         "quality": 1,                    # 0 draft, 1 medium, 2 high
         "width": 1920,                   # pixels; the height follows the 3D view
         "ground": true,                  # the generated ground under the model
+        "ground_shadow": true,           # with no ground: an invisible floor that only shows the model's shadow
         "sliders": {                     # the panel's sliders
           "exposure_bias": 0.0,          # stops (EV)
           "clouds": 0.25,                # 0..1
@@ -72,6 +73,7 @@ def clean(raw) -> dict | None:
         "quality": int(_num(raw.get("quality"), 0, 2, 1)),
         "width": int(_num(raw.get("width"), 320, 16384, 1920)),
         "ground": bool(raw.get("ground", True)),
+        "ground_shadow": bool(raw.get("ground_shadow", True)),
         "sliders": sliders,
         "hdri": None,
         "output": output.clean(raw.get("output")),

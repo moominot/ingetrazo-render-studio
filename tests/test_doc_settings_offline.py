@@ -113,4 +113,19 @@ p5 = P.StudioPanel(doc)
 ok(abs(P.apply_hdri({}, {"path": "x"})["hdri_height"] - 2.5) < 1e-6 and abs(SS.clean({"hdri": {"path": f}})["hdri"]["height"] - 2.5) < 1e-6,
    "without it the default is 2.5 m")
 ok(SS.clean({"hdri": {"path": f, "height": 999}})["hdri"]["height"] == 30.0, "an absurd height is clamped")
+# shadow on the floor: on by default, only asked for when there is no generated ground, kept in the document
+ok(SS.clean({"look": "clear"})["ground_shadow"] is True and p4.ground_shadow.isEnabled(), "the shadow on the floor is on by default, and offered when the ground is off")
+panel.ground.setChecked(True)
+ok(not panel.ground_shadow.isEnabled(), "...and not offered while a ground is generated (it has its own shadow)")
+panel.ground.setChecked(False); panel.ground_shadow.setChecked(False)
+panel._save_timer.stop(); panel._save_document_settings()
+ok(doc.scene.plugin_data["render_studio"]["settings"]["ground_shadow"] is False, "switching it off is saved in the document")
+seen2 = []
+P.write_studio_job = lambda *a, **k: (seen2.append((k.get("ground"), k.get("ground_shadow"))), (_ for _ in ()).throw(RuntimeError("stop")))[0]
+try:
+    try: panel.live_job(__import__("pathlib").Path(tempfile.mkdtemp()), 320, 200)
+    except RuntimeError: pass
+finally:
+    P.write_studio_job = real_write
+ok(seen2 == [(False, False)], f"both reach the live job ({seen2})")
 print("FAILED" if fails else "ALL OK"); sys.exit(1 if fails else 0)

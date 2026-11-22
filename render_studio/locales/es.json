@@ -144,6 +144,8 @@
 "Brightness": "Brillo",
 "Lights the scene": "Ilumina la escena",
 "Generated ground": "Suelo generado",
+"Shadow on the floor": "Sombra en el suelo",
+"With no generated ground: the model still throws its shadow on the floor, at its foot, and nothing else of the floor is drawn (the background, or the 360° image, shows through). Needs the sun or a light that casts shadows.": "Sin suelo generado: el modelo sigue proyectando su sombra en el suelo, a sus pies, y no se dibuja nada más del suelo (se ve el fondo, o la imagen 360°). Hace falta el sol o una luz que proyecte sombras.",
 "Viewpoint height": "Altura del punto de vista",
 "How high above the ground the image was taken from (a street panorama: about 2.5 m; a roof or a drone: more). It sets how the ground of the image is laid under the model: wrong, and the ground looks stretched or too close.": "A qué altura sobre el suelo se hizo la imagen (un panorama de calle: unos 2,5 m; una azotea o un dron: más). Determina cómo se pone el suelo de la imagen bajo el modelo: si no es correcta, el suelo se ve alargado o demasiado cerca.",
 "On: a ground is made under the model, with the look's colour, melting into the horizon. Off: no ground is added (the model's own terrain, or the 360° background's ground, shows).": "Activado: se hace un suelo bajo el modelo, del color del aspecto, que se funde con el horizonte. Desactivado: no se añade ningún suelo (se ve el terreno del propio modelo, o el suelo del fondo 360°).",

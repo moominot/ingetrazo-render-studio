@@ -512,6 +512,117 @@ def _model_centre(ground):
     return (lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0
 
 
+def _unshadowed_light(scene, z, where):
+    """How lit a bare floor is where nothing shades it (a small probe floor far from the model, rendered
+    once): the value the shadow is measured against, in EEVEE."""
+    import numpy as np
+    r = scene.render
+    keep = (r.resolution_x, r.resolution_y, r.resolution_percentage, r.filepath, r.image_settings.file_format,
+            scene.camera, scene.view_settings.exposure, getattr(r, "use_compositing", None))
+    tmp = os.path.join(os.path.dirname(r.filepath) or HERE, "_floor.exr")
+    mat = bpy.data.materials.new("IngeTrazo floor probe")
+    if hasattr(mat, "use_nodes"):
+        mat.use_nodes = True
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    nodes.clear()
+    diff = nodes.new("ShaderNodeBsdfDiffuse")
+    diff.inputs["Color"].default_value = (1.0, 1.0, 1.0, 1.0)
+    rgb = nodes.new("ShaderNodeShaderToRGB")
+    emit = nodes.new("ShaderNodeEmission")
+    out = nodes.new("ShaderNodeOutputMaterial")
+    links.new(diff.outputs["BSDF"], rgb.inputs["Shader"])
+    links.new(rgb.outputs["Color"], emit.inputs["Color"])
+    links.new(emit.outputs["Emission"], out.inputs["Surface"])
+    bpy.ops.mesh.primitive_plane_add(size=4.0, location=(where, where, z))
+    probe = bpy.context.active_object
+    probe.name = "IngeTrazo floor probe"
+    probe.data.materials.append(mat)
+    cam = bpy.data.objects.new("IngeTrazo floor probe cam", bpy.data.cameras.new("IngeTrazo floor probe cam"))
+    scene.collection.objects.link(cam)
+    cam.data.type = "ORTHO"
+    cam.data.ortho_scale = 1.0
+    cam.location = (where, where, z + 5.0)
+    value = 1.0
+    try:
+        scene.camera = cam
+        r.resolution_x = r.resolution_y = 4
+        r.resolution_percentage = 100
+        r.image_settings.file_format = "OPEN_EXR"
+        r.filepath = tmp
+        scene.view_settings.exposure = 0.0
+        if keep[7] is not None:
+            r.use_compositing = False
+        bpy.ops.render.render(write_still=True)
+        img = bpy.data.images.load(tmp)
+        px = np.empty(img.size[0] * img.size[1] * 4, dtype=np.float32)
+        img.pixels.foreach_get(px)
+        px = px.reshape(-1, 4)[:, :3]
+        value = float(px.mean(axis=0) @ np.array([0.2126, 0.7152, 0.0722]))
+        bpy.data.images.remove(img)
+    finally:
+        r.resolution_x, r.resolution_y, r.resolution_percentage, r.filepath, r.image_settings.file_format = keep[:5]
+        scene.camera = keep[5]
+        scene.view_settings.exposure = keep[6]
+        if keep[7] is not None:
+            r.use_compositing = keep[7]
+        for ob, store in ((probe, bpy.data.meshes), (cam, bpy.data.cameras)):
+            data = ob.data
+            bpy.data.objects.remove(ob, do_unlink=True)
+            if data is not None and data.users == 0:
+                store.remove(data)
+        bpy.data.materials.remove(mat)
+    return max(value, 1e-4)
+
+
+def add_shadow_floor(scene, z, size):
+    """No ground is made, but the model's shadow still falls on the floor: an invisible plane that only
+    shows shadows, so the sky or the 360° image shows through everywhere else. Cycles has a shadow catcher;
+    EEVEE does not honour it, so there the floor is a black film whose opacity is how much darker the light
+    is than on a bare floor (measured once, far from the model)."""
+    bpy.ops.mesh.primitive_plane_add(size=float(size), location=(0.0, 0.0, float(z)))
+    floor = bpy.context.active_object
+    floor.name = "IngeTrazo shadow floor"
+    floor.is_shadow_catcher = True
+    if scene.render.engine == "CYCLES":
+        say("shadow floor", f"z {z:.2f}", "catcher")
+        return floor
+    lit = _unshadowed_light(scene, float(z), float(size) * 0.05)
+    mat = bpy.data.materials.new("IngeTrazo shadow floor")
+    if hasattr(mat, "use_nodes"):
+        mat.use_nodes = True
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    nodes.clear()
+    diff = nodes.new("ShaderNodeBsdfDiffuse")
+    diff.inputs["Color"].default_value = (1.0, 1.0, 1.0, 1.0)
+    rgb = nodes.new("ShaderNodeShaderToRGB")
+    bw = nodes.new("ShaderNodeRGBToBW")
+    ratio = nodes.new("ShaderNodeMath"); ratio.operation = "DIVIDE"
+    ratio.inputs[1].default_value = lit
+    dark = nodes.new("ShaderNodeMath"); dark.operation = "SUBTRACT"; dark.use_clamp = True
+    dark.inputs[0].default_value = 1.0
+    clear = nodes.new("ShaderNodeBsdfTransparent")
+    black = nodes.new("ShaderNodeEmission")
+    black.inputs["Color"].default_value = (0.0, 0.0, 0.0, 1.0)
+    mix = nodes.new("ShaderNodeMixShader")
+    out = nodes.new("ShaderNodeOutputMaterial")
+    links.new(diff.outputs["BSDF"], rgb.inputs["Shader"])
+    links.new(rgb.outputs["Color"], bw.inputs["Color"])
+    links.new(bw.outputs["Val"], ratio.inputs[0])
+    links.new(ratio.outputs["Value"], dark.inputs[1])
+    links.new(dark.outputs["Value"], mix.inputs["Fac"])
+    links.new(clear.outputs["BSDF"], mix.inputs[1])
+    links.new(black.outputs["Emission"], mix.inputs[2])
+    links.new(mix.outputs["Shader"], out.inputs["Surface"])
+    if hasattr(mat, "surface_render_method"):
+        mat.surface_render_method = "BLENDED"
+    elif hasattr(mat, "blend_method"):
+        mat.blend_method = "BLEND"
+    floor.data.materials.append(mat)
+    if hasattr(floor, "visible_shadow"):
+        floor.visible_shadow = False              # it is a film: it casts nothing of its own
+    say("shadow floor", f"z {z:.2f}", f"film (bare floor reads {lit:.3f})")
+    return floor
+
 def haze_ground(scene, near=120.0, far=1200.0, eye_height=None):
     """The ground melts into the sky's own horizon colour with distance, so
     the far edge of the ground plane is no hard line against the sky (the
@@ -2514,6 +2625,8 @@ def build(job):
     set_look(scene, st.get("looks") or ["AgX - Medium High Contrast", "Medium High Contrast"],
              st.get("white_balance"), st.get("tint"))
     _expose(scene, job)
+    if st.get("shadow_catcher") and not ground:          # after the exposure: the floor is no part of what is metered
+        add_shadow_floor(scene, float(st["shadow_catcher"]["z"]), float(st["shadow_catcher"]["size"]))
     last = {"text": None}
 
     def _stats(text, *_a):

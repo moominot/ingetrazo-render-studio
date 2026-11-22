@@ -113,6 +113,7 @@ def apply_hdri(block: dict, hdri: dict | None) -> dict:
 
 def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, *,
                      engine: str, quality: int, width: int, height: int, ground: bool = True,
+                     ground_shadow: bool = False,
                      hdri: dict | None = None, materials: dict | None = None,
                      serve: bool = False, live: bool = False, reuse_model: bool = False,
                      output: dict | None = None, doc_path=None, section_opts: dict | None = None,
@@ -174,6 +175,16 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
     out_of_file = [g for g in proxies.shown_proxies(scene) if g not in missing] if placed else []
     # The ground is sized and set at the model's foot with the proxies in it.
     ground_block = rb.ground_dict(scene) if (ground and out_of_file) else None
+    if ground_shadow and not ground:
+        # No ground is made, but the model still throws its shadow on the floor: an invisible plane
+        # at the model's foot that only shows shadows (Blender's shadow catcher).
+        try:
+            gd = rb.ground_dict(scene)
+        except Exception:  # noqa: BLE001 - never stops a render: no shadow plane
+            _log.exception("shadow ground not sized")
+            gd = None
+        if gd:
+            block["shadow_catcher"] = {"z": gd["z"], "size": gd["size"]}
     try:
         symbols = studio_lights.symbols_out_of_render(scene)   # an imported light's component
     except Exception:  # noqa: BLE001 - never stops a render: the symbols, as drawn
@@ -343,6 +354,16 @@ class StudioPanel(QWidget):
         self.ground.setChecked(str(st.value(_SETTINGS + "ground", "true")).lower() != "false")
         self.ground.toggled.connect(lambda on: QSettings().setValue(_SETTINGS + "ground", "true" if on else "false"))
         form.addRow("", self.ground)
+        self.ground_shadow = QCheckBox("Shadow on the floor")
+        self.ground_shadow.setToolTip(
+            "With no generated ground: the model still throws its shadow on the floor, at its foot, and "
+            "nothing else of the floor is drawn (the background, or the 360° image, shows through). "
+            "Needs the sun or a light that casts shadows.")
+        self.ground_shadow.setChecked(str(st.value(_SETTINGS + "ground_shadow", "true")).lower() != "false")
+        self.ground_shadow.toggled.connect(lambda on: QSettings().setValue(_SETTINGS + "ground_shadow", "true" if on else "false"))
+        self.ground.toggled.connect(lambda on: self.ground_shadow.setEnabled(not on))
+        self.ground_shadow.setEnabled(not self.ground.isChecked())
+        form.addRow("", self.ground_shadow)
         self.preset.currentIndexChanged.connect(self._preset_changed)
         col.addWidget(box_look)
 
@@ -684,6 +705,7 @@ class StudioPanel(QWidget):
             self.app.scene, self.app.viewport.camera, work, self.preset.currentData(),
             self.slider_values(), engine=self.live_engine(), quality=0, width=width,
             height=height, hdri=self.hdri_settings(), ground=self.ground.isChecked(),
+            ground_shadow=self.ground_shadow.isChecked(),
             materials=self.material_specs() if materials is None else materials, serve=True,
             live=True, reuse_model=reuse_model, doc_path=self.doc_path(),
             section_opts=self.section_tab.settings(), progress=self._export_progress())
@@ -751,7 +773,7 @@ class StudioPanel(QWidget):
                 self.app.viewport.scene, self.render_camera(), work, self.preset.currentData(),
                 self.slider_values(), engine=self.engine.currentData(), quality=self.quality.currentIndex(),
                 width=width, height=height, hdri=self.hdri_settings(), ground=self.ground.isChecked(),
-                materials=self.material_specs(),
+                ground_shadow=self.ground_shadow.isChecked(), materials=self.material_specs(),
                 output=self.output_tab.settings(), doc_path=self.doc_path(),
                 section_opts=self.section_tab.settings(), progress=self._export_progress())
             data = json.loads(job.read_text(encoding="utf-8"))
@@ -959,6 +981,7 @@ class StudioPanel(QWidget):
             sl.valueChanged.connect(self._schedule_save)
         self.hdri_light.toggled.connect(self._schedule_save)
         self.ground.toggled.connect(self._schedule_save)
+        self.ground_shadow.toggled.connect(self._schedule_save)
         self._scene_id = id(self.app.scene) if hasattr(self.app, "scene") else None
         self._known = self._stored_settings()
         if self._known is not None:
@@ -983,6 +1006,7 @@ class StudioPanel(QWidget):
             "section": self.section_tab.settings(),
             "sliders": {k: round(_value(s), 4) for k, s in self.sliders.items()},
             "ground": self.ground.isChecked(),
+            "ground_shadow": self.ground_shadow.isChecked(),
             "hdri": ({"path": hdri, "rotation": round(_value(self.hdri_rotation), 3),
                       "brightness": round(_value(self.hdri_strength), 3),
                       "height": round(_value(self.hdri_height), 2),
@@ -997,7 +1021,7 @@ class StudioPanel(QWidget):
         if data is None:
             return
         self._applying = True
-        widgets = [self.preset, self.engine, self.quality, self.width, self.hdri, self.ground,
+        widgets = [self.preset, self.engine, self.quality, self.width, self.hdri, self.ground, self.ground_shadow,
                    self.hdri_rotation, self.hdri_strength, self.hdri_height, self.hdri_light,
                    *self.sliders.values()]
         for w in widgets:
@@ -1008,6 +1032,8 @@ class StudioPanel(QWidget):
             self.quality.setCurrentIndex(data["quality"])
             self.width.setValue(data["width"])
             self.ground.setChecked(bool(data.get("ground", True)))
+            self.ground_shadow.setChecked(bool(data.get("ground_shadow", True)))
+            self.ground_shadow.setEnabled(not self.ground.isChecked())
             self.output_tab.apply(data.get("output"))
             self.section_tab.apply(data.get("section"))
             block, _amb = presets.studio(self.preset.currentData())
@@ -1242,6 +1268,7 @@ class StudioPanel(QWidget):
                 self.preset.currentData(), self.slider_values(),
                 engine=self.engine.currentData(), quality=self.quality.currentIndex(),
                 width=width, height=height, hdri=self.hdri_settings(), ground=self.ground.isChecked(),
+                ground_shadow=self.ground_shadow.isChecked(),
                 materials=self.material_specs(), output=out, doc_path=self.doc_path(),
                 section_opts=self.section_tab.settings(), progress=self._export_status)
         except Exception as exc:  # noqa: BLE001 - say it, never crash the app

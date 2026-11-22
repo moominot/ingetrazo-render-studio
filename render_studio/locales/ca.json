@@ -144,6 +144,8 @@
 "Brightness": "Brillantor",
 "Lights the scene": "Il·lumina l'escena",
 "Generated ground": "Terra generat",
+"Shadow on the floor": "Ombra al terra",
+"With no generated ground: the model still throws its shadow on the floor, at its foot, and nothing else of the floor is drawn (the background, or the 360° image, shows through). Needs the sun or a light that casts shadows.": "Sense terra generat: el model continua projectant l'ombra al terra, als seus peus, i no es dibuixa res més del terra (es veu el fons, o la imatge 360°). Cal el sol o una llum que projecti ombres.",
 "Viewpoint height": "Alçada del punt de vista",
 "How high above the ground the image was taken from (a street panorama: about 2.5 m; a roof or a drone: more). It sets how the ground of the image is laid under the model: wrong, and the ground looks stretched or too close.": "A quina alçada sobre el terra es va fer la imatge (un panorama de carrer: uns 2,5 m; una teulada o un dron: més). Determina com es posa el terra de la imatge sota el model: si no és correcta, el terra es veu allargat o massa a prop.",
 "On: a ground is made under the model, with the look's colour, melting into the horizon. Off: no ground is added (the model's own terrain, or the 360° background's ground, shows).": "Activat: es fa un terra sota el model, del color de l'aspecte, que es fon amb l'horitzó. Desactivat: no s'hi afegeix cap terra (es veu el terreny del propi model, o el terra del fons 360°).",

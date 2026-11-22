@@ -354,7 +354,10 @@ Any equirectangular image (.hdr, .exr, .jpg) as the world:
 - The ground melts into the image's horizon, and shows the image's own ground (projected as a dome would,
   from an eye in the middle of the model): **Viewpoint height** is how high above the ground the image was
   taken (a street panorama about 2.5 m; a roof or a drone, more). Without it the ground would be the
-  horizon row stretched in vertical stripes. Untick **Generated ground** (Look and light) to render\n  without it: the model's own terrain, or the image's ground, shows.
+  horizon row stretched in vertical stripes. Untick **Generated ground** (Look and light) to render
+  without it: the model's own terrain, or the image's ground, shows. **Shadow on the floor** (on by default
+  then) keeps the model's shadow on an invisible floor at its foot, with no ground and no material, in
+  Cycles and EEVEE.
 
 Blender's own eight HDRIs (CC0, Poly Haven) are offered in the list. They
 are 1K: good light, but soft behind the model. For a sharp background,
