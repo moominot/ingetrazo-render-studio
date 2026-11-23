@@ -190,7 +190,6 @@ class LiveSession(QObject):
             req["lines"] = str(lines)
         self._final = (on_done, on_refused)
         self._busy = True
-        self._timer.stop()                     # the view does not follow the camera while the picture is made
         self._proc.write((json.dumps(req) + chr(10)).encode())
         return True
 
