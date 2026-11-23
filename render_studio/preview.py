@@ -91,16 +91,26 @@ class ImageWindow(QWidget):
         mid = QHBoxLayout()
         mid.setContentsMargins(0, 0, 0, 0)
         mid.addWidget(self.view, 1)
-        # The finished picture's tools (retouch, outlines) live in a bar beside it that can be hidden: more picture when it is not needed.
-        self.side = QScrollArea()
-        self.side.setWidgetResizable(True)
-        self.side.setFrameShape(QFrame.NoFrame)
-        self.side.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        # The finished picture's tools (retouch, outlines and the buttons that go with them) are a panel beside it, which a handle on its
+        # edge (as IngeTrazo's own side trays have) hides and shows: more picture when it is not needed.
+        self.side = QWidget()
         self.side.setFixedWidth(SIDE_WIDTH)
+        side_outer = QVBoxLayout(self.side)
+        side_outer.setContentsMargins(0, 0, 0, 0)
+        side_outer.setSpacing(6)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         side_body = QWidget()
         self.side_lay = QVBoxLayout(side_body)
         self.side_lay.setContentsMargins(0, 0, 6, 0)
-        self.side.setWidget(side_body)
+        scroll.setWidget(side_body)
+        side_outer.addWidget(scroll, 1)
+        self.side_footer = QVBoxLayout()
+        self.side_footer.setContentsMargins(0, 0, 6, 0)
+        self.side_footer.setSpacing(4)
+        side_outer.addLayout(self.side_footer)
         mid.addWidget(self.side)
         lay.addLayout(mid, 1)
 
@@ -192,44 +202,25 @@ class ImageWindow(QWidget):
         self._more_toggled(self.more_btn.isChecked())
         lay.addWidget(self.bar_preview)
 
-        # -- final: the retouch sliders and Save
-        self.bar_final = QWidget()
-        fl = QVBoxLayout(self.bar_final)
-        fl.setContentsMargins(0, 0, 0, 0)
+        # -- final: the retouch sliders, the outlines and Save, all in the side panel (everything in view: there is room)
         box = QGroupBox(tr("Retouch: instant, nothing is rendered again"))
         form = QVBoxLayout(box)
         self.adj, self.adj_rows = {}, {}
-        from .widgets import Collapsible
-        self.retouch_more = Collapsible(tr("More"), "retouch_more")
-        self.retouch_more.form.setContentsMargins(0, 0, 0, 0)
         for key, label, lo, hi, fmt, hint in post.ADJUSTMENTS:
-            s = slider(lo, hi, post.NEUTRAL[key])
-            s.valueChanged.connect(self._refresh)
-            row = SliderRow(s, fmt, hint)
-            self.adj[key], self.adj_rows[key] = s, row
-            if key in post.SIMPLE:
-                line = QHBoxLayout()
-                name = QLabel(label)
-                name.setMinimumWidth(96)
-                name.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-                line.addWidget(name)
-                line.addWidget(row, 1)
-                form.addLayout(line)
-            else:
-                self.retouch_more.form.addRow(label, row)
-        form.addWidget(self.retouch_more)
+            s_ = slider(lo, hi, post.NEUTRAL[key])
+            s_.valueChanged.connect(self._refresh)
+            row = SliderRow(s_, fmt, hint)
+            self.adj[key], self.adj_rows[key] = s_, row
+            line = QHBoxLayout()
+            name = QLabel(label)
+            name.setMinimumWidth(96)
+            name.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+            line.addWidget(name)
+            line.addWidget(row, 1)
+            form.addLayout(line)
         self.side_lay.addWidget(box)
         self._build_lines_box(self.side_lay)
         self.side_lay.addStretch(1)
-        frow = QHBoxLayout()
-        self.side_btn = QToolButton()
-        self.side_btn.setText(tr("Retouch"))
-        self.side_btn.setCheckable(True)
-        self.side_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        self.side_btn.setToolTip(tr("Shows or hides the bar of the retouching and the outlines"))
-        self.side_btn.setChecked(str(QSettings().value(_SETTINGS + "side_open", "true")).lower() != "false")
-        self.side_btn.toggled.connect(self._side_toggled)
-        frow.addWidget(self.side_btn)
         self.reset_btn = QPushButton("Reset retouch")
         self.reset_btn.setToolTip("Puts every retouch slider back to neutral (the picture as rendered)")
         self.reset_btn.clicked.connect(self._reset)
@@ -241,14 +232,92 @@ class ImageWindow(QWidget):
         self.save_btn.setToolTip("Saves the picture as you see it (with the retouching) as PNG or JPEG")
         self.save_btn.setDefault(True)
         self.save_btn.clicked.connect(self._save)
-        frow.addWidget(self.reset_btn)
-        frow.addWidget(self.back_btn)
-        frow.addStretch(1)
-        frow.addWidget(self.save_btn)
-        fl.addLayout(frow)
-        lay.addWidget(self.bar_final)
-        self._side_toggled(self.side_btn.isChecked())
+        pair = QHBoxLayout()
+        pair.addWidget(self.reset_btn)
+        pair.addWidget(self.back_btn)
+        self.side_footer.addLayout(pair)
+        self.side_footer.addWidget(self.save_btn)
+        self.bar_final = self.side                  # (the final picture's tools: the tests and the panel ask for it by this name)
+        self._side_open = str(QSettings().value(_SETTINGS + "side_open", "true")).lower() != "false"
+        self._build_side_handle()
         self.set_mode("final" if panel is None else "preview")
+
+    # -- the side panel's handle: IngeTrazo's own (a chevron on the line between the picture and the panel) --------------------
+    def _build_side_handle(self) -> None:
+        from PySide6.QtCore import QSize
+        h = QToolButton(self)
+        h.setFixedSize(14, 56)
+        h.setIconSize(QSize(12, 12))
+        h.setAutoRaise(True)
+        h.setCursor(Qt.PointingHandCursor)
+        h.clicked.connect(lambda: self._set_side_open(not self._side_open))
+        qss = ("QToolButton {{ background: palette(mid); border: none; border-radius: 4px; }}"
+               "QToolButton:hover {{ background: rgb({accent_rgb}); }}")
+        try:
+            from views.theme import style as theme_style          # the accent colour of Preferences
+            theme_style(h, qss)
+        except Exception:  # noqa: BLE001 - outside IngeTrazo (tests): the palette's highlight
+            h.setStyleSheet(qss.replace("rgb({accent_rgb})", "palette(highlight)").replace("{{", "{").replace("}}", "}"))
+        self.side_handle = h
+        self._apply_side()
+
+    def _chevron(self, right: bool):
+        from PySide6.QtCore import QPointF
+        from PySide6.QtGui import QIcon, QPainter, QPen, QPixmap
+        from PySide6.QtWidgets import QApplication
+        dpr = self.devicePixelRatioF()
+        pm = QPixmap(int(24 * dpr), int(24 * dpr))
+        pm.fill(Qt.transparent)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        p.scale(dpr, dpr)
+        pen = QPen(QApplication.palette().windowText().color(), 2.6)
+        pen.setCapStyle(Qt.RoundCap)
+        pen.setJoinStyle(Qt.RoundJoin)
+        p.setPen(pen)
+        x0, x1 = (8.0, 16.0) if right else (16.0, 8.0)
+        p.drawPolyline([QPointF(x0, 5.0), QPointF(x1, 12.0), QPointF(x0, 19.0)])
+        p.end()
+        pm.setDevicePixelRatio(dpr)
+        return QIcon(pm)
+
+    def _set_side_open(self, on: bool) -> None:
+        self._side_open = bool(on)
+        try:
+            QSettings().setValue(_SETTINGS + "side_open", "true" if on else "false")
+        except Exception:  # noqa: BLE001
+            pass
+        self._apply_side()
+
+    def _apply_side(self) -> None:
+        """The side panel shown (a finished picture, panel open) or folded; the handle's chevron points the way it will go."""
+        from PySide6.QtCore import QTimer
+        final = self.mode == "final"
+        self.side.setVisible(final and self._side_open)
+        self.side_handle.setVisible(final)
+        self.side_handle.setIcon(self._chevron(self._side_open))
+        self.side_handle.setToolTip(tr("Hide the retouch and outlines panel") if self._side_open else tr("Show the retouch and outlines panel"))
+        QTimer.singleShot(0, self._place_side_handle)
+
+    def _place_side_handle(self) -> None:
+        """On the line between the picture and the panel, half-way down; at the window's edge when the panel is folded."""
+        from PySide6.QtCore import QPoint
+        h = getattr(self, "side_handle", None)
+        if h is None or not h.isVisible():
+            return
+        edge = self.view.mapTo(self, QPoint(self.view.width(), 0))
+        x = max(0, min(edge.x() - h.width() // 2, self.width() - h.width()))
+        h.move(x, max(0, edge.y() + (self.view.height() - h.height()) // 2))
+        h.raise_()
+
+    def resizeEvent(self, ev) -> None:           # noqa: N802 (Qt)
+        super().resizeEvent(ev)
+        self._place_side_handle()
+
+    def showEvent(self, ev) -> None:             # noqa: N802 (Qt)
+        super().showEvent(ev)
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, self._place_side_handle)
 
     # -- the outlines: vectors until the picture is saved ----------------------------------------
     def _build_lines_box(self, parent_layout) -> None:
@@ -352,8 +421,8 @@ class ImageWindow(QWidget):
         self.bar_preview.setVisible(mode in ("preview", "rendering") and has_panel)
         for w in (self.render_btn, self.render_save_btn, self.follow_camera_box, self.follow_changes_box):
             w.setEnabled(mode == "preview")
-        self.bar_final.setVisible(mode == "final")
-        self.side.setVisible(mode == "final" and (not hasattr(self, "side_btn") or self.side_btn.isChecked()))
+        if hasattr(self, "side_handle"):
+            self._apply_side()
         self.back_btn.setVisible(has_panel)
         self.bar.setVisible(mode == "rendering")
         self.cancel_btn.setVisible(mode == "rendering" and has_panel)
@@ -362,14 +431,6 @@ class ImageWindow(QWidget):
         self.note.setText(tr(NOTES[mode]) if has_panel or mode == "final" else "")
         if mode == "final":
             self.status.setText("")
-
-    def _side_toggled(self, on: bool) -> None:
-        self.side_btn.setArrowType(Qt.RightArrow if on else Qt.LeftArrow)
-        self.side.setVisible(self.mode == "final" and on)
-        try:
-            QSettings().setValue(_SETTINGS + "side_open", "true" if on else "false")
-        except Exception:  # noqa: BLE001
-            pass
 
     def _more_toggled(self, on: bool) -> None:
         self.more_btn.setArrowType(Qt.DownArrow if on else Qt.RightArrow)

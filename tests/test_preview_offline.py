@@ -132,7 +132,6 @@ ok(see(w.bar) and see(w.cancel_btn) and not w.render_btn.isEnabled() and not see
 w.set_progress(0.42); ok(w.bar.value() == 42, "…the bar follows")
 w.set_image(big); qa.processEvents()
 ok(w.mode == "final" and see(w.bar_final) and not see(w.bar_preview) and not see(w.bar), "the finished picture: the retouch tools replace the Render buttons")
-w.retouch_more.header.setChecked(True)
 ok(all(see(s) for s in w.adj.values()) and see(w.save_btn) and see(w.back_btn) and see(w.reset_btn), "…sliders, Save image…, Back to preview, Reset")
 ok(w.view.is_fitted() and w.view.picture_size() == (960, 540), "…the picture fitted")
 # retouch
