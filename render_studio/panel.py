@@ -2426,7 +2426,7 @@ class StudioPanel(QWidget):
         """The outlines of the style as a transparent picture of ``width``×``height`` seen from ``camera`` (None: the style has none).
         They are drawn here, from the model's own geometry (outlines.py), and laid over the render by Blender's script."""
         from . import outlines
-        style = settings_store.style(self.style_settings())
+        style = self.style_with_cut(settings_store.style(self.style_settings()))
         if not outlines.wanted(style):
             return None
         if not quiet:
@@ -2441,6 +2441,8 @@ class StudioPanel(QWidget):
             ref = 0
         if ref > 0 and height < ref:
             style = dict(style, width=float(style.get("width", 0.0) or 0.0) * height / ref)
+            if outlines.cut_of(style):
+                style["cut"] = dict(style["cut"], width=float(style["cut"].get("width", 2.4)) * height / ref)
             notes.append(f"width scaled to the frame: {height} of {ref} px")
         try:
             geom = self.line_geometry(notes)
@@ -2450,16 +2452,30 @@ class StudioPanel(QWidget):
             geom = None
         return outlines.write_layer(self.app.viewport, camera or self.app.viewport.camera, width, height, style, path, geom, notes)
 
+    def style_with_cut(self, style: dict) -> dict:
+        """The outline style with the cut's: while a section cuts the model (a plane, or IngeTrazo's section box), ``style["cut"]`` says how
+        the rim of the cap is drawn (the Section tab) and whether the cap hides what is behind it."""
+        from . import outlines
+        try:
+            if not outlines.cut_planes(self.app.scene):
+                return style
+        except Exception:  # noqa: BLE001
+            return style
+        opts = self.section_tab.settings()
+        return dict(style, cut={"on": bool(opts.get("outline", True)), "color": list(opts.get("outline_color") or (0.05, 0.05, 0.05)),
+                                "width": float(opts.get("outline_width", 2.4)), "opacity": 1.0, "cap": bool(opts.get("cap", True)), "srgb": True})
+
     def line_set(self, camera, width: int, height: int):
         """The outlines of the style as vectors for the FINAL picture (outlines.LineSet and the controls' starting style), or None. The
         render window draws them over the picture and lets them be restyled instantly; saving puts them in it."""
         from . import outlines
-        style = settings_store.style(self.style_settings())
+        style = self.style_with_cut(settings_store.style(self.style_settings()))
         if not outlines.wanted(style):
             return None
         self._set_status(tr("Drawing the outlines…"))
         QApplication.processEvents()
         notes: list = []
+        cut = outlines.cut_of(style)
         try:
             geom = self.line_geometry(notes)
         except Exception as exc:  # noqa: BLE001 - the 3D view's geometry
@@ -2467,7 +2483,8 @@ class StudioPanel(QWidget):
             notes.append(f"geometry NOT worked out: {type(exc).__name__}: {exc}")
             geom = None
         try:
-            lines = outlines.lineset(self.app.viewport, camera or self.app.viewport.camera, int(width), int(height), geom, notes)
+            lines = outlines.lineset(self.app.viewport, camera or self.app.viewport.camera, int(width), int(height), geom, notes,
+                                     cut_outline=bool(cut and cut.get("on")), cap=bool(cut.get("cap", True)) if cut else True)
         except Exception:  # noqa: BLE001 - a render is never lost over its lines
             _log.exception("outlines not drawn")
             return None

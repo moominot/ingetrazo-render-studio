@@ -348,6 +348,21 @@ class ImageWindow(QWidget):
         self.lines_extend.setToolTip(tr("How far the lines run past their corners"))
         self.lines_opacity = NumberSlider(0.2, 1.0, 0.05, "{:.0%}")
         self.lines_opacity.setToolTip(tr("How dark the ink is"))
+        # (the rim of the cap, when a section cuts the model: apart from the model's lines, with its own colour and thickness)
+        self.cut_row = QWidget()
+        cr = QHBoxLayout(self.cut_row)
+        cr.setContentsMargins(0, 0, 0, 0)
+        self.cut_on = QCheckBox(tr("Cut outline"))
+        self.cut_colour = ColourButton([0.05, 0.05, 0.05], "Colour of the cap's outline")
+        self.cut_colour.setMaximumWidth(60)
+        cr.addWidget(self.cut_on)
+        cr.addWidget(self.cut_colour)
+        cr.addStretch(1)
+        self.cut_width = NumberSlider(0.5, 10.0, 0.1, "{:.1f} px")
+        self.cut_width.setToolTip(tr("The thickness of the rim of the cut, in pixels of this picture"))
+        self.cut_width_label = QLabel(tr("Cut thickness"))
+        form.addRow(self.cut_row)
+        form.addRow(self.cut_width_label, self.cut_width)
         form.addRow(tr("Thickness"), self.lines_width)
         form.addRow(tr("Hand"), self.lines_hand)
         form.addRow(tr("Line extension"), self.lines_extend)
@@ -357,7 +372,8 @@ class ImageWindow(QWidget):
         self._lines_timer.setInterval(120)
         self._lines_timer.timeout.connect(self._recompose)
         for sig in (self.lines_on.toggled, self.lines_colour.changed, self.lines_width.valueChanged, self.lines_hand.valueChanged,
-                    self.lines_extend.valueChanged, self.lines_opacity.valueChanged):
+                    self.lines_extend.valueChanged, self.lines_opacity.valueChanged, self.cut_on.toggled, self.cut_colour.changed,
+                    self.cut_width.valueChanged):
             sig.connect(lambda *_a: self._lines_timer.start())
         self.lines_reset.clicked.connect(self._lines_to_initial)
         self.lines_box.setVisible(False)
@@ -382,7 +398,8 @@ class ImageWindow(QWidget):
             self.lines_box.setVisible(False)
 
     def _lines_set_controls(self, style: dict) -> None:
-        controls = (self.lines_on, self.lines_colour, self.lines_width, self.lines_hand, self.lines_extend, self.lines_opacity)
+        controls = (self.lines_on, self.lines_colour, self.lines_width, self.lines_hand, self.lines_extend, self.lines_opacity,
+                    self.cut_on, self.cut_colour, self.cut_width)
         for w in controls:
             w.blockSignals(True)
         self.lines_on.setChecked(True)
@@ -391,14 +408,25 @@ class ImageWindow(QWidget):
         self.lines_hand.setValue(float(style.get("hand", 0.0)))
         self.lines_extend.setValue(float(style.get("extend", 0.0)))
         self.lines_opacity.setValue(float(style.get("opacity", 1.0)))
+        cut = style.get("cut") or {}
+        self.cut_on.setChecked(bool(cut.get("on", True)))
+        self.cut_colour.set_rgb(cut.get("color") or [0.05, 0.05, 0.05])
+        self.cut_width.setValue(float(cut.get("width", 2.4)))
         for w in controls:
             w.blockSignals(False)
+        has_cut = bool(self.lines is not None and len(getattr(self.lines[0], "cut", ())))
+        self.cut_row.setVisible(has_cut)
+        self.cut_width.setVisible(has_cut)
+        self.cut_width_label.setVisible(has_cut)
 
     def lines_style(self) -> dict:
         """The outlines' style as the controls say it."""
         base = dict(self.lines[1]) if self.lines else {}
         base.update(width=self.lines_width.value(), color=self.lines_colour.rgb(), hand=self.lines_hand.value(),
                     extend=self.lines_extend.value(), opacity=self.lines_opacity.value())
+        if base.get("cut") is not None:
+            base["cut"] = dict(base["cut"], on=self.cut_on.isChecked(), color=self.cut_colour.rgb(), width=self.cut_width.value(),
+                               srgb=True)
         return base
 
     def _lines_to_initial(self) -> None:

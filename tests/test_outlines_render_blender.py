@@ -95,6 +95,26 @@ out = Path(tmp) / "flat.png"
 ok(win.save_to(str(out)) and dark(arr(QImage(str(out)))) > d_shown * 1.4, "Save image… flattens the restyled lines")
 win.back_btn.click(); qa.processEvents()
 ok(win.lines is None or win.mode == "preview", "back to the preview")
+# A section cutting the house: Blender cuts and caps it, the rim of the cap is a vector line of its own colour in the window
+from core import section as ISEC
+cam_eye = app.viewport.camera.eye()
+side = 1.0 if cam_eye.x() > 0 else -1.0                         # the removed side is the camera's: the cut is what it sees
+plane = ISEC.SectionPlane(QVector3D(0, 0, 0), QVector3D(side, 0, 0)); app.scene.section_planes.append(plane); app.scene.set_active_section(plane)
+panel.section_tab.apply({"cap": True, "style": "flat", "color": [0.8, 0.8, 0.8], "outline": True, "outline_color": [1.0, 0.0, 0.0], "outline_width": 4.0})
+wait(lambda: panel._live is not None and panel._live.active and panel._live._ready)
+n = len(finished)
+win.render_btn.click(); qa.processEvents()
+ok(wait(lambda: len(finished) == n + 1) and finished[-1] is not None, "a render with a section finishes")
+ok(win.lines is not None and len(win.lines[0].cut) >= 4, f"the window has the rim of the cap as vector lines ({0 if win.lines is None else len(win.lines[0].cut)} of them)")
+redpx = lambda a: int(((a[..., 0].astype(int) - a[..., 1]) > 120).sum())
+ok(redpx(win.shown) > 150, f"…in the colour asked for, on the picture ({redpx(win.shown)} red pixels)")
+r_before = redpx(win.shown)
+win.cut_colour.set_rgb([0.0, 0.0, 1.0]); win._recompose()
+ok(redpx(win.shown) < r_before * 0.1, "…and restyled at once without rendering again")
+win.back_btn.click(); qa.processEvents()
+app.scene.section_planes.clear()
+panel.section_tab.apply({})
+wait(lambda: panel._live is not None and panel._live.active and panel._live._ready)
 # Render and save…: the lines are in the file as it was set in the panel
 wait(lambda: panel._live is not None and panel._live.active and panel._live._ready)
 asked = []

@@ -77,7 +77,7 @@ La nota de baix passa a dir què talla ara: «Pla *Planta baixa*» / «Caixa *De
 - Que també ho faci el camí ràpid (`hlr_geometry`): la geometria retallada es calcula igual i només una vegada per render.
 - **Prova:** una caixa amb un pla al mig: cap línia al costat tret (avui n'hi ha).
 
-### S2 Vora de la tapa (color i gruix)
+### S2 Vora de la tapa (color i gruix) — FET (el farcit de la tapa com a obstacle és un farcit de línies d'escombrat a l'espai de pantalla, no `fill_triangles`: funciona també amb IngeTrazo 0.6.2)
 - La tapa no és al model: és a Blender. Les arestes de la vora són el que IngeTrazo ja calcula per al seu tall: `core.section.cut_chords` (cordes del
   pla amb els triangles) i, per a la caixa, `plane_pair_line` (on es troben dos talls dins el material).
 - A `outlines.py`: afegir aquestes cordes com a arestes de classe **«tall»**, i la tapa (`fill_triangles`) com a **oclusor** al buffer de profunditat

@@ -16,6 +16,9 @@ The options (the Section tab) are kept in the document, ``settings["section"]``:
      "line": [r, g, b],      # style "hatch": the colour of the lines or dots
      "spacing": 0.1,         # style "hatch": metres between lines
      "shadows": true,        # false: the cap neither casts nor receives shadows (flat, as drawn)
+     "outline": true,        # the rim of the cap is drawn (a line, apart from the outlines of the model)
+     "outline_color": [r, g, b],   # its colour (sRGB, as the picture shows it)
+     "outline_width": 2.4,   # its thickness, in pixels of the final picture
      "light": "open"}        # "open": the removed part is gone, light enters the cut
                              # "blocked": it still blocks the light (invisible to the camera)
 
@@ -29,7 +32,8 @@ LIGHTS = ("open", "blocked")
 STYLES = ("material", "flat", "hatch")
 PATTERNS = ("diagonal", "cross", "grid", "dots")
 DEFAULT = {"cap": True, "style": "material", "material": None, "color": [0.35, 0.37, 0.41],
-           "pattern": "diagonal", "line": [0.1, 0.1, 0.1], "spacing": 0.1, "shadows": True, "light": "open"}
+           "pattern": "diagonal", "line": [0.1, 0.1, 0.1], "spacing": 0.1, "shadows": True, "light": "open",
+           "outline": True, "outline_color": [0.05, 0.05, 0.05], "outline_width": 2.4}
 #: IngeTrazo's default colour for a cut's fill (core/section.py's style).
 FALLBACK_COLOR = (0.35, 0.37, 0.41)
 
@@ -53,6 +57,13 @@ def clean(raw) -> dict:
         sp = 0.1
     out["spacing"] = max(0.005, min(5.0, sp)) if sp == sp else 0.1
     out["shadows"] = bool(raw.get("shadows", True))
+    out["outline"] = bool(raw.get("outline", True))
+    out["outline_color"] = _rgb(raw.get("outline_color"), DEFAULT["outline_color"])
+    try:
+        ow = float(raw.get("outline_width", DEFAULT["outline_width"]))
+    except (TypeError, ValueError):
+        ow = DEFAULT["outline_width"]
+    out["outline_width"] = max(0.3, min(20.0, ow)) if ow == ow else DEFAULT["outline_width"]
     return out
 
 

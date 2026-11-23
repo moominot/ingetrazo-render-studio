@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QDoubleSpinBo
                                QPushButton, QVBoxLayout, QWidget)
 
 from . import section as S
+from .widgets import NumberSlider
 
 
 def _note(text: str = "") -> QLabel:
@@ -121,6 +122,22 @@ class SectionTab(QWidget):
         self.spacing.setToolTip("The distance between lines (or dots), in the real size of the drawing.")
         self.spacing.valueChanged.connect(self._edited)
         form.addRow("Spacing", self.spacing)
+        self.outline = QCheckBox("Outline of the cap")
+        self.outline.setChecked(True)
+        self.outline.setToolTip("Draws the rim of the cap: a line round every cut wall and slab, with its own colour and thickness. In the "
+                                "finished picture it stays a line you can restyle (colour, thickness) until you save.")
+        self.outline.toggled.connect(self._edited)
+        form.addRow(self.outline)
+        self.outline_colour = ColourButton(S.DEFAULT["outline_color"], "Colour of the cap's outline")
+        self.outline_colour.setToolTip("The colour of the cap's outline.")
+        self.outline_colour.changed.connect(self._edited)
+        form.addRow("Outline colour", self.outline_colour)
+        self.outline_width = NumberSlider(0.5, 10.0, 0.1, "{:.1f} px")
+        self.outline_width.setValue(S.DEFAULT["outline_width"])
+        self.outline_width.setToolTip("The thickness of the cap's outline, in pixels of the finished picture.")
+        self.outline_width.valueChanged.connect(self._edited)
+        form.addRow("Outline thickness", self.outline_width)
+        self.outline.toggled.connect(lambda on: (self.outline_colour.setEnabled(on), self.outline_width.setEnabled(on)))
         self.shadows = QCheckBox("No shadows on the cap")
         self.shadows.setToolTip("The cap neither casts nor receives shadows: it keeps its colour evenly, "
                                 "as a drawn section, whatever the sun does.")
@@ -149,11 +166,13 @@ class SectionTab(QWidget):
         return {"cap": self.cap.isChecked(), "style": self.style.currentData(), "material": self._wanted,
                 "color": self.colour.rgb(), "pattern": self.pattern.currentData(), "line": self.line.rgb(),
                 "spacing": round(self.spacing.value() / 100.0, 4), "shadows": not self.shadows.isChecked(),
-                "light": self.light.currentData()}
+                "light": self.light.currentData(), "outline": self.outline.isChecked(),
+                "outline_color": self.outline_colour.rgb(), "outline_width": round(self.outline_width.value(), 2)}
 
     def apply(self, raw) -> None:
         d = S.clean(raw)
-        mine = (self.cap, self.material, self.light, self.style, self.pattern, self.spacing, self.shadows)
+        mine = (self.cap, self.material, self.light, self.style, self.pattern, self.spacing, self.shadows, self.outline,
+                self.outline_width)
         for w in mine:
             w.blockSignals(True)
         self.cap.setChecked(d["cap"])
@@ -163,6 +182,11 @@ class SectionTab(QWidget):
         self.line.set_rgb(d["line"])
         self.spacing.setValue(d["spacing"] * 100.0)
         self.shadows.setChecked(not d["shadows"])
+        self.outline.setChecked(d["outline"])
+        self.outline_colour.set_rgb(d["outline_color"])
+        self.outline_width.setValue(d["outline_width"])
+        self.outline_colour.setEnabled(d["outline"])
+        self.outline_width.setEnabled(d["outline"])
         self._wanted = d["material"]
         self.light.setCurrentIndex(max(0, self.light.findData(d["light"])))
         self._fill()

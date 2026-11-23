@@ -831,5 +831,14 @@
 "The drawing's own fog is on (it starts at {start} m and is {thickness} m thick, as in the 3D view): the render has that one. These sliders are used when it is off.": "La boira del dibuix està activada (comença a {start} m i té {thickness} m de gruix, com a la vista 3D): el render té aquesta. Aquests lliscadors s'usen quan està desactivada.",
 "Render time: {t}": "Temps de render: {t}",
 "Hide the retouch and outlines panel": "Amaga el panell de retoc i contorns",
-"Show the retouch and outlines panel": "Mostra el panell de retoc i contorns"
+"Show the retouch and outlines panel": "Mostra el panell de retoc i contorns",
+"Outline of the cap": "Contorn de la tapa",
+"Draws the rim of the cap: a line round every cut wall and slab, with its own colour and thickness. In the finished picture it stays a line you can restyle (colour, thickness) until you save.": "Dibuixa la vora de la tapa: una línia al voltant de cada mur i forjat tallat, amb color i gruix propis. A la imatge final continua sent una línia que pots canviar (color, gruix) fins que desis.",
+"Colour of the cap's outline": "Color del contorn de la tapa",
+"The colour of the cap's outline.": "El color del contorn de la tapa.",
+"Outline thickness": "Gruix del contorn",
+"The thickness of the cap's outline, in pixels of the finished picture.": "El gruix del contorn de la tapa, en píxels de la imatge final.",
+"Cut outline": "Contorn del tall",
+"Cut thickness": "Gruix del tall",
+"The thickness of the rim of the cut, in pixels of this picture": "El gruix de la vora del tall, en píxels d'aquesta imatge"
 }

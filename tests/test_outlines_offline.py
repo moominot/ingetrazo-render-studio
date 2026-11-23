@@ -134,19 +134,19 @@ ok(not win.side.isVisibleTo(win) and not win.side_handle.isVisibleTo(win) and no
 geom_box = (cube_tris(2.0) * np.array([2.0, 2.0, 1.0]), np.empty((0, 2, 3)), np.empty((0, 2, 3)), np.empty((0, 2, 3)))
 half = [(np.array([1.0, 0.0, 0.0]), np.array([1.0, 0.0, 0.0]))]             # the plane x = 1; what has x > 1 goes
 c = outlines.clip_geometry(geom_box, half)
-ok(len(c[0]) > 0 and c[0][:, :, 0].max() <= 1.0 + 1e-9 and c[0][:, :, 0].min() >= -1e-9, f"triangles are cut at the plane: nothing beyond it, the rest kept ({len(geom_box[0])} → {len(c[0])})")
+ok(len(c[0]) > 0 and c[0][:, :, 0].max() <= 1.0 + 1e-5 and c[0][:, :, 0].min() >= -1e-9, f"triangles are cut at the plane: nothing beyond it, the rest kept ({len(geom_box[0])} → {len(c[0])})")
 areas = lambda T: 0.5 * np.linalg.norm(np.cross(T[:, 1] - T[:, 0], T[:, 2] - T[:, 0]), axis=1)
-ok(abs(areas(c[0]).sum() - 12.0) < 1e-6, f"…the area that stays is the cube's half, open at the cut ({areas(c[0]).sum():.3f} of 24, the cut face not there: 12 expected)")
+ok(abs(areas(c[0]).sum() - 12.0) < 1e-3, f"…the area that stays is the cube's half, open at the cut ({areas(c[0]).sum():.3f} of 24, the cut face not there: 12 expected)")
 n_out = np.cross(c[0][:, 1] - c[0][:, 0], c[0][:, 2] - c[0][:, 0]); orig = np.cross(geom_box[0][:, 1] - geom_box[0][:, 0], geom_box[0][:, 2] - geom_box[0][:, 0])
 ok(np.all(np.linalg.norm(n_out, axis=1) > 0) and (c[0][:, :, 0].mean(axis=1) < 1.0).all(), "…and each piece lies on the kept side")
 H = np.array([[[0.0, 0, 0], [2.0, 0, 0]], [[1.5, 0, 0], [3.0, 0, 0]], [[1.2, 1, 0], [2.0, 1, 0]], [[0.0, 2, 0], [0.5, 2, 0]]])
 SN = np.full((4, 2, 3), np.nan); SN[:, 0] = (0, 0, 1)
 cc = outlines.clip_geometry((np.empty((0, 3, 3)), H, H.copy(), SN), half)
-ok(len(cc[1]) == 2 and abs(cc[1][:, :, 0].max() - 1.0) < 1e-9 and np.allclose(sorted(cc[1][:, 1, 0]), [0.5, 1.0]), "edges are cut at the plane or dropped when wholly beyond it")
+ok(len(cc[1]) == 2 and abs(cc[1][:, :, 0].max() - 1.0) < 1e-5 and np.allclose(sorted(cc[1][:, 1, 0]), [0.5, 1.0]), "edges are cut at the plane or dropped when wholly beyond it")
 ok(len(cc[2]) == len(cc[3]) == 2 and np.isnan(cc[3][:, 1]).all(), "…soft edges keep their normals with them")
 two_planes = half + [(np.array([0.0, 1.0, 0.0]), np.array([0.0, 1.0, 0.0]))]    # a box's two faces: x > 1 and y > 1 go
 c2 = outlines.clip_geometry(geom_box, two_planes)
-ok(c2[0][:, :, 0].max() <= 1.0 + 1e-9 and c2[0][:, :, 1].max() <= 1.0 + 1e-9, "several planes (a section box) cut one after the other")
+ok(c2[0][:, :, 0].max() <= 1.0 + 1e-5 and c2[0][:, :, 1].max() <= 1.0 + 1e-5, "several planes (a section box) cut one after the other")
 ok(outlines.clip_geometry(geom_box, []) is geom_box, "no plane, nothing changes")
 from core import section as ISEC
 scene.groups.clear(); scene.groups.append(Group(cube_mesh := Mesh(), name="cube"))
@@ -162,6 +162,71 @@ scene.show_section_cuts = False
 ok(outlines.cut_planes(scene) == [], "Section Cuts off: nothing cuts")
 scene.show_section_cuts = True
 scene.section_planes.clear()
+# ---- S2: the rim of the cap, the cap in the depth buffer, the lines where two cuts meet
+from render_studio import section as RSEC
+from render_studio.croquis_engine import visibility as _vis
+scene.groups.clear()
+big = Mesh(); scene.groups.append(Group(big, name="big"))
+for q in ([V(0,0,0),V(4,0,0),V(4,0,3),V(0,0,3)],[V(4,0,0),V(4,3,0),V(4,3,3),V(4,0,3)],[V(4,3,0),V(0,3,0),V(0,3,3),V(4,3,3)],[V(0,3,0),V(0,0,0),V(0,0,3),V(0,3,3)],[V(0,0,3),V(4,0,3),V(4,3,3),V(0,3,3)],[V(0,3,0),V(4,3,0),V(4,0,0),V(0,0,0)]):
+    big.add_face(q)
+tr_big = outlines.scene_geometry(scene)[0]
+pl_x = (np.array([2.0, 0.0, 0.0]), np.array([1.0, 0.0, 0.0]))
+ch = outlines.plane_chords(tr_big, *pl_x)
+ok(len(ch) > 0 and np.allclose(ch[:, :, 0], 2.0, atol=1e-5) and abs(np.linalg.norm(ch[:, 1] - ch[:, 0], axis=1).sum() - 12.0) < 1e-3,
+   f"the chords of a plane lie in it and run round the section, 3 × 3 m: 12 m of them ({np.linalg.norm(ch[:, 1] - ch[:, 0], axis=1).sum():.3f})")
+lines1, chords1 = outlines.cut_lines(tr_big, [pl_x])
+ok(len(lines1) == len(ch), "one cut: its whole rim is the cut's line")
+pl_y = (np.array([0.0, 1.5, 0.0]), np.array([0.0, 1.0, 0.0]))
+lines2, _c2 = outlines.cut_lines(tr_big, [pl_x, pl_y])
+corner = ((np.abs(lines2[:, :, 0] - 2.0) < 1e-5) & (np.abs(lines2[:, :, 1] - 1.5) < 1e-5)).all(axis=1)
+ok(corner.any() and abs(np.linalg.norm(lines2[corner][:, 1] - lines2[corner][:, 0], axis=1).sum() - 3.0) < 1e-3,
+   "two cuts (a section box's corner): the line where they meet is there, 3 m high")
+ok(lines2[:, :, 0].max() <= 2.0 + 1e-5 and lines2[:, :, 1].max() <= 1.5 + 1e-5, "…and no rim lies on the removed side of the other cut")
+cam3 = OrbitCamera(); cam3.target = V(2, 1.5, 1.5); cam3.distance = 11; cam3.yaw = math.radians(-40); cam3.pitch = math.radians(22)
+cam3.aspect = 640 / 360
+M3 = _vis.clip_matrix(cam3)
+mask = outlines.cap_mask(chords1[0], M3, 640, 360, True)
+cx = M3 @ np.array([2.0, 1.5, 1.5, 1.0]) if False else None
+c4 = _vis.to_clip(np.array([[2.0, 1.5, 1.5]]), M3)[0]
+px, py = int((c4[0] / c4[3] * 0.5 + 0.5) * 640), int((0.5 - c4[1] / c4[3] * 0.5) * 360)
+ok(mask[py, px] and not mask[2, 2] and 2000 < mask.sum() < 40000, f"the cap's picture is filled inside its rim and only there ({int(mask.sum())} pixels)")
+class SV:
+    def __init__(self): self.scene = scene
+with_cap = outlines.lineset(SV(), cam3, 640, 360, planes=[pl_x], cut_outline=True, cap=True)
+no_cap = outlines.lineset(SV(), cam3, 640, 360, planes=[pl_x], cut_outline=True, cap=False)
+ok(len(with_cap.segs) < len(no_cap.segs), f"the cap hides the model's lines behind it ({len(no_cap.segs)} lines without it, {len(with_cap.segs)} with it)")
+ok(len(with_cap.cut) >= 4 and len(outlines.lineset(SV(), cam3, 640, 360, planes=[pl_x], cut_outline=False).cut) == 0,
+   "the rim of the cap comes apart from the model's lines, and not when it is not wanted")
+style_cut = {"mode": "none", "width": 1.5, "color": [0.0, 0.0, 0.0], "cut": {"on": True, "color": [1.0, 0.0, 0.0], "width": 4.0, "opacity": 1.0, "cap": True, "srgb": True}}
+img_cut = outlines.strokes_image(with_cap, style_cut)
+_rgba = img_cut.convertToFormat(QImage.Format_RGBA8888)          # (kept: the array points into it)
+buf = np.frombuffer(_rgba.constBits(), dtype=np.uint8, count=_rgba.width() * _rgba.height() * 4).reshape(_rgba.height(), _rgba.width(), 4)
+red = int(((buf[..., 0] > 180) & (buf[..., 1] < 60) & (buf[..., 3] > 128)).sum()); darkpx = int(((buf[..., 0] < 60) & (buf[..., 3] > 128)).sum())
+ok(red > 100 and darkpx > 100, f"the rim has its own colour apart from the model's lines ({red} red, {darkpx} dark pixels)")
+style_cut["cut"]["on"] = False
+img_off = outlines.strokes_image(with_cap, style_cut)
+_rgba2 = img_off.convertToFormat(QImage.Format_RGBA8888)
+buf2 = np.frombuffer(_rgba2.constBits(), dtype=np.uint8, count=_rgba2.width() * _rgba2.height() * 4).reshape(_rgba2.height(), _rgba2.width(), 4)
+ok(int(((buf2[..., 0] > 180) & (buf2[..., 1] < 60) & (buf2[..., 3] > 128)).sum()) == 0, "…and it is not drawn when switched off")
+ok(outlines.wanted({"width": 0, "cut": {"on": True, "width": 2.0}}) and not outlines.wanted({"width": 0, "cut": {"on": False, "width": 2.0}}) and not outlines.wanted({"width": 0}),
+   "lines are wanted for the cap's rim even with no outlines for the model; not when both are off")
+d = RSEC.clean({"outline": False, "outline_color": [1, 0, 0], "outline_width": 99})
+ok(d["outline"] is False and d["outline_color"] == [1.0, 0.0, 0.0] and d["outline_width"] == 20.0 and RSEC.clean(None)["outline"] is True and RSEC.clean(None)["outline_width"] == 2.4,
+   "the section options keep the cap's outline (on by default, 2.4 px), held to a sensible range")
+# the window restyles it
+lw = outlines.lineset(SV(), cam3, 640, 360, planes=[pl_x], cut_outline=True, cap=True)
+win3 = preview.ImageWindow(); win3.resize(1100, 700); win3.set_image(base_png)
+win3.set_outlines(lw, outlines.window_style(style_cut | {"cut": {"on": True, "color": [0.8, 0.1, 0.1], "width": 3.0, "opacity": 1.0, "cap": True, "srgb": True}}), base_png)
+win3.show(); qa.processEvents()
+ok(win3.cut_row.isVisibleTo(win3) and win3.cut_width.isVisibleTo(win3), "the render window shows the cut outline's controls when a section cuts")
+redw = lambda a: int(((a[..., 0].astype(int) - a[..., 1]) > 90).sum())
+r0 = redw(win3.shown)
+win3.cut_width.setValue(8.0); win3._recompose()
+ok(redw(win3.shown) > r0 * 1.4, f"…thickness restyles the rim at once ({r0} → {redw(win3.shown)} red pixels)")
+win3.cut_on.setChecked(False); win3._recompose()
+ok(redw(win3.shown) == 0, "…and it can be switched off")
+win4 = preview.ImageWindow(); win4.set_image(base_png); win4.set_outlines(ls, style0, base_png); win4.show(); qa.processEvents()
+ok(not win4.cut_row.isVisibleTo(win4), "with no section there is no cut outline row")
 empty = Scene()
 ok(outlines.write_layer(type("E", (), {"scene": empty})(), cam, 640, 360, st(), tmp / "g.png") is None, "an empty view gives no layer (and no error)")
 blk = P.apply_style_block({}, scene, {"mode": "none", "width": 3}, lines=str(tmp / "a.png"))

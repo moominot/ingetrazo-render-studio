@@ -436,7 +436,7 @@ The simple controls are in view and the rest folded under *Advanced*:
   The **Horizon** group adds a distant **skyline** — mountains, hills, a distant forest or a city — that hides the line where the generated ground
   meets the sky: layers round the scene that melt into the horizon colour with distance, cast no shadow and go dark at night (its height is
   an angle above the horizon; Advanced: the distance, the shape — a seed — and a colour of your own).
-- **Section**: whether the cut is closed with a cap, and what the cap is made of — a material of the drawing, a **flat colour**
+- **Section**: the **outline of the cap** (colour and thickness: a line round every cut wall and slab, apart from the model's outlines; in the finished picture it is a vector line you restyle in the side panel, like the other outlines, until you save), whether the cut is closed with a cap, and what the cap is made of — a material of the drawing, a **flat colour**
   or a **hatch pattern** (diagonal lines, cross hatch, grid, dots, with their colours and spacing in centimetres) — and
   *No shadows on the cap* (it neither casts nor receives them, as a drawn section); **Output**, in this order: **Projection** (normal, *flat panorama* — a cylindrical picture where verticals stay straight, over the
   angle you choose — or *360° panorama*, equirectangular 2:1; both from the camera's place and rendered with Cycles), **Size**,

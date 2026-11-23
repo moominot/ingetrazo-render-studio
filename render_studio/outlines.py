@@ -33,9 +33,12 @@ def _srgb(c: float) -> float:
     return 12.92 * c if c <= 0.0031308 else 1.055 * c ** (1.0 / 2.4) - 0.055
 
 
-def ink_colour(style: dict) -> tuple:
-    """The outline colour of the style (linear RGB, as the panel keeps it) as 0..255 sRGB."""
+def ink_colour(style: dict, srgb: bool = False) -> tuple:
+    """The outline colour of the style (linear RGB, as the panel keeps it) as 0..255 sRGB; ``srgb``: it is already as the screen shows it
+    (the Section tab's colour buttons keep what the eye sees)."""
     rgb = (style.get("color") or (0.05, 0.05, 0.05))[:3]
+    if srgb:
+        return tuple(int(round(255 * max(0.0, min(1.0, float(c))))) for c in rgb)
     return tuple(int(round(255 * _srgb(c))) for c in rgb)
 
 
@@ -68,15 +71,41 @@ def window_style(style: dict) -> dict:
     (a sketch keeps its irregular stroke; any other style starts as a ruler)."""
     sketch = style.get("mode") == "sketch"
     width = float(style.get("width", 0.0) or 0.0)
-    return {"mode": style.get("mode", "none"), "width": width if width > 0.0 else (1.5 if sketch else 0.0),
-            "color": list(style.get("color") or (0.05, 0.05, 0.05))[:3],
-            "hand": float(style.get("noise", 0.0)) if sketch else 0.0,
-            "extend": float(style.get("extend", 0.0)) if sketch else 0.0, "opacity": 1.0}
+    out = {"mode": style.get("mode", "none"), "width": width if width > 0.0 else (1.5 if sketch else 0.0),
+           "color": list(style.get("color") or (0.05, 0.05, 0.05))[:3],
+           "hand": float(style.get("noise", 0.0)) if sketch else 0.0,
+           "extend": float(style.get("extend", 0.0)) if sketch else 0.0, "opacity": 1.0}
+    cut = cut_of(style)
+    if cut is not None:
+        out["cut"] = dict(cut)
+    return out
+
+
+def cut_of(style: dict | None) -> dict | None:
+    """The style's ``cut`` (a section is active): ``{"on", "color", "width", "opacity", "cap"}``: the rim of the cap, apart from the model's
+    own outlines, and whether the cap is there to hide what lies behind it. None when no section cuts."""
+    cut = (style or {}).get("cut")
+    return cut if isinstance(cut, dict) else None
+
+
+def cut_line_style(style: dict, height: int) -> st.LineStyle:
+    """The hand of the cap's rim: the model's hand, its own width and ink."""
+    cut = cut_of(style) or {}
+    base = line_style(style, height)
+    width = max(0.3, float(cut.get("width", 2.4) or 2.4))
+    return st.LineStyle(hand=base.hand, width=width * st.REFERENCE_HEIGHT / max(1, height), profile_scale=1.0, overshoot=base.overshoot,
+                        double_stroke=base.double_stroke, breaks=False,
+                        opacity=max(0.05, min(1.0, float(cut.get("opacity", 1.0) or 1.0))))
+
+
+def _wants_model(style: dict) -> bool:
+    return float(style.get("width", 0.0) or 0.0) > 0.0 or style.get("mode") == "sketch"
 
 
 def wanted(style: dict | None) -> bool:
     style = style or {}
-    return float(style.get("width", 0.0) or 0.0) > 0.0 or style.get("mode") == "sketch"
+    cut = cut_of(style)
+    return _wants_model(style) or bool(cut and cut.get("on") and float(cut.get("width", 0.0) or 0.0) > 0.0)
 
 
 def _from_scene(scene):
@@ -106,20 +135,32 @@ def _geometry(viewport):
     return fn()
 
 
-def segments(geom, camera, width: int, height: int):
-    """``(segs, outline)`` in pixels of a ``width``×``height`` picture: the visible parts of the edges of ``geom`` (IngeTrazo's
-    ``hlr_geometry()``: triangles, hard edges, soft edges, their normals) seen from ``camera``, straight runs joined, fine detail
-    thinned as a hand does. Also returns each line's weight."""
+def segments(geom, camera, width: int, height: int, cut=None):
+    """``(segs, outline, weight, cut_segs)`` in pixels of a ``width``×``height`` picture: the visible parts of the edges of ``geom``
+    (IngeTrazo's ``hlr_geometry()``: triangles, hard edges, soft edges, their normals) seen from ``camera``, straight runs joined, fine
+    detail thinned as a hand does, each with its weight. ``cut``: ``{"planes", "lines", "chords", "cap"}`` (see :func:`cut_lines`): the cap
+    (when ``cap``) is put in the depth buffer and the cut's own lines come back apart, as ``cut_segs``."""
     cam = copy.copy(camera)
     cam.aspect = width / max(1.0, float(height))
     scale = min(1.0, MAX_BUFFER / max(1, width))
     bw, bh = max(1, int(round(width * scale))), max(1, int(round(height * scale)))
     tris = np.asarray(geom[0], dtype=np.float64).reshape(-1, 3, 3)
-    zbuf, _index = vis.depth_buffer(tris, vis.clip_matrix(cam), bw, bh, bool(cam.perspective))
+    M, persp = vis.clip_matrix(cam), bool(cam.perspective)
+    zbuf, _index = vis.depth_buffer(tris, M, bw, bh, persp)
+    if cut is not None and cut.get("cap", True):
+        planes = _plane_arrays(cut["planes"])
+        for a, plane in enumerate(planes):
+            fill_cap(zbuf, cap_mask(cut["chords"][a], M, bw, bh, persp), plane, planes[:a] + planes[a + 1:], M, persp)
     segs, outline = vis.visible_lines(geom, cam, bw, bh, zbuf=zbuf)
     segs, outline = vis.merge_collinear(segs, outline, tol=1.5)
     segs = segs / scale
-    return st.simplify(segs, outline, height)
+    cut_segs = np.empty((0, 4))
+    if cut is not None and len(cut.get("lines", ())):
+        empty = np.empty((0, 2, 3))
+        cs, co = vis.visible_lines((tris, np.asarray(cut["lines"], dtype=np.float64).reshape(-1, 2, 3), empty, empty), cam, bw, bh, zbuf=zbuf)
+        cut_segs, _o = vis.merge_collinear(cs, co, tol=1.5)
+        cut_segs = cut_segs / scale
+    return st.simplify(segs, outline, height) + (cut_segs,)
 
 
 def edges_from_triangles(tris, crease_deg: float = 30.0, flat_deg: float = 1.0):
@@ -239,7 +280,7 @@ def _clip_segments(seg, extra, d, eps):
     a, b = seg[:, 0].copy(), seg[:, 1].copy()
     cross_a = da > eps                                 # the first end is on the removed side: move it to the plane
     cross_b = db > eps
-    t = np.where(cross_a | cross_b, da / np.where(da != db, da - db, 1.0), 0.0)
+    t = np.where(cross_a | cross_b, (eps - da) / np.where(da != db, db - da, 1.0), 0.0)
     cut = seg[:, 0] + t[:, None] * (seg[:, 1] - seg[:, 0])
     a[cross_a] = cut[cross_a]
     b[cross_b] = cut[cross_b]
@@ -261,8 +302,8 @@ def _clip_triangles(tris, d, eps):
         rows = np.arange(len(one))[:, None]
         O, A, B = (T[rows[:, 0], idx[:, k]] for k in range(3))
         dO, dA, dB = (D[rows[:, 0], idx[:, k]] for k in range(3))
-        pa = A + ((dA / (dA - dO))[:, None]) * (O - A)          # on A → O
-        pb = B + ((dB / (dB - dO))[:, None]) * (O - B)          # on B → O
+        pa = A + (((eps - dA) / (dO - dA))[:, None]) * (O - A)          # on A → O
+        pb = B + (((eps - dB) / (dO - dB))[:, None]) * (O - B)          # on B → O
         parts.append(np.stack([A, B, pb], axis=1))
         parts.append(np.stack([A, pb, pa], axis=1))
     two = np.nonzero(n_out == 2)[0]                    # two corners gone: one triangle
@@ -273,7 +314,7 @@ def _clip_triangles(tris, d, eps):
         rows = np.arange(len(two))
         P, Q, R = (T[rows, idx[:, k]] for k in range(3))
         dP, dQ, dR = (D[rows, idx[:, k]] for k in range(3))
-        parts.append(np.stack([P, P + ((dP / (dP - dQ))[:, None]) * (Q - P), P + ((dP / (dP - dR))[:, None]) * (R - P)], axis=1))
+        parts.append(np.stack([P, P + (((eps - dP) / (dQ - dP))[:, None]) * (Q - P), P + (((eps - dP) / (dR - dP))[:, None]) * (R - P)], axis=1))
     return np.concatenate(parts) if len(parts) > 1 else keep_whole
 
 
@@ -299,19 +340,181 @@ def clip_geometry(geom, planes, eps: float = 1e-6):
     return tris.reshape(-1, 3, 3), hard.reshape(-1, 2, 3), soft.reshape(-1, 2, 3), soft_n.reshape(-1, 2, 3)
 
 
+def plane_chords(tris, point, normal, eps: float = 1e-6):
+    """The chords a plane cuts out of triangles (T, 3, 3): (K, 2, 3), the segment inside each triangle that the plane crosses. A vertex ON
+    the plane counts as on the kept side, for every triangle alike, so the rings stay closed."""
+    tris = np.asarray(tris, dtype=np.float64).reshape(-1, 3, 3)
+    if not len(tris):
+        return np.empty((0, 2, 3))
+    n = np.asarray(normal, dtype=np.float64)
+    n = n / max(float(np.linalg.norm(n)), 1e-12)
+    d = (tris - np.asarray(point, dtype=np.float64)) @ n
+    gone = d > eps
+    mixed = gone.any(axis=1) & ~gone.all(axis=1)
+    T, D, G = tris[mixed], d[mixed], gone[mixed]
+    if not len(T):
+        return np.empty((0, 2, 3))
+    lone = np.where(G.sum(axis=1) == 1, np.argmax(G, axis=1), np.argmin(G, axis=1))      # the vertex alone on its side
+    rows = np.arange(len(T))
+    i, j, k = lone, (lone + 1) % 3, (lone + 2) % 3
+
+    def where_crossed(a, b):
+        da, db = D[rows, a], D[rows, b]
+        t = (eps - da) / np.where(db != da, db - da, 1.0)
+        return T[rows, a] + t[:, None] * (T[rows, b] - T[rows, a])
+    return np.stack([where_crossed(i, j), where_crossed(i, k)], axis=1)
+
+
+def _plane_arrays(planes):
+    return [(np.asarray(p, dtype=np.float64), np.asarray(n, dtype=np.float64) / max(float(np.linalg.norm(n)), 1e-12)) for p, n in planes]
+
+
+def cut_lines(tris, planes, eps: float = 1e-6):
+    """The cut's own lines, from the model's triangles (before they are cut): ``(lines, chords)``. ``lines`` (K, 2, 3): the rim of every cap,
+    each plane's chords kept only where the other planes leave the material, and the lines where two cuts meet inside it (a section box's
+    inner corners). ``chords``: each plane's whole chords (the cap's rings, for filling it)."""
+    planes = _plane_arrays(planes)
+    all_chords = [plane_chords(tris, p, n, eps) for p, n in planes]
+    lines = []
+    for a, (pa, na) in enumerate(planes):
+        c = all_chords[a]
+        for b, (pb, nb) in enumerate(planes):
+            if b != a and len(c):
+                c, _x = _clip_segments(c, None, (c - pb) @ nb, eps)
+        if len(c):
+            lines.append(c)
+    for a in range(len(planes)):
+        for b in range(a + 1, len(planes)):
+            seg = _pair_line(planes[a], planes[b], all_chords[a])
+            if seg is None:
+                continue
+            for c_, (pc, nc) in enumerate(planes):               # …and only where the others leave the material
+                if c_ not in (a, b) and len(seg):
+                    seg, _x = _clip_segments(seg, None, (seg - pc) @ nc, eps)
+            if len(seg):
+                lines.append(seg)
+    return (np.concatenate(lines) if lines else np.empty((0, 2, 3))), all_chords
+
+
+def _pair_line(pa, pb, chords):
+    """Where two cuts meet inside the material: the stretches of the line ``a`` ∩ ``b`` that lie inside the closed rings ``chords`` of ``a``
+    (even-odd along the line), (M, 2, 3), or None (parallel planes, no material there)."""
+    (p0, na), (p1, nb) = pa, pb
+    if chords is None or not len(chords):
+        return None
+    d = np.cross(na, nb)
+    dd = float(d @ d)
+    if dd < 1e-12:
+        return None
+    ca, cb = float(na @ p0), float(nb @ p1)
+    origin = (ca * np.cross(nb, d) + cb * np.cross(d, na)) / dd
+    across = np.cross(d, na)                              # in plane a, square to the line
+    s0, s1 = (chords[:, 0] - origin) @ across, (chords[:, 1] - origin) @ across
+    hit = (s0 > 0.0) != (s1 > 0.0)
+    if not hit.any():
+        return None
+    q0, q1 = chords[hit, 0], chords[hit, 1]
+    f = (s0[hit] / (s0[hit] - s1[hit]))[:, None]
+    ts = np.sort(((q0 + (q1 - q0) * f) - origin) @ d)
+    pairs = ts[:len(ts) // 2 * 2].reshape(-1, 2)         # an open ring: left out
+    pairs = pairs[pairs[:, 1] - pairs[:, 0] > 1e-9]
+    if not len(pairs):
+        return None
+    out = np.empty((len(pairs), 2, 3))
+    out[:, 0] = origin + pairs[:, 0, None] * d
+    out[:, 1] = origin + pairs[:, 1, None] * d
+    return out
+
+
+def cap_mask(chords, M, width: int, height: int, persp: bool):
+    """A (height, width) bool picture of what the rings ``chords`` (K, 2, 3, one plane's cut) cover seen through ``M``: an even-odd scanline
+    fill of the projected chords (a plane projects to the screen in straight lines, so the screen is where to fill)."""
+    mask = np.zeros((height, width), dtype=bool)
+    if chords is None or not len(chords):
+        return mask
+    A, B = vis._clip_segments(vis.to_clip(chords[:, 0], M), vis.to_clip(chords[:, 1], M))
+    if not len(A):
+        return mask
+    ax, ay, _aq = vis._screen(A, width, height, persp)
+    bx, by, _bq = vis._screen(B, width, height, persp)
+    ok = np.isfinite(ax) & np.isfinite(ay) & np.isfinite(bx) & np.isfinite(by)
+    ax, ay, bx, by = ax[ok], ay[ok], bx[ok], by[ok]
+    flip = ay > by
+    ax, bx = np.where(flip, bx, ax), np.where(flip, ax, bx)
+    ay, by = np.where(flip, by, ay), np.where(flip, ay, by)
+    r0 = np.maximum(np.ceil(ay - 0.5), 0).astype(np.int64)
+    r1 = np.minimum(np.ceil(by - 0.5) - 1, height - 1).astype(np.int64)
+    n = np.maximum(r1 - r0 + 1, 0)
+    if not n.sum():
+        return mask
+    seg = np.repeat(np.arange(len(n)), n)
+    rows = r0[seg] + (np.arange(len(seg)) - np.repeat(np.cumsum(n) - n, n))
+    x = ax[seg] + (rows + 0.5 - ay[seg]) * (bx - ax)[seg] / (by - ay)[seg]
+    order = np.lexsort((x, rows))
+    rows, x = rows[order], x[order]
+    same_next = np.r_[rows[1:] == rows[:-1], False]
+    first = np.r_[True, rows[1:] != rows[:-1]]
+    rank = np.arange(len(rows)) - np.maximum.accumulate(np.where(first, np.arange(len(rows)), 0))
+    left = np.nonzero((rank % 2 == 0) & same_next)[0]
+    c0 = np.clip(np.ceil(x[left] - 0.5), 0, width).astype(np.int64)
+    c1 = np.clip(np.ceil(x[left + 1] - 0.5), 0, width).astype(np.int64)
+    diff = np.zeros((height, width + 1), dtype=np.int32)
+    np.add.at(diff, (rows[left], c0), 1)
+    np.add.at(diff, (rows[left], c1), -1)
+    return np.cumsum(diff, axis=1)[:, :width] > 0
+
+
+def fill_cap(zbuf, mask, plane, others, M, persp: bool, eps: float = 1e-6) -> None:
+    """The cap of ``plane`` in the depth buffer: where ``mask`` is, the plane's own depth, if it is nearer than what is there (so the lines of
+    what lies behind the cap are hidden by it). Only where the other cuts (``others``) leave the material."""
+    rows, cols = np.nonzero(mask)
+    if not len(rows):
+        return
+    h, w = mask.shape
+    Minv = np.linalg.inv(M)
+    nx = (cols + 0.5) / w * 2.0 - 1.0
+    ny = 1.0 - (rows + 0.5) / h * 2.0
+
+    def unproject(z):
+        c = np.stack([nx, ny, np.full_like(nx, z), np.ones_like(nx)], axis=1)
+        p = c @ Minv.T
+        return p[:, :3] / p[:, 3:4]
+    near, far = unproject(-1.0), unproject(1.0)
+    point, normal = plane
+    D = far - near
+    den = D @ normal
+    ok = np.abs(den) > 1e-12
+    t = np.where(ok, ((point - near) @ normal) / np.where(ok, den, 1.0), 0.0)
+    P = near + t[:, None] * D
+    keep = ok.copy()
+    for pc, nc in others:
+        keep &= (P - pc) @ nc <= eps
+    if not keep.any():
+        return
+    P, rows, cols = P[keep], rows[keep], cols[keep]
+    c = P @ M[:, :3].T + M[:, 3]
+    q = 1.0 / c[:, 3] if persp else -c[:, 2] / c[:, 3]
+    if persp:
+        good = c[:, 3] > 0
+        q, rows, cols = q[good], rows[good], cols[good]
+    zbuf[rows, cols] = np.maximum(zbuf[rows, cols], q)
+
+
 class LineSet:
     """The visible lines of a view, found once (the costly part): ``segs`` (N, 4) pixels of a ``width``×``height`` picture, which are
     outlines, and how thin to draw each. Any style can be drawn from it without looking at the model again (:func:`strokes_image`)."""
 
-    def __init__(self, segs, outline, weight, width: int, height: int) -> None:
+    def __init__(self, segs, outline, weight, width: int, height: int, cut=None) -> None:
         self.segs, self.outline, self.weight = segs, outline, weight
         self.width, self.height = int(width), int(height)
+        self.cut = np.empty((0, 4)) if cut is None else cut          # the rim of the caps (and where two cuts meet), apart
 
     def __len__(self) -> int:
-        return len(self.segs)
+        return len(self.segs) + len(self.cut)
 
 
-def lineset(viewport, camera, width: int, height: int, geom=None, notes: list | None = None, planes=None):
+def lineset(viewport, camera, width: int, height: int, geom=None, notes: list | None = None, planes=None, cut_outline: bool = False,
+            cap: bool = True):
     """The :class:`LineSet` of the view seen from ``camera`` at ``width``×``height`` (None when it shows no line). ``geom``: the geometry
     to draw (see ``panel.line_geometry``), else the viewport's own. ``planes``: what is cut away (:func:`cut_planes`; by default the
     active section plane and box of the viewport's scene)."""
@@ -320,15 +523,21 @@ def lineset(viewport, camera, width: int, height: int, geom=None, notes: list | 
     g = geom if geom is not None else _geometry(viewport)
     if planes is None:
         planes = cut_planes(getattr(viewport, "scene", None))
+    cut = None
     if planes:
         before = len(g[0])
+        if cut_outline or cap:
+            lines, chords = cut_lines(g[0], planes)                 # from the triangles as they are, before they are cut
+            cut = {"planes": planes, "lines": lines if cut_outline else np.empty((0, 2, 3)), "chords": chords, "cap": cap}
         g = clip_geometry(g, planes)
         if notes is not None:
-            notes.append(f"section: {len(planes)} cutting plane(s); triangles {before} -> {len(g[0])}")
-    segs, outline, weight = segments(g, camera, width, height)
+            notes.append(f"section: {len(planes)} cutting plane(s); triangles {before} -> {len(g[0])}"
+                         + (f"; {len(cut['lines'])} cut lines" if cut is not None else ""))
+    segs, outline, weight, cut_segs = segments(g, camera, width, height, cut)
     if notes is not None:
-        notes.append(f"geometry: triangles {len(g[0])}, hard {len(g[1])}, soft {len(g[2])}; {len(segs)} lines in {width}x{height}")
-    return LineSet(segs, outline, weight, width, height) if len(segs) else None
+        notes.append(f"geometry: triangles {len(g[0])}, hard {len(g[1])}, soft {len(g[2])}; {len(segs)} lines, {len(cut_segs)} of the cut, "
+                     f"in {width}x{height}")
+    return LineSet(segs, outline, weight, width, height, cut_segs) if (len(segs) or len(cut_segs)) else None
 
 
 def strokes_image(lines: LineSet, style: dict):
@@ -336,18 +545,24 @@ def strokes_image(lines: LineSet, style: dict):
     laid over a picture (:func:`composite`) or saved as a layer."""
     from PySide6.QtCore import QPointF, Qt
     from PySide6.QtGui import QColor, QImage, QPainter, QPolygonF
-    ls = line_style(style, lines.height)
-    kinds = lines.outline if ls.profile_scale != 1.0 else None
-    strokes = st.strokes_for(lines.segs, kinds, ls, lines.height, lines.weight)
     img = QImage(lines.width, lines.height, QImage.Format_ARGB32_Premultiplied)
     img.fill(0)
     p = QPainter(img)
     p.setRenderHint(QPainter.Antialiasing, True)
     p.setPen(Qt.NoPen)
-    r, g, b = ink_colour(style)
-    for s in strokes:
-        p.setBrush(QColor(r, g, b, int(255 * max(0.0, min(1.0, s.opacity)))))
-        p.drawPolygon(QPolygonF([QPointF(float(x), float(y)) for x, y in s.outline]))
+
+    def paint(strokes, rgb):
+        for s in strokes:
+            p.setBrush(QColor(rgb[0], rgb[1], rgb[2], int(255 * max(0.0, min(1.0, s.opacity)))))
+            p.drawPolygon(QPolygonF([QPointF(float(x), float(y)) for x, y in s.outline]))
+    if _wants_model(style) and len(lines.segs):
+        ls = line_style(style, lines.height)
+        kinds = lines.outline if ls.profile_scale != 1.0 else None
+        paint(st.strokes_for(lines.segs, kinds, ls, lines.height, lines.weight), ink_colour(style))
+    cut = cut_of(style)
+    if cut and cut.get("on") and len(lines.cut):
+        rim = ink_colour({"color": cut.get("color") or style.get("color")}, srgb=bool(cut.get("srgb", True)))
+        paint(st.strokes_for(lines.cut, None, cut_line_style(style, lines.height), lines.height, None), rim)
     p.end()
     return img
 
@@ -376,7 +591,9 @@ def linear_from_qcolor(c):
 
 def layer_image(viewport, camera, width: int, height: int, style: dict, geom=None, notes: list | None = None):
     """The line layer as a ``QImage`` (ARGB, transparent where there is no ink), or None when the view shows no line."""
-    lines = lineset(viewport, camera, width, height, geom, notes)
+    cut = cut_of(style)
+    lines = lineset(viewport, camera, width, height, geom, notes, cut_outline=bool(cut and cut.get("on")),
+                    cap=bool(cut.get("cap", True)) if cut else True)
     return strokes_image(lines, style) if lines is not None else None
 
 

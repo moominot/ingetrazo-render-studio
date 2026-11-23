@@ -831,5 +831,14 @@
 "The drawing's own fog is on (it starts at {start} m and is {thickness} m thick, as in the 3D view): the render has that one. These sliders are used when it is off.": "La niebla del dibujo está activada (empieza a {start} m y tiene {thickness} m de grosor, como en la vista 3D): el render tiene esa. Estos deslizadores se usan cuando está desactivada.",
 "Render time: {t}": "Tiempo de render: {t}",
 "Hide the retouch and outlines panel": "Oculta el panel de retoque y contornos",
-"Show the retouch and outlines panel": "Muestra el panel de retoque y contornos"
+"Show the retouch and outlines panel": "Muestra el panel de retoque y contornos",
+"Outline of the cap": "Contorno de la tapa",
+"Draws the rim of the cap: a line round every cut wall and slab, with its own colour and thickness. In the finished picture it stays a line you can restyle (colour, thickness) until you save.": "Dibuja el borde de la tapa: una línea alrededor de cada muro y forjado cortado, con color y grosor propios. En la imagen final sigue siendo una línea que puedes cambiar (color, grosor) hasta que guardes.",
+"Colour of the cap's outline": "Color del contorno de la tapa",
+"The colour of the cap's outline.": "El color del contorno de la tapa.",
+"Outline thickness": "Grosor del contorno",
+"The thickness of the cap's outline, in pixels of the finished picture.": "El grosor del contorno de la tapa, en píxeles de la imagen final.",
+"Cut outline": "Contorno del corte",
+"Cut thickness": "Grosor del corte",
+"The thickness of the rim of the cut, in pixels of this picture": "El grosor del borde del corte, en píxeles de esta imagen"
 }
