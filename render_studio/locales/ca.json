@@ -828,5 +828,6 @@
 "How far the lines run past their corners": "Fins on passen les línies més enllà de les cantonades",
 "How dark the ink is": "Com de fosca és la tinta",
 "Drawing the outlines…": "Dibuixant els contorns…",
-"The drawing's own fog is on (it starts at {start} m and is {thickness} m thick, as in the 3D view): the render has that one. These sliders are used when it is off.": "La boira del dibuix està activada (comença a {start} m i té {thickness} m de gruix, com a la vista 3D): el render té aquesta. Aquests lliscadors s'usen quan està desactivada."
+"The drawing's own fog is on (it starts at {start} m and is {thickness} m thick, as in the 3D view): the render has that one. These sliders are used when it is off.": "La boira del dibuix està activada (comença a {start} m i té {thickness} m de gruix, com a la vista 3D): el render té aquesta. Aquests lliscadors s'usen quan està desactivada.",
+"Render time: {t}": "Temps de render: {t}"
 }

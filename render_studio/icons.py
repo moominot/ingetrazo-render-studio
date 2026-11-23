@@ -199,12 +199,29 @@ def _render_studio(p, ink):
     _dot(p, 35, 20, 1.8)
 
 
+def _clock(p, ink):
+    # A stopwatch: its crown and button, the dial with the elapsed quarter in the accent, and the hand.
+    p.setBrush(Qt.NoBrush)
+    p.drawEllipse(QPointF(24, 27), 14, 14)
+    p.drawLine(QPointF(19, 8), QPointF(29, 8))
+    p.drawLine(QPointF(24, 8), QPointF(24, 13))
+    p.drawLine(QPointF(35, 14), QPointF(38.5, 10.5))
+    wedge = QPainterPath()
+    wedge.moveTo(24, 27)
+    wedge.arcTo(QRectF(10, 13, 28, 28), 90, -90)
+    wedge.closeSubpath()
+    _fill(p, wedge, 120)
+    p.setBrush(Qt.NoBrush)
+    p.drawLine(QPointF(24, 27), QPointF(24, 18))
+    _dot(p, 24, 27, 2.2)
+
+
 _DRAW = {
     "comp_import": _comp_import, "comp_export": _comp_export,
     "comp_settings": _comp_settings, "comp_help": _comp_help,
     "comp_options": _comp_options, "comp_attributes": _comp_attributes,
     "comp_manager": _comp_manager, "comp_online": _comp_online,
-    "render_studio": _render_studio,
+    "render_studio": _render_studio, "clock": _clock,
 }
 
 

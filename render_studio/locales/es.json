@@ -828,5 +828,6 @@
 "How far the lines run past their corners": "Hasta dónde pasan las líneas más allá de las esquinas",
 "How dark the ink is": "Cuán oscura es la tinta",
 "Drawing the outlines…": "Dibujando los contornos…",
-"The drawing's own fog is on (it starts at {start} m and is {thickness} m thick, as in the 3D view): the render has that one. These sliders are used when it is off.": "La niebla del dibujo está activada (empieza a {start} m y tiene {thickness} m de grosor, como en la vista 3D): el render tiene esa. Estos deslizadores se usan cuando está desactivada."
+"The drawing's own fog is on (it starts at {start} m and is {thickness} m thick, as in the 3D view): the render has that one. These sliders are used when it is off.": "La niebla del dibujo está activada (empieza a {start} m y tiene {thickness} m de grosor, como en la vista 3D): el render tiene esa. Estos deslizadores se usan cuando está desactivada.",
+"Render time: {t}": "Tiempo de render: {t}"
 }

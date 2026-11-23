@@ -114,7 +114,10 @@ class ImageWindow(QWidget):
         self.cancel_btn = QPushButton("Cancel")
         self.cancel_btn.setVisible(False)
         self.cancel_btn.clicked.connect(lambda: self.panel and self.panel.cancel_render())
+        from .widgets import ClockLabel
+        self.clock = ClockLabel()
         prow.addWidget(self.status, 1)
+        prow.addWidget(self.clock)
         prow.addWidget(self.bar)
         prow.addWidget(self.cancel_btn)
         lay.addLayout(prow)
@@ -378,6 +381,10 @@ class ImageWindow(QWidget):
 
     def set_status(self, text: str) -> None:
         self.status.setText(text)
+
+    def set_clock(self, text) -> None:
+        """The render's elapsed time beside the progress (None: no render is running)."""
+        self.clock.set_text(text)
 
     def set_progress(self, fraction: float) -> None:
         if self.bar.maximum() == 0:

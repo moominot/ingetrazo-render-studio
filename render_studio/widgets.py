@@ -319,6 +319,42 @@ class NumberSlider(QWidget):
         self.valueChanged.emit(v)
 
 
+class ClockLabel(QWidget):
+    """The render's stopwatch: the clock icon (drawn as the extension's others, in the theme's ink) and the elapsed time. Hidden until a
+    render runs: ``set_text("1:05")`` shows it, ``set_text(None)`` hides it."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(4)
+        self.icon_label = QLabel("")
+        self.icon_label.setFixedSize(18, 18)
+        self.time_label = QLabel("")
+        self.time_label.setMinimumWidth(40)
+        lay.addWidget(self.icon_label)
+        lay.addWidget(self.time_label)
+        self._draw_icon()
+        self.setVisible(False)
+
+    def _draw_icon(self) -> None:
+        from .icons import icon
+        self.icon_label.setPixmap(icon("clock").pixmap(18, 18))
+
+    def set_text(self, text) -> None:
+        if text:
+            self.time_label.setText(str(text))
+            self.setVisible(True)
+        else:
+            self.setVisible(False)
+
+    def changeEvent(self, ev) -> None:        # noqa: N802 (Qt: a new theme, a new ink)
+        from PySide6.QtCore import QEvent
+        if ev.type() in (QEvent.PaletteChange, QEvent.ApplicationPaletteChange) and hasattr(self, "icon_label"):
+            self._draw_icon()
+        super().changeEvent(ev)
+
+
 class RefreshCombo(QComboBox):
     """A combo box that asks for its list just before it opens (a list that changes with the drawing)."""
 

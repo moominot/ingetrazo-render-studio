@@ -1004,6 +1004,8 @@ class StudioPanel(QWidget):
         self.status = QLabel("")
         self.status.setWordWrap(True)
         outer.addWidget(self.status)
+        self.clock = widgets.ClockLabel()
+        outer.addWidget(self.clock)
         for combo in (self.engine, self.quality):
             combo.currentIndexChanged.connect(self._update_summary)
         self.width.valueChanged.connect(self._update_summary)
@@ -2376,6 +2378,7 @@ class StudioPanel(QWidget):
         if self.window is not None:
             self.window.set_mode("rendering")
             self.window.set_busy()
+        self._start_clock()
         self._set_status(tr("Preparing the model…"))
         QApplication.processEvents()
         self._preparing = True
@@ -2550,10 +2553,64 @@ class StudioPanel(QWidget):
         self._set_status(tr("Rendering in the preview's scene…"))
         return True
 
+    # -- render stopwatch + log ---------------------------------------------------
+    @staticmethod
+    def _fmt_elapsed(sec: float) -> str:
+        sec = max(0.0, sec)
+        h, rem = divmod(int(sec), 3600)
+        m, s = divmod(rem, 60)
+        return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+    def _show_clock(self, text) -> None:
+        self.clock.set_text(text)
+        if self.window is not None:
+            self.window.set_clock(text)
+
+    def _start_clock(self) -> None:
+        self._t0 = time.perf_counter()
+        self._last_logged_pct = -1
+        _log.info("Render started")
+        if getattr(self, "_clock", None) is None:
+            self._clock = QTimer(self)
+            self._clock.setInterval(1000)
+            self._clock.timeout.connect(self._tick_clock)
+        self._clock.start()
+        self._show_clock("0:00")
+
+    def _tick_clock(self) -> None:
+        t0 = getattr(self, "_t0", None)
+        if t0 is None:
+            return
+        if self.proc is None and not self._preparing:      # the render ended some other way (failed to prepare, refused)
+            took = self._stop_clock()
+            _log.info("Render stopped after %.1f s", took or 0.0)
+            return
+        self._show_clock(self._fmt_elapsed(time.perf_counter() - t0))
+
+    def _stop_clock(self) -> float | None:
+        """Stop the stopwatch: the seconds the render took, or None when none was running."""
+        t0, self._t0 = getattr(self, "_t0", None), None
+        if getattr(self, "_clock", None) is not None:
+            self._clock.stop()
+        self._show_clock(None)
+        return None if t0 is None else time.perf_counter() - t0
+
+    def _log_progress(self, line: str, p) -> None:
+        t0 = getattr(self, "_t0", None)
+        at = self._fmt_elapsed(time.perf_counter() - t0) if t0 is not None else "-"
+        if line.startswith("INGETRAZO"):
+            _log.info("[%s] %s", at, line.strip())
+        elif p is not None:
+            pct = int(p * 100) // 10 * 10
+            if pct != getattr(self, "_last_logged_pct", -1):
+                self._last_logged_pct = pct
+                _log.info("[%s] Render progress %d %%", at, int(p * 100))
+
     def _live_line(self, line: str) -> None:
         from core import render_blender as rb
         self._log_lines.append(line)
         p = rb.progress_of(line)
+        self._log_progress(line, p)
         if p is not None:
             self._set_progress(p)
 
@@ -2665,6 +2722,7 @@ class StudioPanel(QWidget):
         for line in text.splitlines():
             self._log_lines.append(line)
             p = rb.progress_of(line)
+            self._log_progress(line, p)
             if p is not None:
                 self._set_progress(p)
             if line.startswith("INGETRAZO meter"):
@@ -2718,12 +2776,17 @@ class StudioPanel(QWidget):
         self.proc = None
         save_to, self._save_to = self._save_to, None
         failed = code != 0 or not self.output.exists()
+        took = self._stop_clock()
+        stamp = (tr("Render time: {t}", t=self._fmt_elapsed(took)) if took is not None else "")
+        if took is not None:
+            _log.info("Render %s in %.1f s (%s)", "finished" if not (self._cancelled or failed) else "stopped",
+                      took, self._fmt_elapsed(took))
         if self._cancelled or failed:
             if self._cancelled:
                 self._set_status(tr("Render cancelled."))
             else:
                 tail = "\n".join(l for l in self._log_lines if "Error" in l or "INGETRAZO" in l)[-600:]
-                self._set_status(tr("The render failed (code {code}).\n{tail}", code=code, tail=tail))
+                self._set_status(tr("The render failed (code {code}).\n{tail}", code=code, tail=tail) + ((chr(10) + stamp) if stamp else ""))
             self._back_to_preview_if_open()
             self.finished.emit(None)
             return
@@ -2732,7 +2795,7 @@ class StudioPanel(QWidget):
         if save_to:
             if self._save_as_rendered(save_to):
                 QSettings().setValue(_SETTINGS + "save_dir", str(Path(save_to).parent))
-                self._set_status(tr("Saved: {path}", path=save_to))
+                self._set_status(tr("Saved: {path}", path=save_to) + (f" · {stamp}" if stamp else ""))
             else:
                 self._set_status(tr("Rendered, but {path} could not be written (the picture is in {output}).", path=save_to, output=self.output))
             self._back_to_preview_if_open()
@@ -2740,7 +2803,8 @@ class StudioPanel(QWidget):
             return
         win = self.preview()
         self._direct = False                              # the picture stays in the window: it is the result
-        self._set_status(tr("Done: {name}", name=self.output.name) + (" · " + tr("also saved in {path}", path=kept) if kept else ""))
+        self._set_status(tr("Done: {name}", name=self.output.name) + (" · " + tr("also saved in {path}", path=kept) if kept else "")
+                         + (f" · {stamp}" if stamp else ""))
         win.set_image(self.output)                        # the retouch tools and Save image…
         if getattr(self, "_baked", None):
             win.set_outlines(*self._baked)                # the outlines, still vectors
