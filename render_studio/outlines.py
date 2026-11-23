@@ -89,12 +89,12 @@ def cut_of(style: dict | None) -> dict | None:
 
 
 def cut_line_style(style: dict, height: int) -> st.LineStyle:
-    """The hand of the cap's rim: the model's hand, its own width and ink."""
+    """The hand of the cap's rim: the model's hand (only for the pen's pressure, since the rim is always straight), its own width and ink."""
     cut = cut_of(style) or {}
     base = line_style(style, height)
     width = max(0.3, float(cut.get("width", 2.4) or 2.4))
     return st.LineStyle(hand=base.hand, width=width * st.REFERENCE_HEIGHT / max(1, height), profile_scale=1.0, overshoot=base.overshoot,
-                        double_stroke=base.double_stroke, breaks=False,
+                        double_stroke=False, breaks=False,
                         opacity=max(0.05, min(1.0, float(cut.get("opacity", 1.0) or 1.0))))
 
 
@@ -562,7 +562,8 @@ def strokes_image(lines: LineSet, style: dict):
     cut = cut_of(style)
     if cut and cut.get("on") and len(lines.cut):
         rim = ink_colour({"color": cut.get("color") or style.get("color")}, srgb=bool(cut.get("srgb", True)))
-        paint(st.strokes_for(lines.cut, None, cut_line_style(style, lines.height), lines.height, None), rim)
+        # The rim of a cut is drawn with a ruler: straight lines, and with no hand (0) the same width all along.
+        paint(st.strokes_for(lines.cut, None, cut_line_style(style, lines.height), lines.height, None, straight=True), rim)
     p.end()
     return img
 

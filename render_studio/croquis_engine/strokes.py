@@ -180,16 +180,17 @@ def chains(n: int, pairs: np.ndarray) -> np.ndarray:
 
 
 def _centreline(a, b, rng: random.Random, style: LineStyle, s: float,
-                over_a: float, over_b: float):
+                over_a: float, over_b: float, straight: bool = False):
     """Points along the hand's path from a to b (extended by the overshoot
-    at each end), as (M, 2), plus the unit tangent and normal."""
+    at each end), as (M, 2), plus the unit tangent and normal. ``straight``
+    (Render Studio): no bow, no waver, no turn: a ruled line, whatever the hand."""
     a = np.asarray(a, dtype=np.float64)
     b = np.asarray(b, dtype=np.float64)
     d = b - a
     length = float(math.hypot(*d))
     t_hat = d / length
     n_hat = np.array([-t_hat[1], t_hat[0]])
-    h = style.hand
+    h = 0.0 if straight else style.hand
     # The whole line turns a hair about its start: a hand never lands
     # exactly on the far point.
     turn = math.radians(rng.uniform(-0.7, 0.7) * h)
@@ -214,14 +215,18 @@ def _centreline(a, b, rng: random.Random, style: LineStyle, s: float,
 
 
 def _ribbon(pts: np.ndarray, width: float, rng: random.Random,
-            taper: float = 0.55) -> np.ndarray:
+            taper: float = 0.55, hand: float = 1.0) -> np.ndarray:
     """The outline of a stroke of ``width`` along ``pts``: thicker in the
-    middle, thinner at the ends (``taper`` = width kept at the very ends)."""
+    middle, thinner at the ends (``taper`` = width kept at the very ends).
+    With no hand (0: a ruler) it is the same width all along (Render Studio)."""
     k = len(pts)
     u = np.linspace(0.0, 1.0, k)
-    swell = taper + (1.0 - taper) * np.sin(math.pi * u) ** 0.6
-    grain = 1.0 + 0.12 * np.sin(math.tau * rng.uniform(2, 5) * u
-                                + rng.uniform(0, math.tau))
+    if hand <= 0.0:
+        swell, grain = np.ones(k), np.ones(k)
+    else:
+        swell = taper + (1.0 - taper) * np.sin(math.pi * u) ** 0.6
+        grain = 1.0 + 0.12 * np.sin(math.tau * rng.uniform(2, 5) * u
+                                    + rng.uniform(0, math.tau))
     half = 0.5 * width * swell * grain
     tang = np.gradient(pts, axis=0)
     norm = np.hypot(tang[:, 0], tang[:, 1])
@@ -312,7 +317,7 @@ def _overshoot(rng, reach: float, corner: bool, goes_on: bool, s: float,
 
 
 def strokes_for(segs: np.ndarray, kinds, style: LineStyle,
-                height_px: float, weight=None) -> list:
+                height_px: float, weight=None, straight: bool = False) -> list:
     """The ink strokes for ``segs`` ((N, 4) pixels: x0, y0, x1, y1).
     ``kinds`` (N,) marks outlines (True: drawn heavier), or None;
     ``weight`` (N,) thins a line (1 as usual; :func:`simplify`'s), or None."""
@@ -338,7 +343,7 @@ def strokes_for(segs: np.ndarray, kinds, style: LineStyle,
         over_b = _overshoot(rng, reach, corners[i, 1], goes_on[i, 1], s, h)
         if length + over_a + over_b < 1.0 * s:
             continue
-        pts, _t, _n = _centreline(a, b, rng, style, s, over_a, over_b)
+        pts, _t, _n = _centreline(a, b, rng, style, s, over_a, over_b, straight)
         pieces = [pts]
         # A long line may be broken where the pen was lifted.
         if style.breaks and h > 0.2 and length > 140 * s and \
@@ -349,7 +354,7 @@ def strokes_for(segs: np.ndarray, kinds, style: LineStyle,
                 pieces = [pts[:cut], pts[cut + gap:]]
         for piece in pieces:
             if len(piece) >= 2:
-                out.append(Stroke(_ribbon(piece, width, rng), opacity))
+                out.append(Stroke(_ribbon(piece, width, rng, hand=style.hand), opacity))
         # Drawn twice: a second, lighter pass a little off the first.
         # (Not in a crowd: a second pass there is more of the mass.)
         if style.double_stroke and h >= 0.35 and wt > 0.85 \
@@ -365,7 +370,7 @@ def strokes_for(segs: np.ndarray, kinds, style: LineStyle,
             if math.hypot(*(b2 - a2)) > 2 * s:
                 over2a = over_a * 0.6 if corners[i, 0] and trim_a < 1 else 0.0
                 over2b = over_b * 0.6 if corners[i, 1] and trim_b < 1 else 0.0
-                pts2, _t, _n = _centreline(a2, b2, rng2, style, s, over2a, over2b)
-                out.append(Stroke(_ribbon(pts2, width * 0.7, rng2),
+                pts2, _t, _n = _centreline(a2, b2, rng2, style, s, over2a, over2b, straight)
+                out.append(Stroke(_ribbon(pts2, width * 0.7, rng2, hand=style.hand),
                                   opacity * 0.55))
     return out

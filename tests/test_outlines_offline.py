@@ -227,6 +227,43 @@ win3.cut_on.setChecked(False); win3._recompose()
 ok(redw(win3.shown) == 0, "…and it can be switched off")
 win4 = preview.ImageWindow(); win4.set_image(base_png); win4.set_outlines(ls, style0, base_png); win4.show(); qa.processEvents()
 ok(not win4.cut_row.isVisibleTo(win4), "with no section there is no cut outline row")
+# ---- a line with no hand is a ruled line: straight, the same width all along; the cut's rim is always straight
+from render_studio.croquis_engine import strokes as _st
+long_seg = np.array([[20.0, 50.0, 420.0, 90.0]])
+def stroke_of(hand, straight=False, width=3.0, seg=long_seg):
+    ls_ = _st.LineStyle(hand=hand, width=width, profile_scale=1.0, overshoot=0.0, double_stroke=False, breaks=False, opacity=1.0)
+    out = _st.strokes_for(seg, None, ls_, 1000.0, None, straight=straight)
+    return out[0].outline, ls_
+def centre_and_widths(outline):
+    k = len(outline) // 2
+    left, right = outline[:k], outline[k:][::-1]
+    return (left + right) / 2.0, np.linalg.norm(left - right, axis=1)
+def off_line(points, seg):
+    a, b = seg[0, :2], seg[0, 2:]
+    d = (b - a) / np.linalg.norm(b - a)
+    rel = points - a
+    return np.abs(rel[:, 0] * d[1] - rel[:, 1] * d[0])
+o0, _l = stroke_of(0.0)
+c0, w0 = centre_and_widths(o0)
+ok(off_line(c0, long_seg).max() < 1e-6, "hand 0: the line is straight (it keeps to the segment)")
+ok(np.ptp(w0) < 1e-9 and abs(w0[0] - 3.0) < 1e-9, f"…and the same width all along ({w0.min():.3f} to {w0.max():.3f} px, as asked: 3)")
+o1, _l = stroke_of(1.0)
+c1, w1 = centre_and_widths(o1)
+ok(off_line(c1, long_seg).max() > 0.3 and np.ptp(w1) > 0.2, f"a loose hand still bows, wavers and swells ({off_line(c1, long_seg).max():.2f} px off the line, width {w1.min():.2f}–{w1.max():.2f})")
+o2, _l = stroke_of(1.0, straight=True)
+c2, w2 = centre_and_widths(o2)
+ok(off_line(c2, long_seg).max() < 1e-6, "…but a straight one (the cut's rim) is straight whatever the hand")
+ok(len(w2) == len(w1), "(the same pen, only its path is ruled)")
+# the whole drawing: with no hand, the strokes of a style are ruled
+lsx = outlines.LineSet(np.array([[30.0, 40.0, 300.0, 200.0]]), np.array([False]), np.ones(1), 640, 360,
+                       cut=np.array([[300.0, 200.0, 300.0, 40.0], [40.0, 330.0, 280.0, 300.0]]))
+sty = {"mode": "none", "width": 3.0, "color": [0, 0, 0], "hand": 0.0, "cut": {"on": True, "color": [1, 0, 0], "width": 5.0, "srgb": True, "opacity": 1.0, "cap": True}}
+img_s = outlines.strokes_image(lsx, sty)
+_rg = img_s.convertToFormat(QImage.Format_RGBA8888)
+arr_s = np.frombuffer(_rg.constBits(), dtype=np.uint8, count=_rg.width() * _rg.height() * 4).reshape(_rg.height(), _rg.width(), 4)
+col = (arr_s[..., 0] > 200) & (arr_s[..., 3] > 200)
+ys = [int(col[y, 290:311].sum()) for y in (60, 100, 150, 190)]
+ok(max(ys) - min(ys) <= 1, f"a vertical rim of 5 px is 5 px wide all along it ({ys})")
 empty = Scene()
 ok(outlines.write_layer(type("E", (), {"scene": empty})(), cam, 640, 360, st(), tmp / "g.png") is None, "an empty view gives no layer (and no error)")
 blk = P.apply_style_block({}, scene, {"mode": "none", "width": 3}, lines=str(tmp / "a.png"))
