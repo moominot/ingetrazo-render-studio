@@ -3035,8 +3035,8 @@ def clip_section(section):
                     c.objects.link(ghost)
                 ghost.visible_camera = False
                 ghosts += 1
-    extra = []                            # the loose caps (no shadows) of the planes so far: cut by the planes that follow, never capped
     capmats = {}
+    shadowless_mats = set()               # the caps that cast and take no shadow: made like the others, taken out of the meshes at the end
     n = capped = 0
     for co, no, entry in cuts:
         sec = dict(section)
@@ -3047,10 +3047,10 @@ def clip_section(section):
             capmats[key] = _cap_material(sec)
         capmat = capmats.get(key) if want_cap else None
         uv_of = _plane_uv(co, no, sec.get("texture_size"))
-        shadowless = want_cap and not sec.get("shadows", True)
-        loose = []                                  # a shadowless cap: its triangles (world, with uv)
-        for obj in objs + extra:
-            capping = want_cap and obj not in extra
+        if want_cap and not sec.get("shadows", True):
+            shadowless_mats.add(capmat)
+        for obj in objs:
+            capping = want_cap
             if obj.data.users > 1:
                 obj.data = obj.data.copy()
             mw = obj.matrix_world.copy()
@@ -3084,12 +3084,9 @@ def clip_section(section):
                     f.normal_flip()
                 for loop in f.loops:
                     loop[uv_layer].uv = uv_of(loop.vert.co)
-            if new_faces and shadowless:
-                for f in new_faces:
-                    loose.append([(tuple(l.vert.co), tuple(l[uv_layer].uv)) for l in f.loops])
-                bmesh.ops.delete(bm, geom=new_faces, context="FACES_ONLY")
-                capped += 1
-            elif new_faces:
+            if new_faces:
+                # (A cap without shadows stays in the mesh too, while the planes cut: the next plane needs the solid closed to find
+                # its own ring, and the cap of a box's side would be missing otherwise. It leaves the mesh at the end.)
                 if not len(obj.data.materials):
                     obj.data.materials.append(None)       # the faces it has keep «no material»
                 if capmat not in list(obj.data.materials):
@@ -3103,8 +3100,29 @@ def clip_section(section):
             bm.free()
             obj.data.update()
             n += 1
-        if loose:
-            extra.append(_loose_cap(loose, capmat))
+    loose = {}                                      # cap material -> its triangles (world, with uv), from every mesh
+    if shadowless_mats:
+        for obj in objs:
+            mats = list(obj.data.materials)
+            slots = {i for i, m in enumerate(mats) if m in shadowless_mats}
+            if not slots:
+                continue
+            bm = bmesh.new()
+            bm.from_mesh(obj.data)
+            uv_layer = bm.loops.layers.uv.verify()
+            mw = obj.matrix_world.copy()
+            gone = []
+            for f in bm.faces:
+                if f.material_index in slots:
+                    loose.setdefault(mats[f.material_index], []).append(
+                        [(tuple(mw @ l.vert.co), tuple(l[uv_layer].uv)) for l in f.loops])
+                    gone.append(f)
+            bmesh.ops.delete(bm, geom=gone, context="FACES_ONLY")
+            bm.to_mesh(obj.data)
+            bm.free()
+            obj.data.update()
+        for mat, polys in loose.items():
+            _loose_cap(polys, mat)
     say("section", f"{len(cuts)} plane(s), {n} cuts, {capped} capped, {ghosts} keep blocking light; first at "
         f"{[round(c, 3) for c in cuts[0][0]]}, normal {[round(c, 3) for c in cuts[0][1]]}")
     return n
