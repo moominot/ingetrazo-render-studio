@@ -202,6 +202,103 @@ def occluder(stand_in_tris):
     return (np.asarray(stand_in_tris, dtype=np.float64).reshape(-1, 3, 3), np.empty((0, 2, 3)), np.empty((0, 2, 3)), np.empty((0, 2, 3)))
 
 
+# ---- the section: what its planes cut away is no part of the lines -----------------------------------------------------------
+
+def cut_planes(scene) -> list:
+    """The planes cutting the model now, as ``(point, normal)`` arrays: the active section plane and, in an IngeTrazo that has them (0.6.3),
+    the six faces of the active section box. ``normal`` points to the side that goes. ``[]`` when nothing cuts (or Section Cuts is off)."""
+    if scene is None or not getattr(scene, "show_section_cuts", True):
+        return []
+    try:
+        from core.section import cut_planes as ingetrazo_cut_planes
+        planes = list(ingetrazo_cut_planes(scene))
+    except Exception:  # noqa: BLE001 - an IngeTrazo without section boxes: the active plane alone
+        active = getattr(scene, "active_section", None)
+        try:
+            sp = active() if callable(active) else None
+        except Exception:  # noqa: BLE001
+            sp = None
+        planes = [sp] if sp is not None else []
+    out = []
+    for pl in planes:
+        try:
+            pt, nm = pl.point, pl.normal
+            out.append((np.array([pt.x(), pt.y(), pt.z()], dtype=np.float64), np.array([nm.x(), nm.y(), nm.z()], dtype=np.float64)))
+        except Exception:  # noqa: BLE001 - not a plane
+            continue
+    return out
+
+
+def _clip_segments(seg, extra, d, eps):
+    """Segments ``seg`` (N, 2, 3) with per-end distances ``d`` (N, 2) beyond a plane (> 0 goes): the parts that stay, and the rows of
+    ``extra`` (another array of the same N) that go with them."""
+    da, db = d[:, 0], d[:, 1]
+    keep = (da <= eps) | (db <= eps)
+    seg, da, db = seg[keep], da[keep], db[keep]
+    extra = extra[keep] if extra is not None else None
+    a, b = seg[:, 0].copy(), seg[:, 1].copy()
+    cross_a = da > eps                                 # the first end is on the removed side: move it to the plane
+    cross_b = db > eps
+    t = np.where(cross_a | cross_b, da / np.where(da != db, da - db, 1.0), 0.0)
+    cut = seg[:, 0] + t[:, None] * (seg[:, 1] - seg[:, 0])
+    a[cross_a] = cut[cross_a]
+    b[cross_b] = cut[cross_b]
+    return np.stack([a, b], axis=1), extra
+
+
+def _clip_triangles(tris, d, eps):
+    """Triangles (T, 3, 3) with per-corner distances ``d`` (T, 3) beyond a plane (> 0 goes): those that stay, whole or cut at the plane (a
+    triangle with one corner gone becomes two, with two corners gone one), with the winding they had."""
+    out = d > eps
+    n_out = out.sum(axis=1)
+    keep_whole = tris[n_out == 0]
+    parts = [keep_whole]
+    one = np.nonzero(n_out == 1)[0]                    # one corner gone: a quad, two triangles
+    if len(one):
+        r = np.argmax(out[one], axis=1)                # rotate so the corner gone is first: (O, A, B) in cyclic order
+        T = tris[one]; D = d[one]
+        idx = (r[:, None] + np.arange(3)[None, :]) % 3
+        rows = np.arange(len(one))[:, None]
+        O, A, B = (T[rows[:, 0], idx[:, k]] for k in range(3))
+        dO, dA, dB = (D[rows[:, 0], idx[:, k]] for k in range(3))
+        pa = A + ((dA / (dA - dO))[:, None]) * (O - A)          # on A → O
+        pb = B + ((dB / (dB - dO))[:, None]) * (O - B)          # on B → O
+        parts.append(np.stack([A, B, pb], axis=1))
+        parts.append(np.stack([A, pb, pa], axis=1))
+    two = np.nonzero(n_out == 2)[0]                    # two corners gone: one triangle
+    if len(two):
+        r = np.argmin(out[two], axis=1)                # the corner that stays first: (P, Q, R)
+        T = tris[two]; D = d[two]
+        idx = (r[:, None] + np.arange(3)[None, :]) % 3
+        rows = np.arange(len(two))
+        P, Q, R = (T[rows, idx[:, k]] for k in range(3))
+        dP, dQ, dR = (D[rows, idx[:, k]] for k in range(3))
+        parts.append(np.stack([P, P + ((dP / (dP - dQ))[:, None]) * (Q - P), P + ((dP / (dP - dR))[:, None]) * (R - P)], axis=1))
+    return np.concatenate(parts) if len(parts) > 1 else keep_whole
+
+
+def clip_geometry(geom, planes, eps: float = 1e-6):
+    """``geom`` (triangles, hard edges, soft edges, soft normals) cut by ``planes`` (:func:`cut_planes`): what lies on the normal's side
+    goes, as in IngeTrazo's view and in the render, so no line is drawn of the cut-away part and it hides nothing."""
+    if not planes:
+        return geom
+    tris, hard, soft, soft_n = (np.asarray(g, dtype=np.float64) for g in geom)
+    for point, normal in planes:
+        n = np.asarray(normal, dtype=np.float64)
+        ln = float(np.linalg.norm(n))
+        if ln < 1e-12:
+            continue
+        n = n / ln
+        p0 = np.asarray(point, dtype=np.float64)
+        if len(tris):
+            tris = _clip_triangles(tris, (tris - p0) @ n, eps)
+        if len(hard):
+            hard, _x = _clip_segments(hard, None, (hard - p0) @ n, eps)
+        if len(soft):
+            soft, soft_n = _clip_segments(soft, soft_n, (soft - p0) @ n, eps)
+    return tris.reshape(-1, 3, 3), hard.reshape(-1, 2, 3), soft.reshape(-1, 2, 3), soft_n.reshape(-1, 2, 3)
+
+
 class LineSet:
     """The visible lines of a view, found once (the costly part): ``segs`` (N, 4) pixels of a ``width``×``height`` picture, which are
     outlines, and how thin to draw each. Any style can be drawn from it without looking at the model again (:func:`strokes_image`)."""
@@ -214,12 +311,20 @@ class LineSet:
         return len(self.segs)
 
 
-def lineset(viewport, camera, width: int, height: int, geom=None, notes: list | None = None):
+def lineset(viewport, camera, width: int, height: int, geom=None, notes: list | None = None, planes=None):
     """The :class:`LineSet` of the view seen from ``camera`` at ``width``×``height`` (None when it shows no line). ``geom``: the geometry
-    to draw (see ``panel.line_geometry``), else the viewport's own."""
+    to draw (see ``panel.line_geometry``), else the viewport's own. ``planes``: what is cut away (:func:`cut_planes`; by default the
+    active section plane and box of the viewport's scene)."""
     if height < MIN_HEIGHT or width < MIN_HEIGHT:
         return None
     g = geom if geom is not None else _geometry(viewport)
+    if planes is None:
+        planes = cut_planes(getattr(viewport, "scene", None))
+    if planes:
+        before = len(g[0])
+        g = clip_geometry(g, planes)
+        if notes is not None:
+            notes.append(f"section: {len(planes)} cutting plane(s); triangles {before} -> {len(g[0])}")
     segs, outline, weight = segments(g, camera, width, height)
     if notes is not None:
         notes.append(f"geometry: triangles {len(g[0])}, hard {len(g[1])}, soft {len(g[2])}; {len(segs)} lines in {width}x{height}")

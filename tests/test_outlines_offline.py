@@ -130,6 +130,38 @@ win.side_handle.click(); qa.processEvents()
 ok(win.side.isVisibleTo(win), "…and shows it")
 win.set_mode("preview"); qa.processEvents()
 ok(not win.side.isVisibleTo(win) and not win.side_handle.isVisibleTo(win) and not win.save_btn.isVisibleTo(win), "in the live preview there is neither panel, handle nor Save")
+# ---- the section: no line of what its planes cut away
+geom_box = (cube_tris(2.0) * np.array([2.0, 2.0, 1.0]), np.empty((0, 2, 3)), np.empty((0, 2, 3)), np.empty((0, 2, 3)))
+half = [(np.array([1.0, 0.0, 0.0]), np.array([1.0, 0.0, 0.0]))]             # the plane x = 1; what has x > 1 goes
+c = outlines.clip_geometry(geom_box, half)
+ok(len(c[0]) > 0 and c[0][:, :, 0].max() <= 1.0 + 1e-9 and c[0][:, :, 0].min() >= -1e-9, f"triangles are cut at the plane: nothing beyond it, the rest kept ({len(geom_box[0])} → {len(c[0])})")
+areas = lambda T: 0.5 * np.linalg.norm(np.cross(T[:, 1] - T[:, 0], T[:, 2] - T[:, 0]), axis=1)
+ok(abs(areas(c[0]).sum() - 12.0) < 1e-6, f"…the area that stays is the cube's half, open at the cut ({areas(c[0]).sum():.3f} of 24, the cut face not there: 12 expected)")
+n_out = np.cross(c[0][:, 1] - c[0][:, 0], c[0][:, 2] - c[0][:, 0]); orig = np.cross(geom_box[0][:, 1] - geom_box[0][:, 0], geom_box[0][:, 2] - geom_box[0][:, 0])
+ok(np.all(np.linalg.norm(n_out, axis=1) > 0) and (c[0][:, :, 0].mean(axis=1) < 1.0).all(), "…and each piece lies on the kept side")
+H = np.array([[[0.0, 0, 0], [2.0, 0, 0]], [[1.5, 0, 0], [3.0, 0, 0]], [[1.2, 1, 0], [2.0, 1, 0]], [[0.0, 2, 0], [0.5, 2, 0]]])
+SN = np.full((4, 2, 3), np.nan); SN[:, 0] = (0, 0, 1)
+cc = outlines.clip_geometry((np.empty((0, 3, 3)), H, H.copy(), SN), half)
+ok(len(cc[1]) == 2 and abs(cc[1][:, :, 0].max() - 1.0) < 1e-9 and np.allclose(sorted(cc[1][:, 1, 0]), [0.5, 1.0]), "edges are cut at the plane or dropped when wholly beyond it")
+ok(len(cc[2]) == len(cc[3]) == 2 and np.isnan(cc[3][:, 1]).all(), "…soft edges keep their normals with them")
+two_planes = half + [(np.array([0.0, 1.0, 0.0]), np.array([0.0, 1.0, 0.0]))]    # a box's two faces: x > 1 and y > 1 go
+c2 = outlines.clip_geometry(geom_box, two_planes)
+ok(c2[0][:, :, 0].max() <= 1.0 + 1e-9 and c2[0][:, :, 1].max() <= 1.0 + 1e-9, "several planes (a section box) cut one after the other")
+ok(outlines.clip_geometry(geom_box, []) is geom_box, "no plane, nothing changes")
+from core import section as ISEC
+scene.groups.clear(); scene.groups.append(Group(cube_mesh := Mesh(), name="cube"))
+for q in ([V(0,0,0),V(2,0,0),V(2,0,2),V(0,0,2)],[V(2,0,0),V(2,2,0),V(2,2,2),V(2,0,2)],[V(2,2,0),V(0,2,0),V(0,2,2),V(2,2,2)],[V(0,2,0),V(0,0,0),V(0,0,2),V(0,2,2)],[V(0,0,2),V(2,0,2),V(2,2,2),V(0,2,2)],[V(0,0,0),V(0,2,0),V(2,2,0),V(2,0,0)]):
+    cube_mesh.add_face(q)
+cam2 = OrbitCamera(); cam2.target = V(0, 0, 1); cam2.distance = 12; cam2.yaw = math.radians(-35); cam2.pitch = math.radians(25)
+whole = outlines.lineset(VP(), cam2, 640, 360)
+plane = ISEC.SectionPlane(V(1, 0, 0), V(1, 0, 0)); scene.section_planes.append(plane); scene.set_active_section(plane)
+ok(len(outlines.cut_planes(scene)) == 1, "the active section plane is read")
+cut = outlines.lineset(VP(), cam2, 640, 360)
+ok(cut is not None and cut.segs.shape != whole.segs.shape or (cut is not None and not np.array_equal(cut.segs, whole.segs)), "with a section on, the lines are not the whole model's")
+scene.show_section_cuts = False
+ok(outlines.cut_planes(scene) == [], "Section Cuts off: nothing cuts")
+scene.show_section_cuts = True
+scene.section_planes.clear()
 empty = Scene()
 ok(outlines.write_layer(type("E", (), {"scene": empty})(), cam, 640, 360, st(), tmp / "g.png") is None, "an empty view gives no layer (and no error)")
 blk = P.apply_style_block({}, scene, {"mode": "none", "width": 3}, lines=str(tmp / "a.png"))

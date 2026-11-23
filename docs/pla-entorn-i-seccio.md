@@ -9,7 +9,7 @@ Escrit el 2026-11-23, després de revisar el codi (`panel.py`, `sun_panel.py`, `
   a tots els botons que pengen d'ell, i el diàleg de color ho era (s'obria amb el botó com a pare). Per això *D'acord*, *Cancel·la* i els botons de
   colors personalitzats agafaven el color triat. Ara la regla és només per al botó (`#colourSwatch`) i el diàleg penja de la finestra. Només
   passava a `ColourButton` (secció, estil, contorns, horitzó, terra…); els altres selectors (llums, materials) no pengen d'un botó pintat.
-- **Error nou: els contorns ignoren la secció.** Comprovat: amb un pla de secció actiu, les línies encara es dibuixen per a la part tallada (arestes
+- **Error nou (resolt amb S1): els contorns ignoraven la secció.** Comprovat: amb un pla de secció actiu, les línies encara es dibuixen per a la part tallada (arestes
   amb x > 0 en un pla que treu x > 0). Freestyle no ho feia perquè dibuixava el que Blender ja havia tallat. S'ha de retallar la geometria de les
   línies amb els plans de tall *abans* del buffer de profunditat (apartat 3, pas S1). Fins que no es faci, una render amb secció i contorns
   surt amb línies de més.
@@ -70,7 +70,7 @@ Llum (oberta / bloquejada) · una nota: el tall és el pla actiu d'IngeTrazo.
 ### S0 (previ) Una frase de context
 La nota de baix passa a dir què talla ara: «Pla *Planta baixa*» / «Caixa *Detall* (6 cares)» / «Pla + caixa» / «No hi ha cap tall actiu».
 
-### S1 Retallar les línies pels plans de tall (corregeix l'error)
+### S1 Retallar les línies pels plans de tall (corregeix l'error) — FET
 - Llegir els plans amb `core.section.cut_planes(scene)` (el pla actiu i les sis cares de la caixa activa; buit si «Talls de secció» està apagat).
 - A `outlines.py`: retallar triangles i arestes (dures i toves) pels semiespais abans de `depth_buffer`, amb el mateix tipus de retall que ja fa
   Croquis al pla proper. Per a cada triangle: 0 plans → es queda; tot fora → fora; si el travessa → es parteix.
