@@ -329,8 +329,16 @@ class ImageWindow(QWidget):
         from .widgets import NumberSlider
         self.lines_box = QGroupBox(tr("Outlines: still lines until you save"))
         form = QFormLayout(self.lines_box)
+
+        def heading(text):
+            lab = QLabel(text)
+            f = lab.font()
+            f.setBold(True)
+            lab.setFont(f)
+            return lab
+        # the model's own lines
         top = QHBoxLayout()
-        self.lines_on = QCheckBox(tr("Show"))
+        self.lines_on = QCheckBox(tr("Outlines of the model"))
         self.lines_colour = ColourButton([0.05, 0.05, 0.05], "Outline colour", linear=True)
         self.lines_colour.setMaximumWidth(60)
         self.lines_reset = QPushButton(tr("As rendered"))
@@ -340,15 +348,20 @@ class ImageWindow(QWidget):
         top.addStretch(1)
         top.addWidget(self.lines_reset)
         form.addRow(top)
-        self.lines_width = NumberSlider(0.5, 10.0, 0.1, "{:.1f} px")
-        self.lines_width.setToolTip(tr("The thickness of the lines, in pixels of this picture"))
+        self.lines_width = NumberSlider(0.0, 10.0, 0.1, "{:.1f} px", special="No outlines")
+        self.lines_width.setToolTip(tr("The thickness of the model's lines, in pixels of this picture. 0: no outlines"))
         self.lines_hand = NumberSlider(0.0, 1.0, 0.05, "{:.0%}")
-        self.lines_hand.setToolTip(tr("From a ruler (0) to a loose hand: wavering, swelling, drawn twice, broken"))
-        self.lines_extend = NumberSlider(0.0, 1.0, 0.05, "{:.0%}")
-        self.lines_extend.setToolTip(tr("How far the lines run past their corners"))
+        self.lines_hand.setToolTip(tr("From a ruler (0: straight lines, the same width all along) to a loose hand: wavering, swelling, drawn twice, broken"))
+        self.lines_extend = NumberSlider(0.0, 50.0, 1.0, "{:.0f} cm")
+        self.lines_extend.setToolTip(tr("How far the lines run past their corners, in centimetres of the model (estimated at the model's own "
+                                        "distance from the camera). A ruler goes exactly that far; a hand, a little less or more"))
         self.lines_opacity = NumberSlider(0.2, 1.0, 0.05, "{:.0%}")
-        self.lines_opacity.setToolTip(tr("How dark the ink is"))
-        # (the rim of the cap, when a section cuts the model: apart from the model's lines, with its own colour and thickness)
+        self.lines_opacity.setToolTip(tr("How dark the ink is (the model's lines and the cut's)"))
+        form.addRow(tr("Line thickness"), self.lines_width)
+        form.addRow(tr("Hand"), self.lines_hand)
+        form.addRow(tr("Line extension"), self.lines_extend)
+        form.addRow(tr("Ink"), self.lines_opacity)
+        # the rim of the cap, when a section cuts the model: apart from the model's lines, with its own colour and thickness (always a ruled line)
         self.cut_row = QWidget()
         cr = QHBoxLayout(self.cut_row)
         cr.setContentsMargins(0, 0, 0, 0)
@@ -363,10 +376,6 @@ class ImageWindow(QWidget):
         self.cut_width_label = QLabel(tr("Cut thickness"))
         form.addRow(self.cut_row)
         form.addRow(self.cut_width_label, self.cut_width)
-        form.addRow(tr("Thickness"), self.lines_width)
-        form.addRow(tr("Hand"), self.lines_hand)
-        form.addRow(tr("Line extension"), self.lines_extend)
-        form.addRow(tr("Ink"), self.lines_opacity)
         self._lines_timer = QTimer(self)
         self._lines_timer.setSingleShot(True)
         self._lines_timer.setInterval(120)
@@ -375,9 +384,32 @@ class ImageWindow(QWidget):
                     self.lines_extend.valueChanged, self.lines_opacity.valueChanged, self.cut_on.toggled, self.cut_colour.changed,
                     self.cut_width.valueChanged):
             sig.connect(lambda *_a: self._lines_timer.start())
+        self.lines_width.valueChanged.connect(self._width_moved)
+        self.lines_on.toggled.connect(self._model_toggled)
+        for sig in (self.lines_on.toggled, self.lines_width.valueChanged, self.cut_on.toggled):
+            sig.connect(lambda *_a: self._sync_enabled())
         self.lines_reset.clicked.connect(self._lines_to_initial)
         self.lines_box.setVisible(False)
         parent_layout.addWidget(self.lines_box)
+
+    def _width_moved(self, v: float) -> None:
+        """Moving the thickness from 0 turns the model's outlines on (it would have done nothing otherwise)."""
+        if v > 0.0 and not self.lines_on.isChecked():
+            self.lines_on.setChecked(True)
+
+    def _model_toggled(self, on: bool) -> None:
+        """Turning the model's outlines on with no thickness gives them a thin one."""
+        if on and self.lines_width.value() <= 0.0:
+            self.lines_width.setValue(1.5)
+
+    def _sync_enabled(self) -> None:
+        """What a control does is what it shows: the model's colour, hand and extension wait while there are no model outlines (their
+        thickness 0, or switched off), the cut's colour and thickness while the cut outline is off."""
+        model = self.lines_on.isChecked() and self.lines_width.value() > 0.0
+        for w in (self.lines_colour, self.lines_hand, self.lines_extend):
+            w.setEnabled(model)
+        for w in (self.cut_colour, self.cut_width):
+            w.setEnabled(self.cut_on.isChecked())
 
     def set_outlines(self, lines, style: dict, base_path) -> None:
         """The picture's outlines as vectors: ``lines`` (outlines.LineSet), ``style`` (outlines.window_style: where the controls start)
@@ -402,31 +434,35 @@ class ImageWindow(QWidget):
                     self.cut_on, self.cut_colour, self.cut_width)
         for w in controls:
             w.blockSignals(True)
-        self.lines_on.setChecked(True)
+        width = float(style.get("width", 0.0))
+        self.lines_on.setChecked(bool(style.get("model_on", width > 0.0)))
         self.lines_colour.set_rgb(style.get("color") or [0.05, 0.05, 0.05])
-        self.lines_width.setValue(float(style.get("width", 1.5)))
+        self.lines_width.setValue(width)
         self.lines_hand.setValue(float(style.get("hand", 0.0)))
-        self.lines_extend.setValue(float(style.get("extend", 0.0)))
+        cm = style.get("extend_cm")
+        self.lines_extend.setValue(float(cm) if cm is not None else float(style.get("extend", 0.0)) * 50.0)
         self.lines_opacity.setValue(float(style.get("opacity", 1.0)))
-        cut = style.get("cut") or {}
-        self.cut_on.setChecked(bool(cut.get("on", True)))
-        self.cut_colour.set_rgb(cut.get("color") or [0.05, 0.05, 0.05])
-        self.cut_width.setValue(float(cut.get("width", 2.4)))
+        cutd = style.get("cut") or {}
+        self.cut_on.setChecked(bool(cutd.get("on", True)))
+        self.cut_colour.set_rgb(cutd.get("color") or [0.05, 0.05, 0.05])
+        self.cut_width.setValue(float(cutd.get("width", 2.4)))
         for w in controls:
             w.blockSignals(False)
         has_cut = bool(self.lines is not None and len(getattr(self.lines[0], "cut", ())))
         self.cut_row.setVisible(has_cut)
         self.cut_width.setVisible(has_cut)
         self.cut_width_label.setVisible(has_cut)
+        self._sync_enabled()
 
     def lines_style(self) -> dict:
         """The outlines' style as the controls say it."""
         base = dict(self.lines[1]) if self.lines else {}
         base.update(width=self.lines_width.value(), color=self.lines_colour.rgb(), hand=self.lines_hand.value(),
-                    extend=self.lines_extend.value(), opacity=self.lines_opacity.value())
+                    extend_cm=self.lines_extend.value(), opacity=self.lines_opacity.value(), model_on=self.lines_on.isChecked())
+        base.pop("extend", None)
         if base.get("cut") is not None:
             base["cut"] = dict(base["cut"], on=self.cut_on.isChecked(), color=self.cut_colour.rgb(), width=self.cut_width.value(),
-                               srgb=True)
+                               opacity=self.lines_opacity.value(), srgb=True)
         return base
 
     def _lines_to_initial(self) -> None:
@@ -439,8 +475,7 @@ class ImageWindow(QWidget):
         if self.lines is None or self._lines_base is None:
             return
         from . import outlines
-        lines = self.lines[0]
-        img = outlines.composite(self._lines_base, lines if self.lines_on.isChecked() else None, self.lines_style())
+        img = outlines.composite(self._lines_base, self.lines[0], self.lines_style())
         self._load_qimage(img)
         self._refresh()
 

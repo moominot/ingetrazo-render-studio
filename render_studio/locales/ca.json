@@ -856,5 +856,12 @@
 "No active section plane or box: the render shows the whole model.": "No hi ha cap pla ni caixa de secció actius: el render mostra el model sencer.",
 "The cap is filled as the drawing fills its cut: the plane's or the box's own fill, else the style's Section fill (a solid colour, a hatch, a cross hatch, or none).": "La tapa s'omple com el dibuix omple el seu tall: el farcit propi del pla o de la caixa, o si no el de l'estil (color pla, trama, trama creuada o res).",
 "The cut is the drawing's active section plane and section box (the Section tools place and flip them). It is read again whenever the preview reloads.": "El tall és el pla i la caixa de secció actius del dibuix (les eines de Secció els col·loquen i els giren). Es torna a llegir cada vegada que la previsualització es recarrega.",
-"Click the title to fold or unfold this group": "Fes clic al títol per plegar o desplegar aquest grup"
+"Click the title to fold or unfold this group": "Fes clic al títol per plegar o desplegar aquest grup",
+"Outlines of the model": "Contorns del model",
+"Line thickness": "Gruix de les línies",
+"The thickness of the model's lines, in pixels of this picture. 0: no outlines": "El gruix de les línies del model, en píxels d'aquesta imatge. 0: sense contorns",
+"From a ruler (0: straight lines, the same width all along) to a loose hand: wavering, swelling, drawn twice, broken": "De regla (0: línies rectes, del mateix gruix per tot) a mà solta: tremolor, gruixos variables, repassat i trencat",
+"How far the lines run past their corners, in centimetres of the model (estimated at the model's own distance from the camera). A ruler goes exactly that far; a hand, a little less or more": "Fins on passen les línies més enllà de les cantonades, en centímetres del model (estimats a la distància del model a la càmera). Una regla arriba exactament fins allà; una mà, una mica menys o més",
+"How dark the ink is (the model's lines and the cut's)": "Com de fosca és la tinta (les línies del model i les del tall)",
+"How far the lines run past their corners, as a draughtsman's do: in centimetres of the model (estimated at the model's own distance from the camera).": "Fins on passen les línies més enllà de les cantonades, com fa un delineant: en centímetres del model (estimats a la distància del model a la càmera)."
 }

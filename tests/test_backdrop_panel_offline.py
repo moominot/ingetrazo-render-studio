@@ -291,7 +291,7 @@ panel.style_mode.setCurrentIndex(panel.style_mode.findData("white")); qa.process
 ok(panel.style_width.value() > 0.0 and not shown(panel.style_noise), "White: a thin outline by default")
 panel.style_mode.setCurrentIndex(panel.style_mode.findData("none")); qa.processEvents()
 ok(panel.style_width.value() == 0.0, "None goes back to no outlines")
-panel.style_mode.setCurrentIndex(panel.style_mode.findData("sketch")); panel.style_noise.setValue(0.8); panel.style_extend.setValue(0.3)
+panel.style_mode.setCurrentIndex(panel.style_mode.findData("sketch")); panel.style_noise.setValue(0.8); panel.style_extend.setValue(15.0)          # 15 cm of the 50 the slider goes to: 0.3 is kept
 stl = panel.settings_dict()["style"]
 ok(stl["mode"] == "sketch" and stl["noise"] == 0.8 and stl["extend"] == 0.3 and SS.clean(panel.settings_dict())["style"] == SS.style(stl), "the style is in the document's settings")
 blk = P.apply_style_block({}, doc.scene, stl)["style"]

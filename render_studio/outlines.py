@@ -42,7 +42,11 @@ def ink_colour(style: dict, srgb: bool = False) -> tuple:
     return tuple(int(round(255 * _srgb(c))) for c in rgb)
 
 
-def line_style(style: dict, height: int) -> st.LineStyle:
+#: «Line extension» at 100 % (the panel's slider keeps a fraction): this many centimetres of the model.
+EXTEND_MAX_CM = 50.0
+
+
+def line_style(style: dict, height: int, px_per_m: float | None = None) -> st.LineStyle:
     """The hand of the style: ``width`` is in pixels of the picture (as Freestyle's was), ``noise`` 0..1 how loose the stroke is (0 a
     ruler), ``extend`` 0..1 how far lines run past their corners, both only in a sketch. A style that carries ``hand`` (the render
     window's controls) takes ``hand``, ``extend`` and ``opacity`` whatever its mode."""
@@ -57,13 +61,18 @@ def line_style(style: dict, height: int) -> st.LineStyle:
     if style.get("mode") == "sketch" and width <= 0.0:
         width = 1.5                                      # a sketch is lines
     width = max(width, 0.0) if width <= 0.0 else max(width, 0.6)      # a thin frame keeps a line you can see
+    # The extension is a length of the model, in centimetres, turned into pixels at the model's own distance (``px_per_m`` of the view).
+    cm = style.get("extend_cm")
+    if cm is None:
+        cm = extend * EXTEND_MAX_CM
+    extend_px = max(0.0, float(cm)) / 100.0 * (px_per_m if px_per_m and px_per_m > 0 else height / 6.0)
     return st.LineStyle(
         hand=noise,
         width=width * st.REFERENCE_HEIGHT / max(1, height),        # Croquis' widths scale with the picture: keep the pixels
         profile_scale=1.0 + 0.6 * noise,                           # a ruled line is even; a hand leans on the shapes' edges
         overshoot=2.0 * extend,
         double_stroke=noise > 0.05, breaks=noise > 0.2,
-        opacity=max(0.05, min(1.0, float(style.get("opacity", 1.0) or 1.0))))
+        opacity=max(0.05, min(1.0, float(style.get("opacity", 1.0) or 1.0))), extend_px=extend_px)
 
 
 def window_style(style: dict) -> dict:
@@ -72,6 +81,8 @@ def window_style(style: dict) -> dict:
     sketch = style.get("mode") == "sketch"
     width = float(style.get("width", 0.0) or 0.0)
     out = {"mode": style.get("mode", "none"), "width": width if width > 0.0 else (1.5 if sketch else 0.0),
+           "model_on": bool(width > 0.0 or sketch),
+           "extend_cm": (float(style.get("extend", 0.0)) * EXTEND_MAX_CM) if sketch else 0.0,
            "color": list(style.get("color") or (0.05, 0.05, 0.05))[:3],
            "hand": float(style.get("noise", 0.0)) if sketch else 0.0,
            "extend": float(style.get("extend", 0.0)) if sketch else 0.0, "opacity": 1.0}
@@ -93,12 +104,14 @@ def cut_line_style(style: dict, height: int) -> st.LineStyle:
     cut = cut_of(style) or {}
     base = line_style(style, height)
     width = max(0.3, float(cut.get("width", 2.4) or 2.4))
-    return st.LineStyle(hand=base.hand, width=width * st.REFERENCE_HEIGHT / max(1, height), profile_scale=1.0, overshoot=base.overshoot,
+    return st.LineStyle(hand=base.hand, width=width * st.REFERENCE_HEIGHT / max(1, height), profile_scale=1.0, overshoot=0.0, extend_px=0.0,
                         double_stroke=False, breaks=False,
                         opacity=max(0.05, min(1.0, float(cut.get("opacity", 1.0) or 1.0))))
 
 
 def _wants_model(style: dict) -> bool:
+    if not style.get("model_on", True):
+        return False
     return float(style.get("width", 0.0) or 0.0) > 0.0 or style.get("mode") == "sketch"
 
 
@@ -500,13 +513,40 @@ def fill_cap(zbuf, mask, plane, others, M, persp: bool, eps: float = 1e-6) -> No
     zbuf[rows, cols] = np.maximum(zbuf[rows, cols], q)
 
 
+def _px_per_m(tris, camera, width: int, height: int):
+    """How many pixels one metre of the model takes in the picture, at the model's own distance (the middle of its box): a point and a
+    point a metre to its side, through the view. None when it cannot be told."""
+    try:
+        pts = np.asarray(tris, dtype=np.float64).reshape(-1, 3)
+        if not len(pts):
+            return None
+        cam = copy.copy(camera)
+        cam.aspect = width / max(1.0, float(height))
+        M = vis.clip_matrix(cam)
+        centre = (pts.min(axis=0) + pts.max(axis=0)) / 2.0
+        f = cam.forward()
+        fwd = np.array([f.x(), f.y(), f.z()], dtype=np.float64)
+        right = np.cross(fwd, np.array([0.0, 0.0, 1.0]))
+        if np.linalg.norm(right) < 1e-6:
+            right = np.array([1.0, 0.0, 0.0])
+        right /= np.linalg.norm(right)
+        c = vis.to_clip(np.stack([centre, centre + right]), M)
+        x = (c[:, 0] / c[:, 3] * 0.5 + 0.5) * width
+        y = (0.5 - c[:, 1] / c[:, 3] * 0.5) * height
+        px = float(np.hypot(x[1] - x[0], y[1] - y[0]))
+        return px if np.isfinite(px) and px > 1e-6 else None
+    except Exception:  # noqa: BLE001 - a guess is used instead
+        return None
+
+
 class LineSet:
     """The visible lines of a view, found once (the costly part): ``segs`` (N, 4) pixels of a ``width``×``height`` picture, which are
     outlines, and how thin to draw each. Any style can be drawn from it without looking at the model again (:func:`strokes_image`)."""
 
-    def __init__(self, segs, outline, weight, width: int, height: int, cut=None) -> None:
+    def __init__(self, segs, outline, weight, width: int, height: int, cut=None, px_per_m=None) -> None:
         self.segs, self.outline, self.weight = segs, outline, weight
         self.width, self.height = int(width), int(height)
+        self.px_per_m = px_per_m                       # pixels of one metre of the model, at the model's own distance (for lengths in cm)
         self.cut = np.empty((0, 4)) if cut is None else cut          # the rim of the caps (and where two cuts meet), apart
 
     def __len__(self) -> int:
@@ -537,7 +577,7 @@ def lineset(viewport, camera, width: int, height: int, geom=None, notes: list | 
     if notes is not None:
         notes.append(f"geometry: triangles {len(g[0])}, hard {len(g[1])}, soft {len(g[2])}; {len(segs)} lines, {len(cut_segs)} of the cut, "
                      f"in {width}x{height}")
-    return LineSet(segs, outline, weight, width, height, cut_segs) if (len(segs) or len(cut_segs)) else None
+    return LineSet(segs, outline, weight, width, height, cut_segs, _px_per_m(g[0], camera, width, height)) if (len(segs) or len(cut_segs)) else None
 
 
 def strokes_image(lines: LineSet, style: dict):
@@ -556,7 +596,7 @@ def strokes_image(lines: LineSet, style: dict):
             p.setBrush(QColor(rgb[0], rgb[1], rgb[2], int(255 * max(0.0, min(1.0, s.opacity)))))
             p.drawPolygon(QPolygonF([QPointF(float(x), float(y)) for x, y in s.outline]))
     if _wants_model(style) and len(lines.segs):
-        ls = line_style(style, lines.height)
+        ls = line_style(style, lines.height, lines.px_per_m)
         kinds = lines.outline if ls.profile_scale != 1.0 else None
         paint(st.strokes_for(lines.segs, kinds, ls, lines.height, lines.weight), ink_colour(style))
     cut = cut_of(style)

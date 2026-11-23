@@ -578,8 +578,9 @@ class StudioPanel(QWidget):
         self.style_noise = widgets.NumberSlider(0.0, 1.0, 0.05, "{:.0%}")
         self.style_noise.setToolTip("How irregular the stroke is: straight, or wobbling and gone over twice like a pencil.")
         form_s.addRow("Irregular stroke", self.style_noise)
-        self.style_extend = widgets.NumberSlider(0.0, 1.0, 0.05, "{:.0%}")
-        self.style_extend.setToolTip("How far the lines run past their corners, as a draughtsman's do.")
+        self.style_extend = widgets.NumberSlider(0.0, 50.0, 1.0, "{:.0f} cm")
+        self.style_extend.setToolTip("How far the lines run past their corners, as a draughtsman's do: in centimetres of the model "
+                                     "(estimated at the model's own distance from the camera).")
         form_s.addRow("Line extension", self.style_extend)
         # Watercolour
         self.style_wet = widgets.NumberSlider(0.0, 1.0, 0.05, "{:.0%}")
@@ -1752,7 +1753,7 @@ class StudioPanel(QWidget):
             self.style_model_colour.set_rgb(sy["model_color"])
             self.style_lux.setValue(sy["lux_max"])
             self.style_noise.setValue(sy["noise"])
-            self.style_extend.setValue(sy["extend"])
+            self.style_extend.setValue(sy["extend"] * 50.0)
             self.style_wet.setValue(sy["wetness"])
             self.style_edges.setValue(sy["edges"])
             self.style_paper.setValue(sy["paper"])
@@ -2079,7 +2080,7 @@ class StudioPanel(QWidget):
         return {"mode": self.style_mode.currentData() or "none", "width": round(self.style_width.value(), 2),
                 "color": self.style_colour.rgb(), "material": self.style_material.currentData() or "",
                 "model_color": self.style_model_colour.rgb(), "lux_max": round(self.style_lux.value(), 0),
-                "noise": round(self.style_noise.value(), 3), "extend": round(self.style_extend.value(), 3),
+                "noise": round(self.style_noise.value(), 3), "extend": round(self.style_extend.value() / 50.0, 3),
                 "wetness": round(self.style_wet.value(), 3), "paper": round(self.style_paper.value(), 3),
                 "edges": round(self.style_edges.value(), 3)}
 

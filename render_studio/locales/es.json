@@ -856,5 +856,12 @@
 "No active section plane or box: the render shows the whole model.": "No hay plano ni caja de sección activos: el render muestra el modelo entero.",
 "The cap is filled as the drawing fills its cut: the plane's or the box's own fill, else the style's Section fill (a solid colour, a hatch, a cross hatch, or none).": "La tapa se rellena como el dibujo rellena su corte: el relleno propio del plano o de la caja, o si no el del estilo (color liso, trama, trama cruzada o nada).",
 "The cut is the drawing's active section plane and section box (the Section tools place and flip them). It is read again whenever the preview reloads.": "El corte es el plano y la caja de sección activos del dibujo (las herramientas de Sección los colocan y los giran). Se vuelve a leer cada vez que la vista previa se recarga.",
-"Click the title to fold or unfold this group": "Haz clic en el título para plegar o desplegar este grupo"
+"Click the title to fold or unfold this group": "Haz clic en el título para plegar o desplegar este grupo",
+"Outlines of the model": "Contornos del modelo",
+"Line thickness": "Grosor de las líneas",
+"The thickness of the model's lines, in pixels of this picture. 0: no outlines": "El grosor de las líneas del modelo, en píxeles de esta imagen. 0: sin contornos",
+"From a ruler (0: straight lines, the same width all along) to a loose hand: wavering, swelling, drawn twice, broken": "De regla (0: líneas rectas, del mismo grosor en todo) a mano suelta: temblor, grosores variables, repasado y cortado",
+"How far the lines run past their corners, in centimetres of the model (estimated at the model's own distance from the camera). A ruler goes exactly that far; a hand, a little less or more": "Hasta dónde pasan las líneas más allá de las esquinas, en centímetros del modelo (estimados a la distancia del modelo a la cámara). Una regla llega exactamente hasta ahí; una mano, algo menos o más",
+"How dark the ink is (the model's lines and the cut's)": "Cuán oscura es la tinta (las líneas del modelo y las del corte)",
+"How far the lines run past their corners, as a draughtsman's do: in centimetres of the model (estimated at the model's own distance from the camera).": "Hasta dónde pasan las líneas más allá de las esquinas, como hace un delineante: en centímetros del modelo (estimados a la distancia del modelo a la cámara)."
 }

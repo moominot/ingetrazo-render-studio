@@ -412,7 +412,7 @@ The simple controls are in view and the rest folded under *Advanced*:
   or a scene behind the panel go the long way. **Quality › Advanced › Preview quality** (Fast, Normal, High) sets how big and how
   clean the preview's pictures are.
 - **Main** also has a **Style** group: how the picture is drawn. *None*, *White*, *Model* (a maquette: every object wears one material),
-  *Light* (the lux each surface receives, in false colour with a scale), *Sketch* (pencil lines on paper: irregular stroke, line extension) and
+  *Light* (the lux each surface receives, in false colour with a scale), *Sketch* (pencil lines on paper: irregular stroke and the line extension, in centimetres of the model: 100 % is 50 cm; a ruler goes exactly that far past a corner) and
   *Watercolour* (wetness, edges, paper); every style can have **outlines** (thickness and colour). Outlines are not Blender's: Blender renders without lines and the app draws them from the model's own geometry, seen from the same camera
   (a depth buffer and every edge walked pixel by pixel, the engine of [Croquis for IngeTrazo](https://github.com/vicc3d/croquis-ingetrazo) by Victor Crespo, GPL-3.0-or-later,
   kept in `render_studio/croquis_engine`). On a model of 670 000 triangles that is about 4 s where Freestyle took 33 s. They are laid over the picture, wash and all.

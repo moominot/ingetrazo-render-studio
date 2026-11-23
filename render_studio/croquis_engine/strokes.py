@@ -42,6 +42,9 @@ class LineStyle:
     double_stroke: bool = True
     breaks: bool = True
     opacity: float = 0.9
+    #: Render Studio: how far a line runs past a corner, in pixels of the drawing as it is (not of the reference height): exactly that with
+    #: no hand (a ruler), and between 60 % and 100 % of it with one. 0: the overshoot above, by the hand.
+    extend_px: float = 0.0
 
 
 @dataclass
@@ -337,10 +340,18 @@ def strokes_for(segs: np.ndarray, kinds, style: LineStyle,
         width = style.width * s * (style.profile_scale if heavy else 1.0) * wt
         opacity = style.opacity * (0.6 + 0.4 * wt)
         # Overshoot at corners only; short lines overshoot less.
-        reach = style.overshoot * h * s * rng.uniform(5.0, 14.0)
-        reach = min(reach, 0.5 * length + 3.0 * s)
+        u = rng.uniform(5.0, 14.0)
+        reach = style.overshoot * h * s * u
+        if style.extend_px > 0.0:
+            reach = style.extend_px * (1.0 if h <= 0.0 else 0.6 + 0.4 * (u - 5.0) / 9.0)
+            reach = min(reach, length + 3.0 * s)           # as far as the line is long, no farther
+        else:
+            reach = min(reach, 0.5 * length + 3.0 * s)
         over_a = _overshoot(rng, reach, corners[i, 0], goes_on[i, 0], s, h)
         over_b = _overshoot(rng, reach, corners[i, 1], goes_on[i, 1], s, h)
+        if style.extend_px > 0.0 and h <= 0.0:                # a ruler goes exactly as far as it was asked to
+            over_a = reach if corners[i, 0] else over_a
+            over_b = reach if corners[i, 1] else over_b
         if length + over_a + over_b < 1.0 * s:
             continue
         pts, _t, _n = _centreline(a, b, rng, style, s, over_a, over_b, straight)
