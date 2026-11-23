@@ -2993,99 +2993,120 @@ def _plane_uv(co, no, texture_size):
 
 
 def clip_section(section):
-    """Cut every mesh with IngeTrazo's active section plane (``point``, ``normal``,
-    Z up, metres): what lies on the normal's side goes, as in the viewer. Done in
-    world space on each object's own mesh (a mesh shared by several objects is
-    copied first).
+    """Cut every mesh with IngeTrazo's cutting planes: the active section plane and, in IngeTrazo 0.6.3, the six faces of the active
+    section box (``planes``: each ``point``, ``normal``, Z up, metres; without it the section's own ``point`` and ``normal``). What lies
+    on a normal's side goes, as in the viewer. Done in world space on each object's own mesh (a mesh shared by several objects is copied
+    first), one plane after the other: a later plane cuts the caps of the earlier ones too, so the caps of a box end where the box does.
 
-    ``cap`` (default on): the cut is closed with a flat face of ``material``, filled from
-    the edges the cut leaves in the plane (holes stay open, as a wall's section does).
-    ``light`` "blocked": a copy of each cut mesh stays whole but invisible to the
-    camera, so it still casts shadow and bounces light as in the real building;
-    "open" (default): what is cut is gone and the light enters.
-    Returns how many meshes were cut."""
+    ``cap`` (default on): the cut is closed with a flat face of ``material``, filled from the edges the cut leaves in the plane (holes stay
+    open, as a wall's section does). A plane may carry its own ``cap``, ``style``, ``color``, ``pattern``, ``line``, ``spacing``: the fill
+    of IngeTrazo's own cut (the section's «Like the drawing»). ``light`` "blocked": a copy of each cut mesh stays whole but invisible to
+    the camera, so it still casts shadow and bounces light as in the real building; "open" (default): what is cut is gone and the light
+    enters. Returns how many meshes were cut (a mesh cut by two planes counts twice)."""
     import bmesh
-    co = Vector(section["point"])
-    no = Vector(section["normal"])
-    if no.length < 1e-9:
+    import json
+    planes = section.get("planes") or [{"point": section["point"], "normal": section["normal"]}]
+    cuts = []
+    for entry in planes:
+        no = Vector(entry["normal"])
+        if no.length < 1e-9:
+            continue
+        no.normalize()
+        cuts.append((Vector(entry["point"]), no, entry))
+    if not cuts:
         return 0
-    no.normalize()
-    want_cap = bool(section.get("cap", True))
     blocked = section.get("light") == "blocked"
-    capmat = _cap_material(section) if want_cap else None
-    uv_of = _plane_uv(co, no, section.get("texture_size"))
-    shadowless = want_cap and not section.get("shadows", True)
-    loose = []                                  # a shadowless cap: its triangles (world, with uv)
-    n = capped = ghosts = 0
+    objs = []
     for obj in list(bpy.data.objects):
         if obj.type != "MESH" or obj.data is None or not obj.data.vertices:
             continue
         if obj.users_collection and all(c.name.startswith("proxy ") for c in obj.users_collection):
             continue                      # a proxy's original: only its copies are in the picture
-        if obj.data.users > 1:
-            obj.data = obj.data.copy()
-        mw = obj.matrix_world.copy()
-        if not any((mw @ v.co - co).dot(no) > 1e-6 for v in obj.data.vertices):
-            continue                      # nothing on the removed side
-        if blocked:
-            ghost = obj.copy()
-            ghost.data = obj.data.copy()
-            ghost.name = obj.name + " (section, blocks light)"
-            for c in obj.users_collection:
-                c.objects.link(ghost)
-            ghost.visible_camera = False
-            ghosts += 1
-        bm = bmesh.new()
-        bm.from_mesh(obj.data)
-        bmesh.ops.transform(bm, matrix=mw, verts=bm.verts)
-        geom = list(bm.verts) + list(bm.edges) + list(bm.faces)
-        bmesh.ops.bisect_plane(bm, geom=geom, plane_co=co, plane_no=no,
-                               clear_outer=True, clear_inner=False, dist=1e-6)
-        new_faces = []
-        if want_cap:
-            # A model from glTF has its vertices split per face (normals, UVs): the cut's
-            # vertices are welded so its edges close into loops the fill can follow.
-            on_plane = [v for v in bm.verts if abs((v.co - co).dot(no)) < 1e-4]
-            if on_plane:
-                bmesh.ops.remove_doubles(bm, verts=on_plane, dist=1e-4)
-            edges = [e for e in bm.edges if e.is_boundary
-                     and all(abs((v.co - co).dot(no)) < 1e-4 for v in e.verts)]
-            if edges:
-                try:
-                    res = bmesh.ops.triangle_fill(bm, use_beauty=True, use_dissolve=False,
-                                                  edges=edges, normal=no)
-                    new_faces = [g for g in res.get("geom", []) if isinstance(g, bmesh.types.BMFace)]
-                except Exception as exc:  # noqa: BLE001 - the cut stays open
-                    say("section cap failed", obj.name, exc)
-        uv_layer = bm.loops.layers.uv.verify() if new_faces else None
-        for f in new_faces:
-            if f.normal.dot(no) < 0:
-                f.normal_flip()
-            for loop in f.loops:
-                loop[uv_layer].uv = uv_of(loop.vert.co)
-        slot = None
-        if new_faces and shadowless:
+        objs.append(obj)
+    ghosts = 0
+    if blocked:                           # before any cut: the copy that keeps blocking the light is the whole mesh
+        for obj in objs:
+            mw = obj.matrix_world
+            if any((mw @ v.co - co).dot(no) > 1e-6 for co, no, _e in cuts for v in obj.data.vertices):
+                ghost = obj.copy()
+                ghost.data = obj.data.copy()
+                ghost.name = obj.name + " (section, blocks light)"
+                for c in obj.users_collection:
+                    c.objects.link(ghost)
+                ghost.visible_camera = False
+                ghosts += 1
+    extra = []                            # the loose caps (no shadows) of the planes so far: cut by the planes that follow, never capped
+    capmats = {}
+    n = capped = 0
+    for co, no, entry in cuts:
+        sec = dict(section)
+        sec.update({k: v for k, v in entry.items() if k not in ("point", "normal")})
+        want_cap = bool(sec.get("cap", True))
+        key = json.dumps([sec.get(k) for k in ("style", "color", "material", "pattern", "line", "spacing", "shadows")], default=str)
+        if want_cap and key not in capmats:
+            capmats[key] = _cap_material(sec)
+        capmat = capmats.get(key) if want_cap else None
+        uv_of = _plane_uv(co, no, sec.get("texture_size"))
+        shadowless = want_cap and not sec.get("shadows", True)
+        loose = []                                  # a shadowless cap: its triangles (world, with uv)
+        for obj in objs + extra:
+            capping = want_cap and obj not in extra
+            if obj.data.users > 1:
+                obj.data = obj.data.copy()
+            mw = obj.matrix_world.copy()
+            if not any((mw @ v.co - co).dot(no) > 1e-6 for v in obj.data.vertices):
+                continue                      # nothing on the removed side
+            bm = bmesh.new()
+            bm.from_mesh(obj.data)
+            bmesh.ops.transform(bm, matrix=mw, verts=bm.verts)
+            geom = list(bm.verts) + list(bm.edges) + list(bm.faces)
+            bmesh.ops.bisect_plane(bm, geom=geom, plane_co=co, plane_no=no,
+                                   clear_outer=True, clear_inner=False, dist=1e-6)
+            new_faces = []
+            if capping:
+                # A model from glTF has its vertices split per face (normals, UVs): the cut's
+                # vertices are welded so its edges close into loops the fill can follow.
+                on_plane = [v for v in bm.verts if abs((v.co - co).dot(no)) < 1e-4]
+                if on_plane:
+                    bmesh.ops.remove_doubles(bm, verts=on_plane, dist=1e-4)
+                edges = [e for e in bm.edges if e.is_boundary
+                         and all(abs((v.co - co).dot(no)) < 1e-4 for v in e.verts)]
+                if edges:
+                    try:
+                        res = bmesh.ops.triangle_fill(bm, use_beauty=True, use_dissolve=False,
+                                                      edges=edges, normal=no)
+                        new_faces = [g for g in res.get("geom", []) if isinstance(g, bmesh.types.BMFace)]
+                    except Exception as exc:  # noqa: BLE001 - the cut stays open
+                        say("section cap failed", obj.name, exc)
+            uv_layer = bm.loops.layers.uv.verify() if new_faces else None
             for f in new_faces:
-                loose.append([(tuple(l.vert.co), tuple(l[uv_layer].uv)) for l in f.loops])
-            bmesh.ops.delete(bm, geom=new_faces, context="FACES_ONLY")
-            capped += 1
-        elif new_faces:
-            if not len(obj.data.materials):
-                obj.data.materials.append(None)       # the faces it has keep «no material»
-            obj.data.materials.append(capmat)
-            slot = len(obj.data.materials) - 1
-            for f in new_faces:
-                f.material_index = slot
-            capped += 1
-        bmesh.ops.transform(bm, matrix=mw.inverted_safe(), verts=bm.verts)
-        bm.to_mesh(obj.data)
-        bm.free()
-        obj.data.update()
-        n += 1
-    if loose:
-        _loose_cap(loose, capmat)
-    say("section", f"{n} meshes cut, {capped} capped, {ghosts} keep blocking light; at "
-        f"{[round(c, 3) for c in co]}, normal {[round(c, 3) for c in no]}")
+                if f.normal.dot(no) < 0:
+                    f.normal_flip()
+                for loop in f.loops:
+                    loop[uv_layer].uv = uv_of(loop.vert.co)
+            if new_faces and shadowless:
+                for f in new_faces:
+                    loose.append([(tuple(l.vert.co), tuple(l[uv_layer].uv)) for l in f.loops])
+                bmesh.ops.delete(bm, geom=new_faces, context="FACES_ONLY")
+                capped += 1
+            elif new_faces:
+                if not len(obj.data.materials):
+                    obj.data.materials.append(None)       # the faces it has keep «no material»
+                if capmat not in list(obj.data.materials):
+                    obj.data.materials.append(capmat)
+                slot = list(obj.data.materials).index(capmat)
+                for f in new_faces:
+                    f.material_index = slot
+                capped += 1
+            bmesh.ops.transform(bm, matrix=mw.inverted_safe(), verts=bm.verts)
+            bm.to_mesh(obj.data)
+            bm.free()
+            obj.data.update()
+            n += 1
+        if loose:
+            extra.append(_loose_cap(loose, capmat))
+    say("section", f"{len(cuts)} plane(s), {n} cuts, {capped} capped, {ghosts} keep blocking light; first at "
+        f"{[round(c, 3) for c in cuts[0][0]]}, normal {[round(c, 3) for c in cuts[0][1]]}")
     return n
 
 

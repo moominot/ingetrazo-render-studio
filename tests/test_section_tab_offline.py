@@ -1,112 +1,65 @@
-"""The Section tab follows the model only while it matters: the preview window is open and a
-section plane is active (or the tab is on screen). Offscreen, no Blender.
-argv: <ingetrazo-src> <render-studio repo>"""
-import os, sys
+"""The Section tab: it says what cuts now (plane, box, both, off, nothing), offers the cap «like the drawing» and shows the controls each
+choice needs; the cap's outline. Offscreen, no Blender. argv: <ingetrazo-src> <render-studio repo>"""
+import os, sys, tempfile
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 SRC, REPO = [os.path.abspath(a) for a in sys.argv[1:3]]
 sys.path[:0] = [SRC, REPO]
 from PySide6.QtWidgets import QApplication
 qa = QApplication.instance() or QApplication([])
-from render_studio import materials as M
-from render_studio.section_panel import SectionTab
+from PySide6.QtCore import QCoreApplication, QSettings
+QSettings.setDefaultFormat(QSettings.IniFormat); QSettings.setPath(QSettings.IniFormat, QSettings.UserScope, tempfile.mkdtemp())
+QCoreApplication.setOrganizationName("s"); QCoreApplication.setApplicationName("s")
+from PySide6.QtGui import QVector3D as V
+from core.scene import Scene
+from core.camera import OrbitCamera
+from core import section as ISEC
+from render_studio import panel as P, section as SEC
 
 fails = []
 def ok(c, w):
     print(("PASS " if c else "FAIL ") + w, flush=True)
     if not c: fails.append(w)
 
-class Plane:
-    point = normal = None
-
-class Scene:
-    def __init__(self):
-        self.plane = None
-        self.materials = {"Brick": object()}
-        self.groups = []
-    def active_section(self):
-        return self.plane
-
+sc = Scene()
+class VP:
+    def __init__(self): self.camera = OrbitCamera(); self.scene = sc
+    def update(self): pass
+    def width(self): return 1600
+    def height(self): return 900
 class App:
-    def __init__(self):
-        self.scene = Scene()
-
-calls = []
-real = M.used_materials
-M.used_materials = lambda scene: (calls.append(1), {"Brick": 3})[1]
-try:
-    app, state = App(), {"open": False}
-    tab = SectionTab(app, live=lambda: state["open"])
-    ok(len(calls) == 1 and tab.material.count() == 2, "built once at the start, with the model's materials")
-    calls.clear()
-
-    tab.document_changed()
-    ok(not calls and tab._stale, "preview closed and no section: an edit does not read the model")
-
-    state["open"] = True
-    tab.document_changed()
-    ok(not calls, "preview open but no section plane: still nothing")
-
-    state["open"] = False
-    app.scene.plane = Plane()
-    tab.document_changed()
-    ok(not calls, "a section plane but the preview closed: still nothing")
-
-    state["open"] = True
-    tab.document_changed()
-    ok(len(calls) == 1 and not tab._stale, "preview open and a section active: it follows the edit")
-    calls.clear()
-
-    state["open"] = False
-    tab.document_changed()
-    ok(not calls and tab._stale, "preview closed again: it stops")
-    tab.show(); qa.processEvents()
-    ok(len(calls) == 1 and not tab._stale, "shown while out of date: it catches up")
-    calls.clear()
-    tab.document_changed()
-    ok(len(calls) == 1, "…and follows the edits while it is on screen")
-    tab.hide(); calls.clear()
-
-    app.scene.plane = None
-    tab.apply({"cap": True, "material": "Zed", "light": "open"})
-    calls.clear()
-    tab.document_changed()
-    ok(tab._stale and tab.settings()["material"] == "Zed",
-       "the chosen cap material is kept for the render even when the list is out of date")
-    ok(tab.settings()["cap"] is True and tab.settings()["light"] == "open", "the other options are read as before")
-
-    tab2 = SectionTab(app)
-    calls.clear()
-    tab2.document_changed()
-    ok(len(calls) == 1, "without a preview probe (older callers) it follows every edit, as before")
-finally:
-    M.used_materials = real
-
-
-# ---- the cap's style: material / flat colour / hatch, and no shadows ----------------------------------
-from render_studio import section as S
-tab = SectionTab(App(), live=lambda: False); tab.show()
-ok(tab.settings()["style"] == "material" and tab.settings()["shadows"] is True, "the cap starts as before: the material, with shadows")
-ok(tab.material.isVisibleTo(tab) and not tab.colour.isVisibleTo(tab) and not tab.pattern.isVisibleTo(tab), "material style: only the material list")
-tab.style.setCurrentIndex(tab.style.findData("flat"))
-ok(tab.colour.isVisibleTo(tab) and not tab.material.isVisibleTo(tab) and not tab.pattern.isVisibleTo(tab), "flat style: a colour, no material, no pattern")
-tab.style.setCurrentIndex(tab.style.findData("hatch"))
-ok(all(w.isVisibleTo(tab) for w in (tab.colour, tab.pattern, tab.line, tab.spacing)), "hatch style: colour, pattern, lines and spacing")
-tab.colour.set_rgb((1, 1, 1)); tab.pattern.setCurrentIndex(tab.pattern.findData("cross")); tab.spacing.setValue(25); tab.shadows.setChecked(True)
-st = tab.settings()
-ok(st["style"] == "hatch" and st["pattern"] == "cross" and abs(st["spacing"] - 0.25) < 1e-6 and st["shadows"] is False and st["color"] == [1.0, 1.0, 1.0],
-   f"the settings carry it ({st['style']}, {st['pattern']}, {st['spacing']}, shadows {st['shadows']})")
-tab2 = SectionTab(App(), live=lambda: False); tab2.apply(st)
-ok(tab2.settings() == st, "and apply puts them back")
-ok(S.clean({"style": "x", "pattern": "y", "spacing": -4, "color": "red", "shadows": 0})["style"] == "material"
-   and S.clean({"spacing": -4})["spacing"] == 0.005 and S.clean({"color": "red"})["color"] == S.DEFAULT["color"], "junk is cleaned")
-class Sc2(Scene):
-    def __init__(self):
-        super().__init__()
-        from PySide6.QtGui import QVector3D
-        pl = Plane(); pl.point = QVector3D(0, 0, 0); pl.normal = QVector3D(1, 0, 0); self.plane = pl
-blk = S.job_block(Sc2(), st)
-ok(blk["style"] == "hatch" and blk["pattern"] == "cross" and blk["texture_size"] == [1.0, 1.0] and blk["shadows"] is False and blk["color"] == [1.0, 1.0, 1.0],
-   "the job carries the hatch, laid out in metres")
-ok(S.job_block(Sc2(), {"style": "material"})["shadows"] is True, "the default job keeps the shadows")
-print("FAILED" if fails else "ALL PASSED", len(fails))
+    api_version = 2
+    def __init__(self): self.scene = sc; self.viewport = VP(); self.data = {}
+    def document_data(self, d=None): return d
+    def set_document_data(self, v): pass
+    def on_document_changed(self, fn): pass
+panel = P.StudioPanel(App()); panel.show(); qa.processEvents()
+tab = panel.section_tab
+tab.catch_up()
+ok(SEC.describe(sc) == "none" and "whole model" in tab.state.text(), "no cut: the tab says the render shows the whole model")
+plane = ISEC.SectionPlane(V(1, 0, 0), V(1, 0, 0)); sc.section_planes.append(plane); sc.set_active_section(plane)
+tab.catch_up()
+ok(SEC.describe(sc) == "plane" and "section plane" in tab.state.text() and "box" not in tab.state.text(), "an active plane: the tab says so")
+sc.show_section_cuts = False
+tab.catch_up()
+ok(SEC.describe(sc) == "off" and "switched off" in tab.state.text(), "Section Cuts off in the 3D view: the tab says why the render is whole")
+sc.show_section_cuts = True
+# a box, faked (this IngeTrazo may have none)
+sc.active_section_box = lambda: object()
+ok(SEC.describe(sc) == "both", "a plane and a box: both are named")
+sc.section_planes.clear()
+ok(SEC.describe(sc) == "box", "a box alone")
+del sc.active_section_box
+# the cap choices
+idx = tab.style.findData("drawing")
+ok(idx >= 0, "the cap can be «Like the drawing»")
+tab.style.setCurrentIndex(idx); qa.processEvents()
+ok(not tab.drawing_note.isHidden() and tab.colour.isHidden() and tab.material.isHidden() and tab.pattern.isHidden(), "«Like the drawing»: a line says how, and no colour, material or pattern to choose")
+tab.style.setCurrentIndex(tab.style.findData("flat")); qa.processEvents()
+ok(tab.drawing_note.isHidden() and not tab.colour.isHidden() and tab.pattern.isHidden(), "a flat colour: its colour only")
+tab.style.setCurrentIndex(tab.style.findData("hatch")); qa.processEvents()
+ok(not tab.colour.isHidden() and not tab.pattern.isHidden() and not tab.line.isHidden() and not tab.spacing.isHidden(), "a hatch: colour, pattern, lines and spacing")
+s = tab.settings()
+tab.apply(dict(s, style="drawing", outline=False, outline_width=5.0))
+ok(tab.settings()["style"] == "drawing" and tab.settings()["outline"] is False and abs(tab.settings()["outline_width"] - 5.0) < 1e-6, "the options go and come back")
+print("FAILED: %s" % fails if fails else "ALL PASS")
 sys.exit(1 if fails else 0)

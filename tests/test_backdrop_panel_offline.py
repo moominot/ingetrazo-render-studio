@@ -37,6 +37,12 @@ class Doc:
 pic = str(Path(tempfile.mkdtemp()) / "back.png")
 img = QImage(32, 16, QImage.Format_RGB32); img.fill(QColor(20, 120, 200)); img.save(pic)
 
+def group_of(w):
+    """The group box a widget sits in (the one with the title)."""
+    while w is not None and not isinstance(w, P.QGroupBox):
+        w = w.parentWidget()
+    return w
+
 doc = Doc(); panel = P.StudioPanel(doc); doc.panels.append(panel)
 panel.show()
 TAB = {panel.tabs.tabText(i): i for i in range(panel.tabs.count())}
@@ -77,7 +83,7 @@ ok(abs(panel.slider_values()["exposure_bias"]) < 0.05 and abs(panel.slider_value
 ok(all(panel.slider_rows[k].isVisible() for k in ("exposure_bias", "saturation", "vignette")),
    "Image: the simple sliders and the «Effects» group (vignette, depth of field) are all in view")
 panel.tabs.setCurrentIndex(TAB["Environment"])
-ok(all(panel.slider_rows[k].isVisible() for k in ("fog", "fog_start")) and panel.slider_rows["fog"].parentWidget().title() == "Fog",
+ok(all(panel.slider_rows[k].isVisible() for k in ("fog", "fog_start")) and group_of(panel.slider_rows["fog"]).title() == "Fog",
    "Environment: the fog is a group of its own, with the place's other settings")
 panel.tabs.setCurrentIndex(TAB["Image"])
 # the camera group: three projections (big icons) and the angle of view, the 3D view's own
@@ -187,13 +193,32 @@ ok(panel.slider_rows["clouds"].isEnabled() and panel.sky_note.isHidden() and not
 panel.ground.setChecked(True)
 ok(panel.ground_material.isVisible() and panel.ground_colour.isVisible() and panel.ground_rough.isVisible() and panel.ground_offset.isVisible() and panel.ground_radius.isVisible(),
    "Ground: material, colour, roughness, level and radius are all in view when there is a ground")
-ok(panel.slider_rows["fog"].isVisible() and panel.ground_haze_row.isVisible() and panel.ground_haze_row.parentWidget().title() == "Fog" if hasattr(panel.ground_haze_row.parentWidget(), "title") else panel.ground_haze_row.isVisible(),
+ok(panel.slider_rows["fog"].isVisible() and panel.ground_haze_row.isVisible() and group_of(panel.ground_haze_row).title() == "Fog",
    "the ground's haze is with the fog")
 panel.skyline_type.setCurrentIndex(panel.skyline_type.findData("hills"))
 ok(panel.skyline_distance.isVisible() and panel.skyline_seed.isVisible() and panel.skyline_colour.isVisible(), "Horizon: with a skyline, its distance, shape and colour are all in view")
 panel.skyline_type.setCurrentIndex(0)
 order = [g.title() for g in sorted((g for g in panel.findChildren(P.QGroupBox) if g.title() in ("Sun and sky", "Background", "Ground", "Horizon", "Fog")), key=lambda g: g.mapTo(panel, g.rect().topLeft()).y())]
 ok(order == ["Sun and sky", "Background", "Ground", "Horizon", "Fog"], f"the Environment groups, in the order a person decides them ({order})")
+
+# ---- the Environment groups fold away with a click on their title, and remember it
+from PySide6.QtCore import QPoint, Qt as _Qt
+from PySide6.QtTest import QTest
+fold = box_titles["Fog"]
+ok(isinstance(fold, W.FoldBox) if (W := __import__("render_studio.widgets", fromlist=["x"])) else False, "the Environment groups are fold boxes")
+panel.tabs.setCurrentIndex(TAB["Environment"]); qa.processEvents()
+ok(fold.is_open() and fold.body.isVisibleTo(fold), "a group starts open")
+QTest.mouseClick(fold, _Qt.LeftButton, _Qt.NoModifier, QPoint(30, 8)); qa.processEvents()
+qa.processEvents(); qa.processEvents()
+ok(not fold.is_open() and not fold.body.isVisibleTo(fold) and fold.sizeHint().height() < 60, f"a click on its title folds it to the title ({fold.sizeHint().height()} px wanted, it was {fold.height()})")
+ok(str(QSettings().value("render_studio/fold_fog", "true")).lower() == "false", "…and the choice is kept")
+panel.slider_rows["fog"].setEnabled(True)
+ok(not panel.slider_rows["fog"].isVisible(), "(what it holds is out of sight while folded)")
+QTest.mouseClick(fold, _Qt.LeftButton, _Qt.NoModifier, QPoint(30, 8)); qa.processEvents()
+ok(fold.is_open() and panel.slider_rows["fog"].isVisible(), "a second click opens it again, the rows as they were")
+bg_before = panel._form_bg.isRowVisible(panel.hdri) if hasattr(panel._form_bg, "isRowVisible") else None
+box_titles["Background"].set_open(False); box_titles["Background"].set_open(True)
+ok(panel._form_bg.isRowVisible(panel.hdri) == bg_before, "folding does not disturb the rows a group shows or hides by context")
 
 # ---- the ground types ---------------------------------------------------------------------------
 ok(panel.ground_type.itemData(0) == "" and panel.ground_type.findData("wet") >= 0 and panel.ground_type.findData("custom") >= 0, "the ground has types: the look's own, grass, asphalt…, custom")

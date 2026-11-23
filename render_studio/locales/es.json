@@ -847,5 +847,14 @@
 "Ground haze": "Calima del suelo",
 "Panorama brightness": "Brillo del panorama",
 "Clock": "Reloj",
-"Clouds are the look's sky: the panorama or the picture has its own.": "Las nubes son el cielo del look: el panorama o la imagen tiene las suyas."
+"Clouds are the look's sky: the panorama or the picture has its own.": "Las nubes son el cielo del look: el panorama o la imagen tiene las suyas.",
+"Like the drawing": "Como el dibujo",
+"Cut by the active section plane.": "Cortado por el plano de sección activo.",
+"Cut by the active section box (its six faces).": "Cortado por la caja de sección activa (sus seis caras).",
+"Cut by the active section plane and the active section box.": "Cortado por el plano de sección activo y la caja de sección activa.",
+"Section cuts are switched off in the 3D view (View ▸ Section Cuts): the render shows the whole model.": "Los cortes de sección están apagados en la vista 3D (Vista ▸ Cortes de sección): el render muestra el modelo entero.",
+"No active section plane or box: the render shows the whole model.": "No hay plano ni caja de sección activos: el render muestra el modelo entero.",
+"The cap is filled as the drawing fills its cut: the plane's or the box's own fill, else the style's Section fill (a solid colour, a hatch, a cross hatch, or none).": "La tapa se rellena como el dibujo rellena su corte: el relleno propio del plano o de la caja, o si no el del estilo (color liso, trama, trama cruzada o nada).",
+"The cut is the drawing's active section plane and section box (the Section tools place and flip them). It is read again whenever the preview reloads.": "El corte es el plano y la caja de sección activos del dibujo (las herramientas de Sección los colocan y los giran). Se vuelve a leer cada vez que la vista previa se recarga.",
+"Click the title to fold or unfold this group": "Haz clic en el título para plegar o desplegar este grupo"
 }

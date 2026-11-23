@@ -511,8 +511,8 @@ class StudioPanel(QWidget):
         form_pic = QFormLayout(box_pic)
         self.fx = QGroupBox("Effects")                  # vignette, depth of field: a group of the Image page
         self.fx.form = QFormLayout(self.fx)
-        box_skyadj = QGroupBox("Sun and sky")
-        form_skyadj = QFormLayout(box_skyadj)
+        box_skyadj = widgets.FoldBox("Sun and sky", "sky")
+        form_skyadj = box_skyadj.form
         for key, (label, lo, hi, default, _unit) in presets.SLIDERS.items():
             block, _amb = presets.studio(self.preset.currentData())
             value = default if default is not None else block.get(key, 0.0)
@@ -601,8 +601,8 @@ class StudioPanel(QWidget):
         col_main.addWidget(self._build_camera_box())          # the camera, under the style
 
         # The background: the look's own sky, a 360° panorama, or one fixed picture.
-        box_bg = QGroupBox("Background")
-        form2 = QFormLayout(box_bg)
+        box_bg = widgets.FoldBox("Background", "background")
+        form2 = box_bg.form
         self.bg_mode = QComboBox()
         self.bg_mode.addItem(tr("Sky of the look"), "sky")
         self.bg_mode.addItem(tr("360° panorama"), "pano")
@@ -692,8 +692,8 @@ class StudioPanel(QWidget):
         col.addWidget(box_bg)
 
         # The ground under the model.
-        box_ground = QGroupBox("Ground")
-        form_g = QFormLayout(box_ground)
+        box_ground = widgets.FoldBox("Ground", "ground")
+        form_g = box_ground.form
         self.ground = QCheckBox("Generated ground")
         self.ground.setToolTip(
             "On: a ground is made under the model, with the look's colour, melting into the horizon. "
@@ -793,9 +793,8 @@ class StudioPanel(QWidget):
         form_g.addRow(self.ground_more)
         col.addWidget(box_ground)
         # The horizon: distant mountains, hills, forest or city that hide where the ground meets the sky.
-        box_horizon = QGroupBox("Horizon")
-        form_h = QFormLayout(box_horizon)
-        form_h.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        box_horizon = widgets.FoldBox("Horizon", "horizon")
+        form_h = box_horizon.form
         self.skyline_type = QComboBox()
         self.skyline_type.addItem(tr("None"), "")
         for key, label in presets.SKYLINE_TYPES.items():
@@ -837,9 +836,8 @@ class StudioPanel(QWidget):
         self.preset.currentIndexChanged.connect(self._swatches_follow)
         col.addWidget(box_horizon)
         # Fog: part of the place, like the horizon it veils (it was among the picture's effects).
-        box_fog = QGroupBox("Fog")
-        form_fog = QFormLayout(box_fog)
-        form_fog.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        box_fog = widgets.FoldBox("Fog", "fog")
+        form_fog = box_fog.form
         self.fog_note = self._caption("")
         self.fog_note.setVisible(False)
         form_fog.addRow(self.fog_note)

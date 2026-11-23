@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QPointF, Qt, Signal
 from PySide6.QtGui import QColor, QKeyEvent, QPainter, QPixmap
-from PySide6.QtWidgets import (QComboBox, QFrame, QGraphicsPixmapItem, QGraphicsScene, QGraphicsView, QHBoxLayout,
+from PySide6.QtWidgets import (QComboBox, QFrame, QGraphicsPixmapItem, QGraphicsScene, QGraphicsView, QGroupBox, QHBoxLayout,
                                QLabel, QSizePolicy, QSlider, QVBoxLayout, QWidget)
 
 
@@ -366,6 +366,79 @@ class RefreshCombo(QComboBox):
         if callable(self.refresh):
             self.refresh()
         super().showPopup()
+
+
+class FoldBox(QGroupBox):
+    """A group box that folds away with a click on its title (a chevron at the right end of the title row says which way it goes); whether it
+    is open is remembered under ``key``. Fill ``form`` (a QFormLayout in the box's body: the title stays, the body goes), so what the code
+    shows or hides row by row inside it is not disturbed by folding."""
+
+    def __init__(self, title: str, key: str = "", parent=None):
+        super().__init__(title, parent)
+        from PySide6.QtCore import QSettings
+        from PySide6.QtWidgets import QFormLayout
+        self._key = "render_studio/fold_" + key if key else ""
+        lay = QVBoxLayout(self)
+        self.body = QWidget(self)
+        lay.addWidget(self.body)
+        self.form = QFormLayout(self.body)
+        self.form.setContentsMargins(0, 0, 0, 0)
+        self.form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        opened = True
+        if self._key:
+            try:
+                opened = str(QSettings().value(self._key, "true")).lower() != "false"
+            except Exception:  # noqa: BLE001
+                pass
+        self._open = opened
+        self.body.setVisible(opened)
+        self.setToolTip(tr("Click the title to fold or unfold this group"))
+
+    def is_open(self) -> bool:
+        return self._open
+
+    def set_open(self, on: bool) -> None:
+        on = bool(on)
+        if on == self._open:
+            return
+        self._open = on
+        self.body.setVisible(on)
+        if self._key:
+            try:
+                from PySide6.QtCore import QSettings
+                QSettings().setValue(self._key, "true" if on else "false")
+            except Exception:  # noqa: BLE001
+                pass
+        self.update()
+
+    def _title_height(self) -> int:
+        return self.fontMetrics().height() + 8
+
+    def mousePressEvent(self, ev) -> None:      # noqa: N802 (Qt)
+        if ev.button() == Qt.LeftButton and ev.position().y() <= self._title_height():
+            self.set_open(not self._open)
+            ev.accept()
+            return
+        super().mousePressEvent(ev)
+
+    def paintEvent(self, ev) -> None:           # noqa: N802 (Qt)
+        super().paintEvent(ev)
+        from PySide6.QtCore import QPointF
+        from PySide6.QtGui import QPainter, QPen
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        c = self.palette().windowText().color()
+        c.setAlpha(170)
+        pen = QPen(c, 1.6)
+        pen.setCapStyle(Qt.RoundCap)
+        pen.setJoinStyle(Qt.RoundJoin)
+        p.setPen(pen)
+        cx, cy = self.width() - 16.0, self._title_height() / 2.0
+        if self._open:
+            p.drawPolyline([QPointF(cx - 4, cy - 2), QPointF(cx, cy + 2), QPointF(cx + 4, cy - 2)])
+        else:
+            p.drawPolyline([QPointF(cx - 2, cy - 4), QPointF(cx + 2, cy), QPointF(cx - 2, cy + 4)])
+        p.end()
 
 
 class Section(QWidget):

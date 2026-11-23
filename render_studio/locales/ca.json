@@ -847,5 +847,14 @@
 "Ground haze": "Calitja del terra",
 "Panorama brightness": "Brillantor del panorama",
 "Clock": "Rellotge",
-"Clouds are the look's sky: the panorama or the picture has its own.": "Els núvols són el cel del look: el panorama o la imatge en té de propis."
+"Clouds are the look's sky: the panorama or the picture has its own.": "Els núvols són el cel del look: el panorama o la imatge en té de propis.",
+"Like the drawing": "Com el dibuix",
+"Cut by the active section plane.": "Tallat pel pla de secció actiu.",
+"Cut by the active section box (its six faces).": "Tallat per la caixa de secció activa (les seves sis cares).",
+"Cut by the active section plane and the active section box.": "Tallat pel pla de secció actiu i la caixa de secció activa.",
+"Section cuts are switched off in the 3D view (View ▸ Section Cuts): the render shows the whole model.": "Els talls de secció estan apagats a la vista 3D (Vista ▸ Talls de secció): el render mostra el model sencer.",
+"No active section plane or box: the render shows the whole model.": "No hi ha cap pla ni caixa de secció actius: el render mostra el model sencer.",
+"The cap is filled as the drawing fills its cut: the plane's or the box's own fill, else the style's Section fill (a solid colour, a hatch, a cross hatch, or none).": "La tapa s'omple com el dibuix omple el seu tall: el farcit propi del pla o de la caixa, o si no el de l'estil (color pla, trama, trama creuada o res).",
+"The cut is the drawing's active section plane and section box (the Section tools place and flip them). It is read again whenever the preview reloads.": "El tall és el pla i la caixa de secció actius del dibuix (les eines de Secció els col·loquen i els giren). Es torna a llegir cada vegada que la previsualització es recarrega.",
+"Click the title to fold or unfold this group": "Fes clic al títol per plegar o desplegar aquest grup"
 }

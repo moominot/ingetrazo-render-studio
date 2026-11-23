@@ -67,7 +67,7 @@ Llum (oberta / bloquejada) · una nota: el tall és el pla actiu d'IngeTrazo.
 
 ## 3. Pla per a la Secció
 
-### S0 (previ) Una frase de context
+### S0 (previ) Una frase de context — FET
 La nota de baix passa a dir què talla ara: «Pla *Planta baixa*» / «Caixa *Detall* (6 cares)» / «Pla + caixa» / «No hi ha cap tall actiu».
 
 ### S1 Retallar les línies pels plans de tall (corregeix l'error) — FET
@@ -88,7 +88,7 @@ La nota de baix passa a dir què talla ara: «Pla *Planta baixa*» / «Caixa *De
   «Vora de la tapa» (color, gruix) que es redibuixa a l'instant com la resta, i en desar s'aplana.
 - **Prova:** una caixa tallada: la vora té el color i el gruix demanats; sense tapa o amb la casella apagada, no n'hi ha.
 
-### S3 Caixa de secció (nova a IngeTrazo 0.6.3)
+### S3 Caixa de secció (nova a IngeTrazo 0.6.3) — FET (provat amb sis plans simulats i Blender real; falta un model real amb una caixa de debò)
 - **Job:** `section.job_block` torna una **llista de plans** (el pla actiu primer i les sis cares de la caixa) amb els mateixos paràmetres de tapa.
 - **Blender:** `clip_section` ja talla amb un pla (triangulació + material de tapa per objecte). Es crida un cop per pla: cada passada talla també
   les tapes de l'anterior, així les sis tapes queden retallades per les altres cinc. Cal comprovar tres coses: (a) els materials de tapa no es

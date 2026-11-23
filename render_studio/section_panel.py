@@ -88,8 +88,10 @@ class SectionTab(QWidget):
         self.style.addItem(tr("Material of the drawing"), "material")
         self.style.addItem(tr("Flat colour"), "flat")
         self.style.addItem(tr("Hatch pattern"), "hatch")
+        self.style.addItem(tr("Like the drawing"), "drawing")
         self.style.setToolTip("What the cap is made of: a material of the drawing (with its picture and finish), "
-                              "one plain colour, or a pattern of lines or dots over a colour.")
+                              "one plain colour, a pattern of lines or dots over a colour, or what IngeTrazo itself fills the cut with "
+                              "(the section's own fill, or Styles › Section fill): what you see in the 3D view is what renders.")
         self.style.currentIndexChanged.connect(self._edited)
         form.addRow("Cap", self.style)
         self.material = QComboBox()
@@ -99,6 +101,9 @@ class SectionTab(QWidget):
                                  "picture, finish and the settings of the material editor.")
         self.material.currentIndexChanged.connect(self._edited)
         form.addRow("Material", self.material)
+        self.drawing_note = _note("The cap is filled as the drawing fills its cut: the plane's or the box's own fill, else the style's "
+                                  "Section fill (a solid colour, a hatch, a cross hatch, or none).")
+        form.addRow(self.drawing_note)
         self.colour = ColourButton(S.DEFAULT["color"], "Cap colour")
         self.colour.setToolTip("The cap's colour (the ground of a hatch).")
         self.colour.changed.connect(self._edited)
@@ -155,8 +160,8 @@ class SectionTab(QWidget):
         self.light.currentIndexChanged.connect(self._edited)
         form.addRow("Light", self.light)
         lay.addLayout(form)
-        lay.addWidget(_note("The cut is the active Section plane of the drawing; the Section tool "
-                            "places and flips it. It is read again whenever the preview reloads."))
+        lay.addWidget(_note("The cut is the drawing's active section plane and section box (the Section tools place and flip them). "
+                            "It is read again whenever the preview reloads."))
         lay.addStretch(1)
         self._fill()
         self._paint()
@@ -243,16 +248,17 @@ class SectionTab(QWidget):
 
     # -- ui -----------------------------------------------------------------------------
     def _paint(self) -> None:
-        has = False
-        try:
-            has = self.app.scene.active_section() is not None
-        except Exception:  # noqa: BLE001
-            pass
-        self.state.setText(tr("Active section: the render is cut.") if has else
-                           tr("No active section plane: the render shows the whole model."))
+        kind = S.describe(self.app.scene)
+        self.state.setText({
+            "plane": tr("Cut by the active section plane."),
+            "box": tr("Cut by the active section box (its six faces)."),
+            "both": tr("Cut by the active section plane and the active section box."),
+            "off": tr("Section cuts are switched off in the 3D view (View ▸ Section Cuts): the render shows the whole model."),
+        }.get(kind, tr("No active section plane or box: the render shows the whole model.")))
         capped = self.cap.isChecked()
         style = self.style.currentData()
-        for w, shown in ((self.style, True), (self.material, style == "material"), (self.colour, style != "material"),
+        self.drawing_note.setVisible(style == "drawing")
+        for w, shown in ((self.style, True), (self.material, style == "material"), (self.colour, style in ("flat", "hatch")),
                          (self.pattern, style == "hatch"), (self.line, style == "hatch"),
                          (self.spacing, style == "hatch"), (self.shadows, True)):
             self.form.setRowVisible(w, shown)

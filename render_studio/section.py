@@ -8,8 +8,9 @@ carries the plane and ``blender/studio_scene.py`` cuts the meshes with it.
 The options (the Section tab) are kept in the document, ``settings["section"]``::
 
     {"cap": true,            # close the cut with a flat face
-     "style": "material",    # the cap is made of: "material" (of the drawing), "flat" (one colour)
-                             # or "hatch" (a pattern of lines or dots over a colour)
+     "style": "material",    # the cap is made of: "material" (of the drawing), "flat" (one colour),
+                             # "hatch" (a pattern of lines or dots over a colour) or "drawing": as IngeTrazo fills the
+                             # cut itself (each plane's or box's own fill, else the style's Section Fill)
      "material": "Formigó",  # style "material": the document's material (None: plain grey)
      "color": [r, g, b],     # styles "flat" and "hatch": the colour (the ground of a hatch)
      "pattern": "diagonal",  # style "hatch": diagonal, cross, grid, dots
@@ -29,7 +30,7 @@ from __future__ import annotations
 import json
 
 LIGHTS = ("open", "blocked")
-STYLES = ("material", "flat", "hatch")
+STYLES = ("material", "flat", "hatch", "drawing")
 PATTERNS = ("diagonal", "cross", "grid", "dots")
 DEFAULT = {"cap": True, "style": "material", "material": None, "color": [0.35, 0.37, 0.41],
            "pattern": "diagonal", "line": [0.1, 0.1, 0.1], "spacing": 0.1, "shadows": True, "light": "open",
@@ -77,22 +78,84 @@ def _rgb(v, default) -> list:
     return list(default)
 
 
-def job_block(scene, opts: dict | None = None) -> dict | None:
-    """The plane cutting the model, with the options, as ``studio_scene.clip_section``
-    reads it: ``point``, ``normal`` (the normal's side is the one that disappears),
-    ``cap``, ``color``, ``light``. None when nothing is cut."""
+def plane_objects(scene) -> list:
+    """IngeTrazo's cutting planes now, as it holds them: the active section plane and, in 0.6.3, the six faces of the active section box
+    (``core.section.cut_planes``); the plane alone in an IngeTrazo without boxes. ``[]`` when nothing cuts (or Section Cuts is off)."""
+    if not getattr(scene, "show_section_cuts", True):
+        return []
+    try:
+        from core.section import cut_planes
+        return list(cut_planes(scene))
+    except Exception:  # noqa: BLE001 - an IngeTrazo without section boxes
+        try:
+            plane = scene.active_section()
+        except Exception:  # noqa: BLE001 - an old IngeTrazo: no sections
+            return []
+        return [plane] if plane is not None else []
+
+
+def describe(scene) -> str:
+    """What cuts the render now, as a key the Section tab words: "plane", "box", "both", "off" (Section Cuts is switched off) or "none"."""
+    plane = box = None
     try:
         plane = scene.active_section()
-    except Exception:  # noqa: BLE001 - an old IngeTrazo: no sections
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        box = scene.active_section_box()
+    except Exception:  # noqa: BLE001 - no section boxes in this IngeTrazo
+        pass
+    if not getattr(scene, "show_section_cuts", True) and (plane is not None or box is not None):
+        return "off"
+    if plane is not None and box is not None:
+        return "both"
+    return "plane" if plane is not None else ("box" if box is not None else "none")
+
+
+def drawing_fill(plane, scene) -> dict | None:
+    """The fill IngeTrazo gives the cut of ``plane`` (its own, else the style's Section Fill: ``core.section.effective_fill``) as the render's
+    cap options: ``{"cap", "style", "color", "pattern", "line", "spacing", "texture_size"}``. «Solid» and «each layer with its own hatch» are
+    a flat colour; a hatch or cross hatch is lines of the fill's colour over a pale ground of it; «none» is an open cut. None when this
+    IngeTrazo does not say."""
+    try:
+        from core.section import effective_fill
+        pattern, color, spacing = effective_fill(plane, getattr(scene, "display_style", None))
+    except Exception:  # noqa: BLE001
         return None
-    if plane is None or not getattr(scene, "show_section_cuts", True):
-        return None                       # no plane, or its cut switched off (View > Section Cuts)
+    rgb = [max(0.0, min(1.0, float(c))) for c in list(color)[:3]]
+    if pattern == "none":
+        return {"cap": False}
+    if pattern in ("hatch", "cross"):
+        pale = [round(0.85 + 0.15 * c, 4) for c in rgb]
+        return {"cap": True, "style": "hatch", "color": pale, "pattern": "diagonal" if pattern == "hatch" else "cross", "line": rgb,
+                "spacing": max(0.005, float(spacing)), "texture_size": [1.0, 1.0]}
+    return {"cap": True, "style": "flat", "color": rgb}
+
+
+def job_block(scene, opts: dict | None = None) -> dict | None:
+    """The cut, with the options, as ``studio_scene.clip_section`` reads it: ``planes`` (the active plane and the faces of the active box,
+    each ``point`` and ``normal`` — the normal's side is the one that disappears — and, with the cap «like the drawing», the plane's own
+    cap options), and the first plane's ``point``, ``normal`` besides, then ``cap``, ``color``, ``light``. None when nothing is cut."""
+    cutting = plane_objects(scene)
+    if not cutting:
+        return None                       # no plane or box, or their cut switched off (View > Section Cuts)
     o = clean(opts)
+    plane = cutting[0]
     p, n = plane.point, plane.normal
     block = {"point": [float(p.x()), float(p.y()), float(p.z())],
              "normal": [float(n.x()), float(n.y()), float(n.z())],
              "cap": o["cap"], "light": o["light"], "material": None, "style": o["style"],
              "shadows": o["shadows"], "color": list(FALLBACK_COLOR), "texture_size": None}
+    block["planes"] = []
+    for pl in cutting:
+        pp, nn = pl.point, pl.normal
+        entry = {"point": [float(pp.x()), float(pp.y()), float(pp.z())], "normal": [float(nn.x()), float(nn.y()), float(nn.z())]}
+        if o["style"] == "drawing":
+            entry.update(drawing_fill(pl, scene) or {})
+        block["planes"].append(entry)
+    if o["style"] == "drawing":
+        block["style"] = "flat"           # (what a plane says nothing about)
+        return block
     if o["style"] in ("flat", "hatch"):
         block["color"] = list(o["color"])
         if o["style"] == "hatch":
