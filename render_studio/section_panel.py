@@ -40,7 +40,10 @@ class ColourButton(QPushButton):
     def set_rgb(self, rgb) -> None:
         self._rgb = [float(c) for c in rgb][:3]
         c = QColor.fromRgbF(*self._shown(self._rgb))
-        self.setStyleSheet(f"QPushButton {{ background-color: {c.name()}; border: 1px solid gray; min-height: 18px; }}")
+        # Only THIS button: a stylesheet with a plain «QPushButton» rule reaches every button of its children, and the colour dialog was one
+        # (its OK and Cancel took the colour chosen).
+        self.setObjectName("colourSwatch")
+        self.setStyleSheet(f"QPushButton#colourSwatch {{ background-color: {c.name()}; border: 1px solid gray; min-height: 18px; }}")
 
     def _shown(self, rgb) -> list:
         """The colour as the screen shows it: linear values are encoded (a linear 0.2 is a mid grey, not a dark one)."""
@@ -53,7 +56,7 @@ class ColourButton(QPushButton):
         return [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in rgb]
 
     def _pick(self) -> None:
-        c = QColorDialog.getColor(QColor.fromRgbF(*self._shown(self._rgb)), self, tr(self._title))
+        c = QColorDialog.getColor(QColor.fromRgbF(*self._shown(self._rgb)), self.window(), tr(self._title))     # (not a child of the swatch)
         if c.isValid():
             got = (c.redF(), c.greenF(), c.blueF())
             self.set_rgb(self._decode(got) if self._linear else got)
