@@ -113,7 +113,7 @@ everything sharp). It focuses on the point the camera looks at.</td></tr>
 Night look, or any day look when the sun has set at the site's place, date and hour (then the render is a night, with no sun).</td></tr>
 <tr><td valign='top'><b>Horizon, Skyline</b></td><td>Distant <b>mountains</b>, <b>hills</b>, a <b>distant forest</b> or a <b>city skyline</b> that
 hide the line where the generated ground meets the sky. They stand in layers round the scene (the nearest clear, the farthest paler, melting into the sky's
-horizon colour), cast no shadow and are dark at night. <b>Height</b> is the angle the tallest peaks reach above the horizon. Under <i>Advanced</i>: the
+horizon colour), cast no shadow and are dark at night. <b>Peak height</b> is the angle the tallest peaks reach above the horizon. Then the
 <b>Distance</b> of the farthest layer (Automatic: the ground's edge), the <b>Shape</b> (another number, another outline) and a <b>Colour</b> of your own. It needs
 the generated ground.</td></tr>
 <tr><td valign='top'><b>Style</b></td><td>How the picture is drawn; every style can have <b>outlines</b> (their thickness in pixels, 0 = none, and their colour).

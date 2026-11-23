@@ -403,7 +403,7 @@ what you save (Ctrl+S) back into the drawing, one undo step.
 
 `Render Studio…` in the extensions menu opens the panel. It has five tabs: **Main**, **Image**, **Environment**,
 **Section** and **Output** ([Output](#output)); the sun's place and date
-([Sun](#sun)) are folded in **Environment**. What is under them (**Materials…** and **Lights…**, which open windows of their own,
+([Sun](#sun)) are in view in **Environment**. What is under them (**Materials…** and **Lights…**, which open windows of their own,
 Open preview…, the status) serves all.
 The simple controls are in view and the rest folded under *Advanced*:
 - **Render** reuses the preview's Blender when it can: with the preview open and up to date, the same engine and an ordinary PNG/JPEG,
@@ -423,13 +423,20 @@ The simple controls are in view and the rest folded under *Advanced*:
   to the look's values, and the **final render** (engine and quality; *Advanced*: the preview's engine);
 - **Image**: a **Camera** group (the 3D view's own: parallel, perspective or two-point with the program's icons, and the **angle of view**); exposure, warmth and saturation; *Effects* (a group): vignette, **depth of field** (focused on the middle of
   the view) and **ambient occlusion** (strength and reach: the render's AO pass multiplied into the picture);
-- **Environment** (also a **Fog** group: thickness, and the distance where it starts, the mist pass mixed into the sky's colour. When the drawing has its own fog on (IngeTrazo 0.6.3, Styles › Fog) that one is the render's and the preview's: the same fade along the camera's axis, from its distance over its thickness, in its colour; the group's sliders wait until it is off): the **background** (sky of the look, 360° panorama or fixed picture; *Lights the scene* in view, rotation,
-  brightness and viewpoint height folded), the **sun** (clouds, strength, and its place and date folded inside its
-  group) and the **ground** (a **type** in view — the look's own, grass, asphalt, concrete, sand, snow, wet pavement — and, under *Advanced*,
-  its colour, roughness, *Ground radius* (the ground's own size: the haze melts it into the horizon over its outer two thirds, so it
-  has no visible edge; Automatic is a very large ground), horizon haze, height and a material on it (the model's or any other:
-  one that nothing is painted with is made from its picture and settings) with its *Tile size*; with a grass material,
-  the blades grow on a circle round the model whose *Grass radius* you set, or, in Automatic, the model's farthest point plus 10 m);
+- **Environment**, in the order a person decides it, with everything in view (nothing is folded under *Advanced*; what has no meaning in the
+  current choice is greyed or left out):
+  **Sun and sky** — *Interior*; the sun's **date** and **hour** as two sliders (said once); its strength, the clouds (they wait, with a line saying
+  why, when the background is not the look's sky), the stars and moonlight at night; and below, always in view, the **place** (latitude and longitude,
+  or the map), the **north**, the **time zone** and the shadows of the 3D view. **Background** — the look's sky, a 360° panorama or a fixed picture,
+  and only the controls of the chosen one: a panorama's image, *Lights the scene*, rotation, brightness and viewpoint height; a picture's fit and
+  brightness. **Ground** — a **type** (the look's own, grass, asphalt, concrete, sand, snow, wet pavement), *Generated ground*, the shadow on the
+  floor, a **material** on it (the model's or any other: one that nothing is painted with is made from its picture and settings) with its *Tile size*,
+  colour, roughness, *Level*, *Ground radius* (the ground's own size: the haze melts it into the horizon over its outer two thirds, so it has no visible
+  edge; Automatic is a very large ground) and, with a grass material, the *Grass radius* of the circle round the model (Automatic: the model's farthest
+  point plus 10 m). **Horizon** — a skyline's type, *Peak height* (degrees), distance, shape and colour. **Fog** — thickness, where it starts, and the
+  *Ground haze* (how far the generated ground goes before it melts into the horizon); the mist pass is mixed into the sky's colour. When the drawing has
+  its own fog on (IngeTrazo 0.6.3, Styles › Fog) that one is the render's and the preview's: the same fade along the camera's axis, from its distance
+  over its thickness, in its colour; the group's sliders wait until it is off.
   The sun's **date** and **hour** are two sliders always in view (the label says the season, and the part of the day). When the sun has set at
   the place, date and hour, a day look renders as a **night** (no sun: the night sky) and the **Stars** and **Moonlight** sliders appear (the
   moon's phase and place are not worked out: it is a free setting).

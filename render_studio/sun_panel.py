@@ -237,7 +237,8 @@ class SunTab(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
 
-        lay.addWidget(_bold("Place"))
+        self.head_place = _bold("Place")
+        lay.addWidget(self.head_place)
         form = QFormLayout()
         form.setRowWrapPolicy(QFormLayout.WrapLongRows)
         self.where = _note()
@@ -283,8 +284,10 @@ class SunTab(QWidget):
         form.addRow("North", self.north)
         lay.addLayout(form)
 
-        lay.addWidget(_bold("Date and hour"))
+        self.head_clock = _bold("Date and hour")
+        lay.addWidget(self.head_clock)
         form2 = QFormLayout()
+        self.form_clock = form2
         form2.setRowWrapPolicy(QFormLayout.WrapLongRows)
         self.date = QDateEdit()
         self.date.setDisplayFormat("d MMMM")
@@ -307,6 +310,7 @@ class SunTab(QWidget):
         trow.addWidget(self.time)
         tbox = QWidget()
         tbox.setLayout(trow)
+        self.hour_row_box = tbox
         form2.addRow("Hour", tbox)
         self.daylight = _note()
         form2.addRow("", self.daylight)
@@ -334,6 +338,14 @@ class SunTab(QWidget):
         lay.addWidget(self.look)
         lay.addStretch(1)
         self.refresh()
+
+    def embed(self) -> None:
+        """Used inside the Sun and sky group, under its own date and hour sliders: this tab's calendar and hour are the same two values, so
+        they are not shown again (what is left is the place, the north, the time zone, the shadows and what the sun does then)."""
+        self.form_clock.setRowVisible(self.date, False)
+        self.form_clock.setRowVisible(self.hour_row_box, False)
+        self.head_clock.setText(tr("Clock"))
+        self.head_place.setText(tr("Place"))
 
     # ---- showing ----------------------------------------------------------------------
     def _help(self):

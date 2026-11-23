@@ -368,6 +368,18 @@ class RefreshCombo(QComboBox):
         super().showPopup()
 
 
+class Section(QWidget):
+    """A block of rows that is always in view: what used to be folded under «Advanced» (there is room for it). ``form`` is the QFormLayout
+    to fill; the block is one widget, so a whole block can be enabled, disabled or shown by context."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        from PySide6.QtWidgets import QFormLayout
+        self.form = QFormLayout(self)
+        self.form.setContentsMargins(0, 0, 0, 0)
+        self.form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+
+
 class Collapsible(QWidget):
     """A section that starts closed: a header you click to show the advanced controls under it.
     ``form`` is the QFormLayout to fill; the open/closed state is remembered under ``key``."""

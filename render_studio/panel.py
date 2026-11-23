@@ -511,7 +511,7 @@ class StudioPanel(QWidget):
         form_pic = QFormLayout(box_pic)
         self.fx = QGroupBox("Effects")                  # vignette, depth of field: a group of the Image page
         self.fx.form = QFormLayout(self.fx)
-        box_skyadj = QGroupBox("Sky")
+        box_skyadj = QGroupBox("Sun and sky")
         form_skyadj = QFormLayout(box_skyadj)
         for key, (label, lo, hi, default, _unit) in presets.SLIDERS.items():
             block, _amb = presets.studio(self.preset.currentData())
@@ -666,7 +666,7 @@ class StudioPanel(QWidget):
                                                "How bright the picture is in the render")
         form2.addRow("Picture brightness", self.backdrop_strength_row)
         # advanced
-        self.bg_more = widgets.Collapsible(tr("Advanced"), "bg_more")
+        self.bg_more = widgets.Section()            # (in view when it is a panorama: what is touched first, not an «advanced» part)
         self.hdri_height = _slider(0.5, 30.0, float(st.value(_SETTINGS + "hdri_height", 2.5)), 295)
         self.hdri_height_row = SliderRow(
             self.hdri_height, "{:.1f} m",
@@ -674,7 +674,7 @@ class StudioPanel(QWidget):
             "a drone: more). It sets how the ground of the image is laid under the model: wrong, and the ground "
             "looks stretched or too close.")
         self.bg_more.form.addRow("Rotation", self.hdri_rotation_row)
-        self.bg_more.form.addRow("Brightness", self.hdri_strength_row)
+        self.bg_more.form.addRow("Panorama brightness", self.hdri_strength_row)
         self.bg_more.form.addRow("Viewpoint height", self.hdri_height_row)
         self.hdri_light = QCheckBox("Lights the scene")
         self.hdri_light.setToolTip("On: the image lights the model (its sun casts the shadows). "
@@ -722,7 +722,8 @@ class StudioPanel(QWidget):
         form_g.setRowWrapPolicy(QFormLayout.WrapLongRows)          # a narrow tray: the label above its field
         form_g.insertRow(0, "Type", self.ground_type)
         # advanced: its colour, shine, haze and height, and a material of the model on it
-        self.ground_more = widgets.Collapsible(tr("Advanced"), "ground_more")
+        self.ground_more = widgets.Section()
+        _rows = {}                                  # added in the order of use once they all exist: what it is made of, then where
         from .section_panel import ColourButton
         crow = QHBoxLayout()
         self.ground_colour = ColourButton(self._ground_default_colour(), "Ground colour", linear=True)
@@ -735,16 +736,15 @@ class StudioPanel(QWidget):
         crow.addWidget(self.ground_colour, 1)
         crow.addWidget(self.ground_colour_reset)
         self._ground_color = None                  # None: the look's
-        self.ground_more.form.addRow("Colour", crow)
+        _rows["colour"] = ("Colour", crow)
         self.ground_rough = _slider(0.0, 1.0, 0.9, 100)
         self.ground_rough_row = SliderRow(self.ground_rough, "{:.2f}",
                                           "0 a mirror (wet pavement), 1 fully matte (grass, sand)")
-        self.ground_more.form.addRow("Roughness", self.ground_rough_row)
+        _rows["rough"] = ("Roughness", self.ground_rough_row)
         self.ground_haze = _slider(0.0, 4.0, 1.0, 40)
         self.ground_haze_row = SliderRow(self.ground_haze, "×{:.1f}",
                                          "How far the ground goes before it melts into the horizon: 1 the usual, "
                                          "more for a clearer far distance, 0 no haze")
-        self.ground_more.form.addRow("Horizon haze", self.ground_haze_row)
         self.ground_offset = QDoubleSpinBox()
         self.ground_offset.setRange(-10.0, 10.0)
         self.ground_offset.setDecimals(2)
@@ -752,21 +752,21 @@ class StudioPanel(QWidget):
         self.ground_offset.setSuffix(" m")
         self.ground_offset.setKeyboardTracking(False)
         self.ground_offset.setToolTip("Raises (+) or lowers (−) the generated ground from the model's foot.")
-        self.ground_more.form.addRow("Height", self.ground_offset)
+        _rows["level"] = ("Level", self.ground_offset)
         self.ground_radius = widgets.RadiusSlider(2000.0, 10.0)
         self.ground_radius.setToolTip("The radius of the generated ground. The haze melts it into the horizon over its outer "
                                       "two thirds, so its edge is never seen. Automatic: a very large ground (the haze starts "
                                       "at 120 m).")
-        self.ground_more.form.addRow("Ground radius", self.ground_radius)
+        _rows["radius"] = ("Ground radius", self.ground_radius)
         self.ground_grass = widgets.RadiusSlider(500.0, 5.0)
         self.ground_grass.setToolTip("When the ground's material is grass: the radius of the circle of grass round the model. "
                                      "Automatic: the model's farthest point plus 10 m.")
-        self.ground_more.form.addRow("Grass radius", self.ground_grass)
+        _rows["grass"] = ("Grass radius", self.ground_grass)
         self._grass_rows = (self.ground_grass,)
         self.ground_grass_note = QLabel("")
         self.ground_grass_note.setWordWrap(True)
         self.ground_grass_note.setStyleSheet("color: gray; font-size: 11px")
-        self.ground_more.form.addRow(self.ground_grass_note)
+        _rows["note"] = (self.ground_grass_note,)
         self.ground_grass.valueChanged.connect(lambda _v: self._ground_grass_hint())
         self.ground_rough.valueChanged.connect(lambda _v: self._ground_custom())
         self.ground_offset.valueChanged.connect(lambda _v: None)
@@ -775,7 +775,7 @@ class StudioPanel(QWidget):
             "A material of the model for the generated ground (grass, paving, sand, water…): it repeats at its own "
             "size over the ground. «Look's colour»: the plain colour of the look.")
         self._fill_ground_materials()
-        self.ground_more.form.addRow("Material", self.ground_material)
+        _rows["material"] = ("Material", self.ground_material)
         self.ground_tile = QDoubleSpinBox()
         self.ground_tile.setRange(0.0, 100.0)
         self.ground_tile.setDecimals(2)
@@ -785,7 +785,9 @@ class StudioPanel(QWidget):
         self.ground_tile.setKeyboardTracking(False)
         self.ground_tile.setToolTip("How big one repeat of the material's picture is on the ground. "
                                     "The first value uses the picture's own size.")
-        self.ground_more.form.addRow("Tile size", self.ground_tile)
+        _rows["tile"] = ("Tile size", self.ground_tile)
+        for key in ("material", "tile", "colour", "rough", "level", "radius", "grass", "note"):
+            self.ground_more.form.addRow(*_rows[key])
         self.ground.toggled.connect(self.ground_more.setEnabled)
         self.ground_more.setEnabled(self.ground.isChecked())
         form_g.addRow(self.ground_more)
@@ -804,8 +806,8 @@ class StudioPanel(QWidget):
         self.skyline_height = widgets.NumberSlider(0.5, 20.0, 0.5, "{:.1f}°")
         self.skyline_height.setValue(4.0)
         self.skyline_height.setToolTip("How high the tallest peaks (or towers, or trees) rise above the horizon, in degrees.")
-        form_h.addRow("Height", self.skyline_height)
-        self.skyline_more = widgets.Collapsible(tr("Advanced"), "skyline_more")
+        form_h.addRow("Peak height", self.skyline_height)
+        self.skyline_more = widgets.Section()
         self.skyline_distance = widgets.RadiusSlider(5000.0, 50.0)
         self.skyline_distance.setToolTip("How far its farthest layer is. Automatic: at the edge of the ground (its radius, or "
                                          "1 200 m when the ground is Automatic).")
@@ -843,13 +845,16 @@ class StudioPanel(QWidget):
         form_fog.addRow(self.fog_note)
         for key in ("fog", "fog_start"):
             form_fog.addRow(self._env_labels[key], self.slider_rows[key])
+        form_fog.addRow("Ground haze", self.ground_haze_row)          # how far the generated ground goes before it melts into the horizon
+        self.ground.toggled.connect(self.ground_haze_row.setEnabled)
+        self.ground_haze_row.setEnabled(self.ground.isChecked())
         col.addWidget(box_fog)
         self._fog_seen = "unset"
         self._fog_timer = QTimer(self)                  # the drawing's fog is set in IngeTrazo's Styles: noticed when it changes
         self._fog_timer.setInterval(1000)
         self._fog_timer.timeout.connect(self._update_fog_note)
         self._fog_timer.start()
-        col_sky.insertWidget(1, box_skyadj)          # after the background, before the ground
+        col_sky.insertWidget(0, box_skyadj)          # first: the light decides the rest
 
         # What only the final render uses.
         box_final = QGroupBox("Quality")
@@ -942,9 +947,13 @@ class StudioPanel(QWidget):
             form_skyadj.addRow(self._sky_labels[key], self.slider_rows[key])
         self._form_skyadj = form_skyadj
         self.sun_tab._show_sun()                     # (and the night sliders, shown only at night)
-        self.sun_more = widgets.Collapsible(tr("Place and date"), "sun_more")
+        self.sky_note = self._caption("")            # says why the clouds wait when the background is not the look's sky
+        self.sky_note.setVisible(False)
+        form_skyadj.addRow(self.sky_note)
+        self.sun_tab.embed()                          # (the date and the hour are the two sliders above: said once)
+        self.sun_more = widgets.Section()
         self.sun_more.form.addRow(self.sun_tab)
-        form_skyadj.addRow(self.sun_more)            # the sun's group holds its place and date
+        form_skyadj.addRow(self.sun_more)            # the place, the north, the time zone: in view, under the sky
         col_sky.addStretch(1)
         for tab_widget, title in ((self.section_tab, "Section"), (self.output_tab, "Output")):
             self.tabs.addTab(scrolled(tab_widget), title)
@@ -1986,6 +1995,11 @@ class StudioPanel(QWidget):
                 self._form_bg.setRowVisible(w, mode == key)
         self._form_bg.setRowVisible(self.bg_more, mode == "pano")
         self._hdri_enable()
+        sky_only = mode == "sky"
+        if "clouds" in self.slider_rows and getattr(self, "sky_note", None) is not None:
+            self.slider_rows["clouds"].setEnabled(sky_only)
+            self.sky_note.setText("" if sky_only else tr("Clouds are the look's sky: the panorama or the picture has its own."))
+            self.sky_note.setVisible(not sky_only)
         hidden = mode != "sky" and bool(self.output_tab.transparent.isChecked())
         self.bg_note.setText(tr("The Output tab leaves the sky transparent, so this background will not show in the "
                                 "render. Untick «Transparent sky» there.") if hidden else "")

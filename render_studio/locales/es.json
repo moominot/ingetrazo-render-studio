@@ -840,5 +840,12 @@
 "The thickness of the cap's outline, in pixels of the finished picture.": "El grosor del contorno de la tapa, en píxeles de la imagen final.",
 "Cut outline": "Contorno del corte",
 "Cut thickness": "Grosor del corte",
-"The thickness of the rim of the cut, in pixels of this picture": "El grosor del borde del corte, en píxeles de esta imagen"
+"The thickness of the rim of the cut, in pixels of this picture": "El grosor del borde del corte, en píxeles de esta imagen",
+"Sun and sky": "Sol y cielo",
+"Peak height": "Altura de las cumbres",
+"Level": "Nivel",
+"Ground haze": "Calima del suelo",
+"Panorama brightness": "Brillo del panorama",
+"Clock": "Reloj",
+"Clouds are the look's sky: the panorama or the picture has its own.": "Las nubes son el cielo del look: el panorama o la imagen tiene las suyas."
 }

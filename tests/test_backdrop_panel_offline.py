@@ -114,9 +114,10 @@ ok(panel.skyline_colour.rgb() == presets.SKYLINE_COLOURS["forest"], "…and a sk
 panel.skyline_type.setCurrentIndex(0); panel.preset.setCurrentIndex(panel.preset.findData("clear"))
 ok(panel.slider_rows["dof"].slider.property("hi") == 1.0 and "dof" in panel.slider_values(), "depth of field is a slider of the panel")
 panel.tabs.setCurrentIndex(TAB["Environment"])
-ok(panel.slider_rows["clouds"].isVisible() and panel.slider_rows["sun_scale"].isVisible() and not panel.sun_tab.isVisible(), "Sky: clouds and sun in view, the sun's place and date folded")
-panel.sun_more.header.setChecked(True)
-ok(panel.sun_tab.isVisible(), "…and they open")
+ok(panel.slider_rows["clouds"].isVisible() and panel.slider_rows["sun_scale"].isVisible() and panel.sun_tab.isVisible(), "Sun and sky: clouds, sun and the sun's place all in view, nothing folded")
+ok(panel.sun_quick.date_box.isVisible() and panel.sun_quick.hour_box.isVisible() and not panel.sun_tab.date.isVisible() and not panel.sun_tab.time.isVisible(),
+   "…the date and the hour are said once (the two sliders), not again under the place")
+ok(panel.sun_tab.lat.isVisible() and panel.sun_tab.north.isVisible() and panel.sun_tab.zone.isVisible() and panel.sun_tab.shadows.isVisible(), "…with the place, the north, the time zone and the shadows")
 panel.tabs.setCurrentIndex(TAB["Main"])
 ok(not panel.preview_engine.isVisible(), "Main: the preview engine is under Advanced")
 
@@ -173,10 +174,26 @@ panel.ground.setChecked(False)
 ok(not panel.ground_more.isEnabled(), "no generated ground: its advanced part is off")
 panel.ground.setChecked(True)
 box_titles = {g.title(): g for g in panel.findChildren(P.QGroupBox)}
-ok(panel.sun_more.parentWidget() is not None and box_titles["Sky"].isAncestorOf(panel.sun_more), "the sun's place and date are inside the sun group")
+ok(panel.sun_more.parentWidget() is not None and box_titles["Sun and sky"].isAncestorOf(panel.sun_more), "the sun's place is inside the sun group")
 panel.bg_mode.setCurrentIndex(panel.bg_mode.findData("pano"))
 ok(not box_titles["Background"].isAncestorOf(panel.hdri_light) is False and not panel.bg_more.isAncestorOf(panel.hdri_light), "«Lights the scene» is out of the advanced fold…")
-ok(panel.bg_more.isAncestorOf(panel.hdri_rotation_row) and panel.bg_more.isAncestorOf(panel.hdri_strength_row), "…and rotation and brightness are in it")
+ok(panel.bg_more.isAncestorOf(panel.hdri_rotation_row) and panel.bg_more.isAncestorOf(panel.hdri_strength_row), "…and rotation and brightness go with it")
+panel.tabs.setCurrentIndex(TAB["Environment"])
+ok(panel.hdri_rotation_row.isVisible() and panel.hdri_strength_row.isVisible() and panel.hdri_height_row.isVisible() and panel.hdri_light.isVisible(),
+   "a panorama: its image, «Lights the scene», rotation, brightness and viewpoint height are all in view (nothing is folded)")
+ok(not panel.slider_rows["clouds"].isEnabled() and not panel.sky_note.isHidden(), "…and the look's clouds wait, with a line saying why")
+panel.bg_mode.setCurrentIndex(panel.bg_mode.findData("sky"))
+ok(panel.slider_rows["clouds"].isEnabled() and panel.sky_note.isHidden() and not panel.hdri_rotation_row.isVisible(), "the look's sky: its clouds work again and the panorama's controls go")
+panel.ground.setChecked(True)
+ok(panel.ground_material.isVisible() and panel.ground_colour.isVisible() and panel.ground_rough.isVisible() and panel.ground_offset.isVisible() and panel.ground_radius.isVisible(),
+   "Ground: material, colour, roughness, level and radius are all in view when there is a ground")
+ok(panel.slider_rows["fog"].isVisible() and panel.ground_haze_row.isVisible() and panel.ground_haze_row.parentWidget().title() == "Fog" if hasattr(panel.ground_haze_row.parentWidget(), "title") else panel.ground_haze_row.isVisible(),
+   "the ground's haze is with the fog")
+panel.skyline_type.setCurrentIndex(panel.skyline_type.findData("hills"))
+ok(panel.skyline_distance.isVisible() and panel.skyline_seed.isVisible() and panel.skyline_colour.isVisible(), "Horizon: with a skyline, its distance, shape and colour are all in view")
+panel.skyline_type.setCurrentIndex(0)
+order = [g.title() for g in sorted((g for g in panel.findChildren(P.QGroupBox) if g.title() in ("Sun and sky", "Background", "Ground", "Horizon", "Fog")), key=lambda g: g.mapTo(panel, g.rect().topLeft()).y())]
+ok(order == ["Sun and sky", "Background", "Ground", "Horizon", "Fog"], f"the Environment groups, in the order a person decides them ({order})")
 
 # ---- the ground types ---------------------------------------------------------------------------
 ok(panel.ground_type.itemData(0) == "" and panel.ground_type.findData("wet") >= 0 and panel.ground_type.findData("custom") >= 0, "the ground has types: the look's own, grass, asphalt…, custom")

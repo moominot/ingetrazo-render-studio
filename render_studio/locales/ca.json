@@ -840,5 +840,12 @@
 "The thickness of the cap's outline, in pixels of the finished picture.": "El gruix del contorn de la tapa, en píxels de la imatge final.",
 "Cut outline": "Contorn del tall",
 "Cut thickness": "Gruix del tall",
-"The thickness of the rim of the cut, in pixels of this picture": "El gruix de la vora del tall, en píxels d'aquesta imatge"
+"The thickness of the rim of the cut, in pixels of this picture": "El gruix de la vora del tall, en píxels d'aquesta imatge",
+"Sun and sky": "Sol i cel",
+"Peak height": "Alçada dels cims",
+"Level": "Nivell",
+"Ground haze": "Calitja del terra",
+"Panorama brightness": "Brillantor del panorama",
+"Clock": "Rellotge",
+"Clouds are the look's sky: the panorama or the picture has its own.": "Els núvols són el cel del look: el panorama o la imatge en té de propis."
 }

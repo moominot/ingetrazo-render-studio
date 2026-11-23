@@ -16,7 +16,7 @@ Escrit el 2026-11-23, després de revisar el codi (`panel.py`, `sun_panel.py`, `
 - **La caixa de secció es renderitza sense tallar.** `section.job_block` només llegeix `scene.active_section()` (un pla). Una caixa activa no entra
   al job: la render surt sencera, sense avís.
 
-## 1. Pestanya Entorn: què hi ha ara
+## 1. Pestanya Entorn — FET (vegeu el commit); el que hi havia abans:
 
 | Grup | Controls | Plegats o amagats |
 |---|---|---|
