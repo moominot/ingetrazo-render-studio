@@ -291,7 +291,21 @@ class NumberSlider(QWidget):
         self.label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         lay.addWidget(self.slider, 1)
         lay.addWidget(self.label)
+        self._fit_label()
         self._moved()
+
+    def _fit_label(self) -> None:
+        """The value's label as wide as the widest thing it will ever say («No outlines», «4.0 px»…): a text that changes its width while
+        the slider is dragged would resize the slider under the hand."""
+        fm = self.label.fontMetrics()
+        texts = [self._fmt.format(self._lo), self._fmt.format(self._lo + self.slider.maximum() * self._step)]
+        if self._special:
+            texts.append(tr(self._special))
+        self.label.setFixedWidth(max(52, max(fm.horizontalAdvance(t) for t in texts) + 10))
+
+    def showEvent(self, ev) -> None:        # noqa: N802 (Qt: the font is known once shown)
+        self._fit_label()
+        super().showEvent(ev)
 
     def value(self) -> float:
         return self._lo + self.slider.value() * self._step

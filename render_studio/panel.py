@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDoubleSpinBo
                                QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMenu, QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QTabWidget,
                                QToolButton, QVBoxLayout, QWidget)
 
-from . import user_presets, lights as studio_lights, materials as mats, fast_export, output, pbr, presets, proxies, section, settings_store, studio_data, visibility, widgets
+from . import drawing_fog, user_presets, lights as studio_lights, materials as mats, fast_export, output, pbr, presets, proxies, section, settings_store, studio_data, visibility, widgets
 from .live import LiveSession
 from .preview import ImageWindow  # noqa: F401 - re-exported: panel.ImageWindow
 from .widgets import SliderRow
@@ -109,8 +109,9 @@ def apply_backdrop(block: dict, backdrop: dict | None) -> dict:
     return block
 
 
-def apply_style_block(block: dict, scene, style: dict | None) -> dict:
-    """The look's block with the render's style (settings_store.style): only what the style uses goes to Blender. A model made of one
+def apply_style_block(block: dict, scene, style: dict | None, lines: str | None = None) -> dict:
+    """The look's block with the render's style (settings_store.style): only what the style uses goes to Blender. ``lines``: the line layer
+    (outlines.write_layer) the script lays over the picture. A model made of one
     material of the drawing carries that material's colour and picture for when the file has no such material."""
     st = settings_store.style(style)
     if st["mode"] == "none" and st["width"] <= 0.0:
@@ -132,6 +133,8 @@ def apply_style_block(block: dict, scene, style: dict | None) -> dict:
         out["noise"], out["extend"] = st["noise"], st["extend"]
     elif st["mode"] == "watercolour":
         out.update(wetness=st["wetness"], paper=st["paper"], edges=st["edges"])
+    if lines:
+        out["lines"] = str(lines)
     block["style"] = out
     return block
 
@@ -196,7 +199,7 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
                      ground_shadow: bool = False,
                      hdri: dict | None = None, backdrop: dict | None = None, materials: dict | None = None,
                      ground_material: dict | None = None, ground_look: dict | None = None,
-                     skyline: dict | None = None, style: dict | None = None,
+                     skyline: dict | None = None, style: dict | None = None, lines: str | None = None,
                      serve: bool = False, live: bool = False, reuse_model: bool = False,
                      output: dict | None = None, doc_path=None, section_opts: dict | None = None,
                      progress=None):
@@ -230,8 +233,9 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
         sk = settings_store.skyline(skyline)
         if sk["type"]:
             block["skyline"] = {k: v for k, v in sk.items() if v is not None}
-    block = apply_style_block(block, scene, style)
+    block = apply_style_block(block, scene, style, lines)
     block = presets.apply_sliders(block, sliders)
+    block = drawing_fog.apply(block, scene)           # the drawing's own fog (IngeTrazo 0.6.3), when it has one
     try:
         materials = mats.with_detected(scene, materials)     # «Gespa» grows grass, «Aigua» ripples
     except Exception:  # noqa: BLE001 - never stops a render
@@ -502,10 +506,10 @@ class StudioPanel(QWidget):
         form.addRow("Look", self.preset)
         form.addRow(self._caption("These change the scene itself: the preview and Render both show them."))
         self.sliders, self.slider_rows = {}, {}
-        self._sky_labels, self._cam_labels = {}, {}
+        self._sky_labels, self._cam_labels, self._env_labels = {}, {}, {}
         box_pic = QGroupBox("Corrections")
         form_pic = QFormLayout(box_pic)
-        self.fx = QGroupBox("Effects")                  # vignette, depth of field, fog: a group of the Image page
+        self.fx = QGroupBox("Effects")                  # vignette, depth of field: a group of the Image page
         self.fx.form = QFormLayout(self.fx)
         box_skyadj = QGroupBox("Sky")
         form_skyadj = QFormLayout(box_skyadj)
@@ -520,6 +524,9 @@ class StudioPanel(QWidget):
                 continue
             if presets.SLIDER_PAGE[key] == "camera":
                 self._cam_labels[key] = label           # added to the Camera group of the Main tab
+                continue
+            if presets.SLIDER_PAGE[key] == "env":
+                self._env_labels[key] = label           # the Fog group of the Environment page
                 continue
             target = form_pic if key in presets.SIMPLE_SLIDERS else self.fx.form
             target.addRow(label, row)
@@ -827,6 +834,21 @@ class StudioPanel(QWidget):
         self.skyline_type.currentIndexChanged.connect(self._swatches_follow)
         self.preset.currentIndexChanged.connect(self._swatches_follow)
         col.addWidget(box_horizon)
+        # Fog: part of the place, like the horizon it veils (it was among the picture's effects).
+        box_fog = QGroupBox("Fog")
+        form_fog = QFormLayout(box_fog)
+        form_fog.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        self.fog_note = self._caption("")
+        self.fog_note.setVisible(False)
+        form_fog.addRow(self.fog_note)
+        for key in ("fog", "fog_start"):
+            form_fog.addRow(self._env_labels[key], self.slider_rows[key])
+        col.addWidget(box_fog)
+        self._fog_seen = "unset"
+        self._fog_timer = QTimer(self)                  # the drawing's fog is set in IngeTrazo's Styles: noticed when it changes
+        self._fog_timer.setInterval(1000)
+        self._fog_timer.timeout.connect(self._update_fog_note)
+        self._fog_timer.start()
         col_sky.insertWidget(1, box_skyadj)          # after the background, before the ground
 
         # What only the final render uses.
@@ -1124,6 +1146,25 @@ class StudioPanel(QWidget):
         # Lights and the sun bump the version too, but the model file does not change.
         return (id(scene), getattr(scene, "content_version", 0) - getattr(scene, "_rs_not_model", 0))
 
+    def _update_fog_note(self) -> None:
+        """When the drawing has fog on, it is the render's fog: the sliders of this group wait (they are used again when it is off)."""
+        try:
+            fog = drawing_fog.of(self.app.scene)
+        except Exception:  # noqa: BLE001
+            fog = None
+        key = json.dumps(fog, sort_keys=True)
+        if key == self._fog_seen:
+            return
+        self._fog_seen = key
+        for k in ("fog", "fog_start"):
+            self.slider_rows[k].setEnabled(fog is None)
+        if fog is None:
+            self.fog_note.setVisible(False)
+            return
+        self.fog_note.setText(tr("The drawing's own fog is on (it starts at {start} m and is {thickness} m thick, as in the 3D view): the render "
+                                 "has that one. These sliders are used when it is off.", start=f"{fog['start']:g}", thickness=f"{fog['thickness']:g}"))
+        self.fog_note.setVisible(True)
+
     def live_key(self):
         """What the live scene depends on besides the camera, in three parts:
         (the model, the materials' render settings, the look with every
@@ -1133,6 +1174,7 @@ class StudioPanel(QWidget):
             doc = (json.dumps(self.settings_dict(), sort_keys=True) + studio_lights.signature(self.app.scene)
                    + section.signature(self.app.scene, self.section_tab.settings())
                                       + json.dumps(sun_site.site(self.app.scene), sort_keys=True)
+                   + json.dumps(drawing_fog.of(self.app.scene), sort_keys=True)
                    + self.live_engine())
             mats_ = json.dumps(self.material_specs(), sort_keys=True, default=str)
         except Exception:  # noqa: BLE001
@@ -2344,6 +2386,114 @@ class StudioPanel(QWidget):
         finally:
             self._preparing = False
 
+    def line_geometry(self, notes: list | None = None):
+        """The lines and faces the outlines are drawn from: what Blender renders. The 3D view's own geometry (fast: it is kept ready)
+        when the model is rendered as it is drawn; else the scene walked with what the render leaves out of the model file left out
+        (the stand-in of every proxy whose original is found, a light's symbol, objects hidden inside others) and the proxies'
+        originals put where their stand-ins are (None: the 3D view's)."""
+        from . import outlines
+        scene = self.app.viewport.scene
+        try:
+            placed, extra = proxies.line_geometry(scene, self.doc_path())
+        except Exception as exc:  # noqa: BLE001 - never stops a render: the 3D view's geometry
+            _log.exception("proxies' lines not read")
+            placed, extra = [], None
+            if notes is not None:
+                notes.append(f"proxies' lines NOT read: {type(exc).__name__}: {exc}")
+        try:
+            symbols = studio_lights.symbols_out_of_render(scene)
+        except Exception:  # noqa: BLE001
+            symbols = []
+        try:
+            nested = bool(visibility.hidden_placements(scene))
+        except Exception:  # noqa: BLE001
+            nested = False
+        if not (placed or symbols or nested):
+            if notes is not None:
+                notes.append("no proxies, symbols or nested hidden: the 3D view's own geometry")
+            return None
+        with proxies.left_out(placed + symbols), visibility.hidden_left_out(scene):
+            base = outlines.scene_geometry(scene)
+        if notes is not None:
+            notes.append(f"scene walked: proxies placed {len(placed)}, light symbols {len(symbols)}, nested hidden {nested}; "
+                         f"base {[len(x) for x in base]}, originals {None if extra is None else [len(x) for x in extra]}")
+        return outlines.merged([base, extra])
+
+    def line_layer(self, camera, width: int, height: int, path, quiet: bool = False) -> str | None:
+        """The outlines of the style as a transparent picture of ``width``×``height`` seen from ``camera`` (None: the style has none).
+        They are drawn here, from the model's own geometry (outlines.py), and laid over the render by Blender's script."""
+        from . import outlines
+        style = settings_store.style(self.style_settings())
+        if not outlines.wanted(style):
+            return None
+        if not quiet:
+            self._set_status(tr("Drawing the outlines…"))
+            QApplication.processEvents()
+        notes: list = []
+        # The width is in pixels of the FINAL picture: a smaller frame (the preview's) takes a thinner line, so that the preview shows
+        # the lines in the proportion the render will have.
+        try:
+            ref = int(self.output_tab.frame()[1])
+        except Exception:  # noqa: BLE001
+            ref = 0
+        if ref > 0 and height < ref:
+            style = dict(style, width=float(style.get("width", 0.0) or 0.0) * height / ref)
+            notes.append(f"width scaled to the frame: {height} of {ref} px")
+        try:
+            geom = self.line_geometry(notes)
+        except Exception as exc:  # noqa: BLE001 - the 3D view's geometry
+            _log.exception("outlines' geometry not worked out")
+            notes.append(f"geometry NOT worked out: {type(exc).__name__}: {exc}")
+            geom = None
+        return outlines.write_layer(self.app.viewport, camera or self.app.viewport.camera, width, height, style, path, geom, notes)
+
+    def line_set(self, camera, width: int, height: int):
+        """The outlines of the style as vectors for the FINAL picture (outlines.LineSet and the controls' starting style), or None. The
+        render window draws them over the picture and lets them be restyled instantly; saving puts them in it."""
+        from . import outlines
+        style = settings_store.style(self.style_settings())
+        if not outlines.wanted(style):
+            return None
+        self._set_status(tr("Drawing the outlines…"))
+        QApplication.processEvents()
+        notes: list = []
+        try:
+            geom = self.line_geometry(notes)
+        except Exception as exc:  # noqa: BLE001 - the 3D view's geometry
+            _log.exception("outlines' geometry not worked out")
+            notes.append(f"geometry NOT worked out: {type(exc).__name__}: {exc}")
+            geom = None
+        try:
+            lines = outlines.lineset(self.app.viewport, camera or self.app.viewport.camera, int(width), int(height), geom, notes)
+        except Exception:  # noqa: BLE001 - a render is never lost over its lines
+            _log.exception("outlines not drawn")
+            return None
+        try:
+            Path(self.work).mkdir(parents=True, exist_ok=True)
+            (Path(self.work) / "lines.txt").write_text(chr(10).join(notes) + chr(10), encoding="utf-8")
+        except OSError:
+            pass
+        return (lines, outlines.window_style(style)) if lines is not None else None
+
+    def _bake_lines(self) -> None:
+        """After a render whose outlines are vectors: the picture Blender wrote is kept as it is (``render-nolines.png``, what the window
+        restyles) and ``self.output`` becomes the same with the lines in it, as every other way out of the render (autosave, Render and
+        save…) reads it."""
+        from . import outlines
+        pending, self._final_lines = getattr(self, "_final_lines", None), None
+        self._baked = None
+        if not pending:
+            return
+        lines, style = pending
+        try:
+            base = self.output.with_name("render-nolines.png")
+            shutil.copyfile(self.output, base)
+            img = outlines.composite(QImage(str(base)), lines, style)
+            if img.save(str(self.output), "PNG"):
+                self._baked = (lines, style, base)
+        except Exception:  # noqa: BLE001 - the picture without its outlines is better than none
+            _log.exception("outlines not put in the picture")
+
     def _render_in_live_scene(self, found, save_to, camera) -> bool:
         """The final picture made by the live view's Blender, in the scene it already has, when that scene is the one this render
         would build: the same engine, up to date with the panel, an ordinary PNG or JPEG (not a panorama, not a transparent sky, not
@@ -2389,8 +2539,10 @@ class StudioPanel(QWidget):
         self.output = output_file
         self.rendered = {"format": out["format"], "file": output_file, "jpeg_quality": out["jpeg_quality"]}
         live.line.connect(self._live_line)
+        self._final_lines = self.line_set(camera, width, height)
+        lines = None
         sent = live.render_final(camera or self.app.viewport.camera, output_file, width, height,
-                                 rb.SAMPLES[engine][max(0, min(2, self.quality.currentIndex()))], engine, done, refused)
+                                 rb.SAMPLES[engine][max(0, min(2, self.quality.currentIndex()))], engine, done, refused, lines=lines)
         if not sent:
             self._live_line_off()
             return False
@@ -2423,13 +2575,20 @@ class StudioPanel(QWidget):
         self.work = rb.work_base().parent / "render-studio" / stamp
         width, height = self.output_tab.frame()
         out = self.output_tab.settings()
+        self._final_lines = None
+        panorama = out.get("projection") in ("flat", "360")
+        lines = None
+        if not panorama and out.get("format") in ("png", "jpeg"):
+            self._final_lines = self.line_set(camera, width, height)        # vectors: the window restyles them, saving flattens them
+        elif not panorama:
+            lines = self.line_layer(camera, width, height, self.work / "lines.png")      # a deeper format: put in by Blender
         try:
             job, script = write_studio_job(
                 self.app.viewport.scene, camera or self.app.viewport.camera, self.work,
                 self.preset.currentData(), self.slider_values(),
                 engine=self.engine.currentData(), quality=self.quality.currentIndex(),
                 width=width, height=height, hdri=self.hdri_settings(), backdrop=self.backdrop_settings(), ground=self.ground.isChecked(),
-                ground_material=self.ground_material_settings(), ground_look=self.ground_look_settings(), skyline=self.skyline_settings(), style=self.style_settings(),
+                ground_material=self.ground_material_settings(), ground_look=self.ground_look_settings(), skyline=self.skyline_settings(), style=self.style_settings(), lines=lines,
                 ground_shadow=self.ground_shadow.isChecked(),
                 materials=self.material_specs(), output=out, doc_path=self.doc_path(),
                 section_opts=self.section_tab.settings(), progress=self._export_status)
@@ -2568,6 +2727,7 @@ class StudioPanel(QWidget):
             self._back_to_preview_if_open()
             self.finished.emit(None)
             return
+        self._bake_lines()
         kept = self._autosave()
         if save_to:
             if self._save_as_rendered(save_to):
@@ -2582,6 +2742,8 @@ class StudioPanel(QWidget):
         self._direct = False                              # the picture stays in the window: it is the result
         self._set_status(tr("Done: {name}", name=self.output.name) + (" · " + tr("also saved in {path}", path=kept) if kept else ""))
         win.set_image(self.output)                        # the retouch tools and Save image…
+        if getattr(self, "_baked", None):
+            win.set_outlines(*self._baked)                # the outlines, still vectors
         r = getattr(self, "rendered", None)
         win.set_rendered_file(r["file"] if r and not output.retouchable(r["format"]) else None,
                               output.FORMATS[r["format"]][0] if r else "")

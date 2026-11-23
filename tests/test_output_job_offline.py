@@ -291,7 +291,11 @@ if BLENDER != "bpy":
     scene.shadows.hour = 11
     sty_cam = OrbitCamera(); sty_cam.target = QVector3D(2, 2, 0.8); sty_cam.distance = 11; sty_cam.yaw = math.radians(-35); sty_cam.pitch = math.radians(35)
     def styled(name, style, look="clear", camera=None):
-        job, script = P.write_studio_job(scene, camera or sty_cam, out / name, look, {}, engine="eevee", quality=0, width=480, height=270, style=style)
+        from render_studio import outlines, settings_store
+        class _VP:                                         # the outlines are drawn by the app, from the scene's geometry
+            def __init__(self): self.scene = scene
+        lines = outlines.write_layer(_VP(), camera or sty_cam, 480, 270, settings_store.style(style), out / name / "lines.png")
+        job, script = P.write_studio_job(scene, camera or sty_cam, out / name, look, {}, engine="eevee", quality=0, width=480, height=270, style=style, lines=lines)
         data = json.loads(job.read_text(encoding="utf-8"))
         r = subprocess.run([BLENDER, "-b", "--factory-startup", "--python", str(script), "--", str(job)], capture_output=True, text=True, timeout=900)
         return QImage(data["output"]), r.stdout + r.stderr
@@ -330,7 +334,9 @@ if BLENDER != "bpy":
     ok(paper.red() > 235 and paper.green() > 230 and paper.blue() > 220, f"Sketch: the sky is paper ({paper.red()}, {paper.green()}, {paper.blue()})")
     ok(dark(sketch_i, 90) > 200 and sat_region(sketch_i) < 12, "…lines on it, in pencil (no colour)")
     smooth_i, lgq = styled("st_sketch0", {"mode": "sketch", "width": 1.5, "color": [0.1, 0.1, 0.1], "noise": 0.0, "extend": 0.0}, camera=low)
-    ok("sketchy" in lgs and "sketchy" not in lgq, "…an irregular stroke when asked (and a clean one when not)")
+    differ = sum(1 for y in range(0, sketch_i.height(), 2) for x in range(0, sketch_i.width(), 2)
+                 if abs(sketch_i.pixelColor(x, y).lightness() - smooth_i.pixelColor(x, y).lightness()) > 60)
+    ok("INGETRAZO outlines" in lgs and differ > 15, f"…an irregular stroke when asked, a clean one when not ({differ} pixels differ)")
     water_i, lgq2 = styled("st_water", {"mode": "watercolour", "width": 0.0, "wetness": 0.7, "paper": 0.6, "edges": 0.5})
     def rough(img):                                   # the fine detail: the mean change from a pixel to its neighbour
         tot = n = 0

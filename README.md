@@ -413,14 +413,17 @@ The simple controls are in view and the rest folded under *Advanced*:
   clean the preview's pictures are.
 - **Main** also has a **Style** group: how the picture is drawn. *None*, *White*, *Model* (a maquette: every object wears one material),
   *Light* (the lux each surface receives, in false colour with a scale), *Sketch* (pencil lines on paper: irregular stroke, line extension) and
-  *Watercolour* (wetness, edges, paper); every style can have **outlines** (thickness and colour). Outlines are Blender's Freestyle; the lux,
-  the paper and the watercolour are made on the finished picture, so the live view shows them too (slower).
+  *Watercolour* (wetness, edges, paper); every style can have **outlines** (thickness and colour). Outlines are not Blender's: Blender renders without lines and the app draws them from the model's own geometry, seen from the same camera
+  (a depth buffer and every edge walked pixel by pixel, the engine of [Croquis for IngeTrazo](https://github.com/vicc3d/croquis-ingetrazo) by Victor Crespo, GPL-3.0-or-later,
+  kept in `render_studio/croquis_engine`). On a model of 670 000 triangles that is about 4 s where Freestyle took 33 s. They are laid over the picture, wash and all.
+  The lux, the paper and the watercolour are made on the finished picture, so the live view shows them too (slower). The live view draws the outlines on the quick and the
+  refined images, not on a big model and not while the camera moves.
 - **Main**: your **presets** (*Save as preset…* keeps the settings under a name for any drawing; *⋯* deletes,
   exports and imports them as `.json` files to share), the **look** with a button that resets every adjustment
   to the look's values, and the **final render** (engine and quality; *Advanced*: the preview's engine);
 - **Image**: a **Camera** group (the 3D view's own: parallel, perspective or two-point with the program's icons, and the **angle of view**); exposure, warmth and saturation; *Effects* (a group): vignette, **depth of field** (focused on the middle of
-  the view) and **ambient occlusion** (strength and reach: the render's AO pass multiplied into the picture) and **fog** (thickness, and the distance where it starts: the mist pass mixed into the sky's colour);
-- **Environment**: the **background** (sky of the look, 360° panorama or fixed picture; *Lights the scene* in view, rotation,
+  the view) and **ambient occlusion** (strength and reach: the render's AO pass multiplied into the picture);
+- **Environment** (also a **Fog** group: thickness, and the distance where it starts, the mist pass mixed into the sky's colour. When the drawing has its own fog on (IngeTrazo 0.6.3, Styles › Fog) that one is the render's and the preview's: the same fade along the camera's axis, from its distance over its thickness, in its colour; the group's sliders wait until it is off): the **background** (sky of the look, 360° panorama or fixed picture; *Lights the scene* in view, rotation,
   brightness and viewpoint height folded), the **sun** (clouds, strength, and its place and date folded inside its
   group) and the **ground** (a **type** in view — the look's own, grass, asphalt, concrete, sand, snow, wet pavement — and, under *Advanced*,
   its colour, roughness, *Ground radius* (the ground's own size: the haze melts it into the horizon over its outer two thirds, so it

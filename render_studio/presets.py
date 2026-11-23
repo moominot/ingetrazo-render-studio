@@ -130,7 +130,7 @@ GROUND_DEFAULT = {"type": "", "color": None, "roughness": 0.9, "haze": 1.0, "off
 SIMPLE_SLIDERS = ("exposure_bias", "clouds", "sun_scale", "warmth", "saturation")
 #: The panel page each slider lives on (the Image tab holds the picture's, the Environment tab the sky's).
 SLIDER_PAGE = {"exposure_bias": "image", "warmth": "image", "saturation": "image", "vignette": "image",
-               "dof": "camera", "focus": "camera", "ao": "image", "ao_distance": "image", "fog": "image", "fog_start": "image", "clouds": "sky", "sun_scale": "sky", "stars": "sky", "moon": "sky"}
+               "dof": "camera", "focus": "camera", "ao": "image", "ao_distance": "image", "fog": "env", "fog_start": "env", "clouds": "sky", "sun_scale": "sky", "stars": "sky", "moon": "sky"}
 
 
 #: How each panel slider's value reads, and what it does (a gray line under it). They change the

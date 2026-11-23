@@ -170,7 +170,7 @@ class LiveSession(QObject):
         """Off: the live scene keeps its model and materials (look and sliders still apply)."""
         self.follow_changes = bool(on)
 
-    def render_final(self, camera, output, width, height, samples, engine, on_done, on_refused) -> bool:
+    def render_final(self, camera, output, width, height, samples, engine, on_done, on_refused, lines=None) -> bool:
         """The final picture of ``camera`` made by THIS Blender, in the scene it already has (the model, the materials and the look
         are in it: nothing is exported or built again). False when it cannot: no scene that is ready and up to date with the
         panel. ``on_done(path)`` when the picture is written, ``on_refused()`` when Blender says its scene is only a draft (see
@@ -186,6 +186,8 @@ class LiveSession(QObject):
         req = json.loads(rb.sync_request(camera, output, width, height, engine))
         req["samples"] = int(samples)
         req["final"] = True
+        if lines:
+            req["lines"] = str(lines)
         self._final = (on_done, on_refused)
         self._busy = True
         self._timer.stop()                     # the view does not follow the camera while the picture is made
@@ -355,19 +357,27 @@ class LiveSession(QObject):
             self._done_key = cam_key
         if kind != "motion":
             self.state.emit("Live view: quick image…" if kind == "quick" else "Live view: refining…")
-        req = json.loads(rb.sync_request(
-            self.panel.app.viewport.camera, out, max(16, round(rb.SYNC_WIDTH * k)),
-            max(2, round(self._height() * k)), engine))
+        width, height = max(16, round(rb.SYNC_WIDTH * k)), max(2, round(self._height() * k))
+        req = json.loads(rb.sync_request(self.panel.app.viewport.camera, out, width, height, engine))
         if not self.follow_camera and self._frozen is not None:
             req["camera"] = self._frozen
         req["samples"] = samples
-        # The outlines (Freestyle: seconds, even minutes, on a big model, and it cannot be interrupted: the camera would freeze) only
-        # once the camera rests and only on a model that is not big; the final render always has them.
+        # The outlines are drawn here (outlines.py: tenths of a second on an ordinary model, seconds on a very big one, and the 3D view
+        # waits meanwhile): not on the frames of a moving camera, and not on a big model; the final render always has them.
         try:
             big = bool(self.panel._big_model())
         except Exception:  # noqa: BLE001
             big = False
-        req["outlines"] = kind == "draft" and not big
+        if kind != "motion" and not big:
+            lines = self._work / f"lines-{self._count:04d}.png"
+            try:
+                (self._work / f"lines-{self._count - 4:04d}.png").unlink()
+            except OSError:
+                pass
+            cam = self.frozen_camera if (not self.follow_camera and self.frozen_camera is not None) else self.panel.app.viewport.camera
+            made = self.panel.line_layer(cam, width, height, lines, quiet=True)
+            if made:
+                req["lines"] = made
         self._proc.write((json.dumps(req) + "\n").encode())
 
     def _read(self) -> None:

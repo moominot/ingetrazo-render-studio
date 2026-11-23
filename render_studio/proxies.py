@@ -155,3 +155,65 @@ class left_out:
         for g, h in zip(self.groups, self.was):
             g.hidden = h
         return False
+
+
+#: Lines are drawn of the originals up to this many triangles in all (a hundred trees of 50 000 faces are 5 million): past it a
+#: proxy is only an occluder (its triangles hide what is behind it, and it has no lines of its own).
+LINES_BUDGET = 4_000_000
+_geom_cache: dict = {}
+
+
+def _original_geometry(src: Path, pid: str):
+    """The original's lines and faces at identity (hlr geometry arrays), kept while the file does not change; None when it has none."""
+    from core.scene import Scene
+    from formats import igz
+    from . import outlines
+    st = src.stat()
+    key = (str(src.resolve()), st.st_size, int(st.st_mtime), pid)
+    if key not in _geom_cache:
+        if len(_geom_cache) > 16:
+            _geom_cache.clear()
+        sc = Scene()
+        igz.load_into(sc, src)
+        found = next((g for g in sc.groups if (info_of(g) or {}).get("id") == pid), None)
+        geom = None
+        if found is not None:
+            from PySide6.QtGui import QMatrix4x4
+            found.xform = QMatrix4x4()
+            found.hidden = False
+            sc.groups[:] = [found]
+            geom = outlines.scene_geometry(sc)
+            if len(geom[0]) and not (len(geom[1]) or len(geom[2])):
+                # The original came without an edge list (a lazy mesh of the engine): its lines are read from its triangles.
+                geom = (geom[0],) + outlines.edges_from_triangles(geom[0])
+        _geom_cache[key] = geom
+    return _geom_cache[key]
+
+
+def line_geometry(scene, doc_path=None, budget: int = LINES_BUDGET):
+    """``(placed, extra)`` for the outlines: ``placed`` the proxies whose original is found (what the render leaves out of the model
+    file, as ``job_block`` does) and ``extra`` the geometry of their originals, each at its placements (one without the room
+    in ``budget`` is only an occluder). ``extra`` is None when nothing is placed."""
+    from . import outlines
+    parts, placed, used = [], [], 0
+    for g in shown_proxies(scene):
+        info = info_of(g)
+        src = original_file(info, doc_path)
+        if src is None:
+            continue                                   # rendered as its stand-in: the scene's own lines
+        try:
+            geom = _original_geometry(src, info["id"])
+        except Exception:  # noqa: BLE001 - that proxy has no lines of its own
+            _log.exception("lines of %s not read", info.get("name") or g.name)
+            geom = None
+        if geom is None:
+            continue
+        placed.append(g)
+        from PySide6.QtGui import QMatrix4x4
+        m = _rows(g.xform if g.xform is not None else QMatrix4x4())
+        if used + len(geom[0]) <= budget:
+            parts.append(outlines.transformed(geom, m))
+            used += len(geom[0])
+        else:
+            parts.append(outlines.occluder(outlines.transformed(geom, m)[0]))
+    return placed, (outlines.merged(parts) if parts else None)

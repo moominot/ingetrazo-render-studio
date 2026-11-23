@@ -20,13 +20,15 @@ from pathlib import Path
 
 from PySide6.QtCore import QSettings, Qt
 from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtWidgets import (QCheckBox, QFileDialog, QGroupBox, QHBoxLayout, QLabel,
+from PySide6.QtWidgets import (QCheckBox, QFileDialog, QFormLayout, QFrame, QGroupBox, QHBoxLayout, QLabel, QScrollArea,
                                QProgressBar, QPushButton, QToolButton, QVBoxLayout, QWidget)
 
 from . import post
 from .widgets import SliderRow, ZoomView, slider, value, set_value
 
 _SETTINGS = "render_studio/"
+#: The side bar's width: the sliders and their words fit, the picture keeps the rest.
+SIDE_WIDTH = 360
 
 NOTES = {
     "preview": "Live preview: a quick draft that follows your 3D view. Render makes the final picture; "
@@ -51,6 +53,9 @@ class ImageWindow(QWidget):
         self.alpha = None               # H×W uint8 when the sky was left transparent
         self.rendered_file = None       # a 16-bit or EXR file Blender wrote, saved as it is
         self.rendered_label = ""
+        self.lines = None               # (LineSet, style): the outlines, still vectors, over the picture without them
+        self._lines_base = None
+        self._lines_timer = None
         self.mode = "final"
         self._saved_to = None
         lay = QVBoxLayout(self)
@@ -83,7 +88,21 @@ class ImageWindow(QWidget):
         self.view.zoomed.connect(lambda p: self.zoom_label.setText(f"{p:.0f} %"))
         self.fit_btn.clicked.connect(self.view.fit)
         self.actual_btn.clicked.connect(lambda: self.view.actual_size())
-        lay.addWidget(self.view, 1)
+        mid = QHBoxLayout()
+        mid.setContentsMargins(0, 0, 0, 0)
+        mid.addWidget(self.view, 1)
+        # The finished picture's tools (retouch, outlines) live in a bar beside it that can be hidden: more picture when it is not needed.
+        self.side = QScrollArea()
+        self.side.setWidgetResizable(True)
+        self.side.setFrameShape(QFrame.NoFrame)
+        self.side.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.side.setFixedWidth(SIDE_WIDTH)
+        side_body = QWidget()
+        self.side_lay = QVBoxLayout(side_body)
+        self.side_lay.setContentsMargins(0, 0, 6, 0)
+        self.side.setWidget(side_body)
+        mid.addWidget(self.side)
+        lay.addLayout(mid, 1)
 
         # -- progress and what is happening
         prow = QHBoxLayout()
@@ -174,7 +193,7 @@ class ImageWindow(QWidget):
         self.bar_final = QWidget()
         fl = QVBoxLayout(self.bar_final)
         fl.setContentsMargins(0, 0, 0, 0)
-        box = QGroupBox("Retouch the finished picture: instant, nothing is rendered again")
+        box = QGroupBox(tr("Retouch: instant, nothing is rendered again"))
         form = QVBoxLayout(box)
         self.adj, self.adj_rows = {}, {}
         from .widgets import Collapsible
@@ -196,8 +215,18 @@ class ImageWindow(QWidget):
             else:
                 self.retouch_more.form.addRow(label, row)
         form.addWidget(self.retouch_more)
-        fl.addWidget(box)
+        self.side_lay.addWidget(box)
+        self._build_lines_box(self.side_lay)
+        self.side_lay.addStretch(1)
         frow = QHBoxLayout()
+        self.side_btn = QToolButton()
+        self.side_btn.setText(tr("Retouch"))
+        self.side_btn.setCheckable(True)
+        self.side_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.side_btn.setToolTip(tr("Shows or hides the bar of the retouching and the outlines"))
+        self.side_btn.setChecked(str(QSettings().value(_SETTINGS + "side_open", "true")).lower() != "false")
+        self.side_btn.toggled.connect(self._side_toggled)
+        frow.addWidget(self.side_btn)
         self.reset_btn = QPushButton("Reset retouch")
         self.reset_btn.setToolTip("Puts every retouch slider back to neutral (the picture as rendered)")
         self.reset_btn.clicked.connect(self._reset)
@@ -215,7 +244,102 @@ class ImageWindow(QWidget):
         frow.addWidget(self.save_btn)
         fl.addLayout(frow)
         lay.addWidget(self.bar_final)
+        self._side_toggled(self.side_btn.isChecked())
         self.set_mode("final" if panel is None else "preview")
+
+    # -- the outlines: vectors until the picture is saved ----------------------------------------
+    def _build_lines_box(self, parent_layout) -> None:
+        from PySide6.QtCore import QTimer
+        from .section_panel import ColourButton
+        from .widgets import NumberSlider
+        self.lines_box = QGroupBox(tr("Outlines: still lines until you save"))
+        form = QFormLayout(self.lines_box)
+        top = QHBoxLayout()
+        self.lines_on = QCheckBox(tr("Show"))
+        self.lines_colour = ColourButton([0.05, 0.05, 0.05], "Outline colour", linear=True)
+        self.lines_colour.setMaximumWidth(60)
+        self.lines_reset = QPushButton(tr("As rendered"))
+        self.lines_reset.setToolTip(tr("The outlines as the panel's style drew them"))
+        top.addWidget(self.lines_on)
+        top.addWidget(self.lines_colour)
+        top.addStretch(1)
+        top.addWidget(self.lines_reset)
+        form.addRow(top)
+        self.lines_width = NumberSlider(0.5, 10.0, 0.1, "{:.1f} px")
+        self.lines_width.setToolTip(tr("The thickness of the lines, in pixels of this picture"))
+        self.lines_hand = NumberSlider(0.0, 1.0, 0.05, "{:.0%}")
+        self.lines_hand.setToolTip(tr("From a ruler (0) to a loose hand: wavering, swelling, drawn twice, broken"))
+        self.lines_extend = NumberSlider(0.0, 1.0, 0.05, "{:.0%}")
+        self.lines_extend.setToolTip(tr("How far the lines run past their corners"))
+        self.lines_opacity = NumberSlider(0.2, 1.0, 0.05, "{:.0%}")
+        self.lines_opacity.setToolTip(tr("How dark the ink is"))
+        form.addRow(tr("Thickness"), self.lines_width)
+        form.addRow(tr("Hand"), self.lines_hand)
+        form.addRow(tr("Line extension"), self.lines_extend)
+        form.addRow(tr("Ink"), self.lines_opacity)
+        self._lines_timer = QTimer(self)
+        self._lines_timer.setSingleShot(True)
+        self._lines_timer.setInterval(120)
+        self._lines_timer.timeout.connect(self._recompose)
+        for sig in (self.lines_on.toggled, self.lines_colour.changed, self.lines_width.valueChanged, self.lines_hand.valueChanged,
+                    self.lines_extend.valueChanged, self.lines_opacity.valueChanged):
+            sig.connect(lambda *_a: self._lines_timer.start())
+        self.lines_reset.clicked.connect(self._lines_to_initial)
+        self.lines_box.setVisible(False)
+        parent_layout.addWidget(self.lines_box)
+
+    def set_outlines(self, lines, style: dict, base_path) -> None:
+        """The picture's outlines as vectors: ``lines`` (outlines.LineSet), ``style`` (outlines.window_style: where the controls start)
+        and ``base_path``, the render without them. Call it after :meth:`set_image`; the controls then restyle the lines instantly."""
+        base = QImage(str(base_path))
+        if lines is None or base.isNull():
+            return self.clear_outlines()
+        self.lines = (lines, dict(style))
+        self._lines_base = base
+        self._lines_set_controls(style)
+        self.lines_box.setVisible(True)
+        self._recompose()
+
+    def clear_outlines(self) -> None:
+        self.lines = None
+        self._lines_base = None
+        if getattr(self, "lines_box", None) is not None:
+            self.lines_box.setVisible(False)
+
+    def _lines_set_controls(self, style: dict) -> None:
+        controls = (self.lines_on, self.lines_colour, self.lines_width, self.lines_hand, self.lines_extend, self.lines_opacity)
+        for w in controls:
+            w.blockSignals(True)
+        self.lines_on.setChecked(True)
+        self.lines_colour.set_rgb(style.get("color") or [0.05, 0.05, 0.05])
+        self.lines_width.setValue(float(style.get("width", 1.5)))
+        self.lines_hand.setValue(float(style.get("hand", 0.0)))
+        self.lines_extend.setValue(float(style.get("extend", 0.0)))
+        self.lines_opacity.setValue(float(style.get("opacity", 1.0)))
+        for w in controls:
+            w.blockSignals(False)
+
+    def lines_style(self) -> dict:
+        """The outlines' style as the controls say it."""
+        base = dict(self.lines[1]) if self.lines else {}
+        base.update(width=self.lines_width.value(), color=self.lines_colour.rgb(), hand=self.lines_hand.value(),
+                    extend=self.lines_extend.value(), opacity=self.lines_opacity.value())
+        return base
+
+    def _lines_to_initial(self) -> None:
+        if self.lines:
+            self._lines_set_controls(self.lines[1])
+            self._recompose()
+
+    def _recompose(self) -> None:
+        """The picture again: the render without lines, the lines in the controls' style over it, then the retouch."""
+        if self.lines is None or self._lines_base is None:
+            return
+        from . import outlines
+        lines = self.lines[0]
+        img = outlines.composite(self._lines_base, lines if self.lines_on.isChecked() else None, self.lines_style())
+        self._load_qimage(img)
+        self._refresh()
 
     # -- the three states ------------------------------------------------------------------
     def set_mode(self, mode: str) -> None:
@@ -226,6 +350,7 @@ class ImageWindow(QWidget):
         for w in (self.render_btn, self.render_save_btn, self.follow_camera_box, self.follow_changes_box):
             w.setEnabled(mode == "preview")
         self.bar_final.setVisible(mode == "final")
+        self.side.setVisible(mode == "final" and (not hasattr(self, "side_btn") or self.side_btn.isChecked()))
         self.back_btn.setVisible(has_panel)
         self.bar.setVisible(mode == "rendering")
         self.cancel_btn.setVisible(mode == "rendering" and has_panel)
@@ -234,6 +359,14 @@ class ImageWindow(QWidget):
         self.note.setText(tr(NOTES[mode]) if has_panel or mode == "final" else "")
         if mode == "final":
             self.status.setText("")
+
+    def _side_toggled(self, on: bool) -> None:
+        self.side_btn.setArrowType(Qt.RightArrow if on else Qt.LeftArrow)
+        self.side.setVisible(self.mode == "final" and on)
+        try:
+            QSettings().setValue(_SETTINGS + "side_open", "true" if on else "false")
+        except Exception:  # noqa: BLE001
+            pass
 
     def _more_toggled(self, on: bool) -> None:
         self.more_btn.setArrowType(Qt.DownArrow if on else Qt.RightArrow)
@@ -277,9 +410,16 @@ class ImageWindow(QWidget):
         """The finished picture, to retouch (``final``), or a live frame."""
         if not final:
             return self.show_draft(path)
-        import numpy as np
         self.path = Path(path)
-        src = QImage(str(path))
+        self.clear_outlines()
+        self._load_qimage(QImage(str(path)))
+        was = self.mode
+        self.set_mode("final")
+        self._refresh(refit=was != "final")
+
+    def _load_qimage(self, src) -> None:
+        """``original`` (and ``alpha``, when the sky is clear) from a picture."""
+        import numpy as np
         self.alpha = None
         if src.hasAlphaChannel():
             # A transparent sky: straight colours, and the alpha kept apart for saving.
@@ -296,9 +436,6 @@ class ImageWindow(QWidget):
             arr = np.frombuffer(ptr, dtype=np.uint8, count=img.bytesPerLine() * h)
             arr = arr.reshape(h, img.bytesPerLine())[:, : w * 3].reshape(h, w, 3)
             self.original = arr.copy()
-        was = self.mode
-        self.set_mode("final")
-        self._refresh(refit=was != "final")
 
     def adjustments(self) -> dict:
         return {k: value(s) for k, s in self.adj.items()}

@@ -83,7 +83,7 @@ instantly, without rendering again. Every slider shows its value and a line sayi
 
 <h4>The panel</h4>
 <p>The panel has pages: <b>Main</b> (your presets, the look, the engine and quality), <b>Image</b> (exposure, warmth,
-saturation; <i>Effects</i>: vignette, depth of field and fog), <b>Environment</b> (background, clouds and sun, ground, and the sun's
+saturation; <i>Effects</i>: vignette and depth of field), <b>Environment</b> (background, clouds and sun, ground, horizon, fog, and the sun's
 place and date), <b>Section</b> and <b>Output</b> (the lights and the materials have windows of their own: <b>Lights…</b>, <b>Materials…</b>). The simple controls are in view; the rest is folded
 under <i>Advanced</i>. Only Render uses the engine, quality and width; the preview is always a quick
 draft. <b>Presets</b>: <i>Save as preset…</i> keeps the settings under a name to use in any drawing; <i>⋯</i> deletes a

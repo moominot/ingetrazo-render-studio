@@ -813,5 +813,20 @@
 "High": "Alta",
 "Preview quality": "Qualitat de la previsualització",
 "How sharp the preview is, which is also how quickly it answers (changing a material or a light, moving the camera). Fast: smaller, rougher pictures. High: bigger, cleaner ones. Render has its own quality.": "Com de nítida és la previsualització, que és també com de ràpid respon (canviar un material o una llum, moure la càmera). Ràpida: imatges més petites i rugoses. Alta: més grans i netes. El Render té la seva pròpia qualitat.",
-"Rendering in the preview's scene…": "Renderitzant a l'escena de la previsualització…"
+"Rendering in the preview's scene…": "Renderitzant a l'escena de la previsualització…",
+"Retouch": "Retoc",
+"Retouch: instant, nothing is rendered again": "Retoc: a l'instant, no es renderitza res de nou",
+"Outlines: still lines until you save": "Contorns: línies editables fins que desis",
+"Shows or hides the bar of the retouching and the outlines": "Mostra o amaga la barra del retoc i dels contorns",
+"As rendered": "Com es va renderitzar",
+"The outlines as the panel's style drew them": "Els contorns tal com els va dibuixar l'estil del panell",
+"Thickness": "Gruix",
+"Hand": "Mà",
+"Ink": "Tinta",
+"The thickness of the lines, in pixels of this picture": "El gruix de les línies, en píxels d'aquesta imatge",
+"From a ruler (0) to a loose hand: wavering, swelling, drawn twice, broken": "De regla (0) a mà solta: tremolor, gruixos variables, repassat i trencat",
+"How far the lines run past their corners": "Fins on passen les línies més enllà de les cantonades",
+"How dark the ink is": "Com de fosca és la tinta",
+"Drawing the outlines…": "Dibuixant els contorns…",
+"The drawing's own fog is on (it starts at {start} m and is {thickness} m thick, as in the 3D view): the render has that one. These sliders are used when it is off.": "La boira del dibuix està activada (comença a {start} m i té {thickness} m de gruix, com a la vista 3D): el render té aquesta. Aquests lliscadors s'usen quan està desactivada."
 }

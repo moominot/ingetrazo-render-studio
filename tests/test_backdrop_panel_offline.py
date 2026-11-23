@@ -74,8 +74,12 @@ panel.sliders["exposure_bias"].setValue(panel.sliders["exposure_bias"].maximum()
 panel.reset_btn.click()
 ok(abs(panel.slider_values()["exposure_bias"]) < 0.05 and abs(panel.slider_values()["vignette"] - presets.studio(panel.preset.currentData())[0].get("vignette", 0.16)) < 0.1,
    "the reset button puts the sliders back to the look's values")
-ok(all(panel.slider_rows[k].isVisible() for k in ("exposure_bias", "saturation", "vignette", "fog", "fog_start")),
-   "Image: the simple sliders and the «Effects» group (vignette, depth of field, fog) are all in view")
+ok(all(panel.slider_rows[k].isVisible() for k in ("exposure_bias", "saturation", "vignette")),
+   "Image: the simple sliders and the «Effects» group (vignette, depth of field) are all in view")
+panel.tabs.setCurrentIndex(TAB["Environment"])
+ok(all(panel.slider_rows[k].isVisible() for k in ("fog", "fog_start")) and panel.slider_rows["fog"].parentWidget().title() == "Fog",
+   "Environment: the fog is a group of its own, with the place's other settings")
+panel.tabs.setCurrentIndex(TAB["Image"])
 # the camera group: three projections (big icons) and the angle of view, the 3D view's own
 cam = doc.viewport.camera
 panel.show(); P.QApplication.processEvents()

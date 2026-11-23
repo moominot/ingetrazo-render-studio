@@ -2491,11 +2491,11 @@ def set_look(scene, look_names, white_balance=None, tint=None):
 
 
 def build_compositor(scene, saturation=1.0, bloom=0.0, vignette=0.0, exposure=0.0, fog=0.0, fog_start=30.0, fog_night=False,
-                     ao=0.0, ao_distance=1.0):
+                     ao=0.0, ao_distance=1.0, fog_drawing=None):
     """Render layers → fog → saturation → bloom → vignette → output, in Blender 5's
     compositor (a node group set as the scene's compositing group). The fog veils what is far with the sky's own light: the
     mist pass (0 at ``fog_start`` metres, 1 a distance further on) times ``fog`` (0..1) mixes the picture into the fog's colour."""
-    if saturation == 1.0 and bloom <= 0.0 and vignette <= 0.0 and fog <= 0.0 and ao <= 0.0:
+    if saturation == 1.0 and bloom <= 0.0 and vignette <= 0.0 and fog <= 0.0 and ao <= 0.0 and not fog_drawing:
         return
     if not hasattr(scene, "compositing_node_group"):
         say("compositor", "unavailable")
@@ -2544,6 +2544,41 @@ def build_compositor(scene, saturation=1.0, bloom=0.0, vignette=0.0, exposure=0.
             links.new(amount.outputs[0], fx.inputs["Factor"])
             links.new(cur, fx.inputs["A"])
             cur = fx.outputs["Result"]
+    if fog_drawing:
+        # The drawing's fog (IngeTrazo's Styles): the same axial fade as its 3D view, smoothstep(start, start + thickness, depth) towards the fog's
+        # colour (or the sky's light near the horizon when it is the background's). The mist pass is the depth along the camera's axis, 0 at
+        # ``start``, 1 a ``thickness`` further on.
+        vl = bpy.context.view_layer
+        vl.use_pass_mist = True
+        w = scene.world
+        if w is not None:
+            w.mist_settings.start = max(0.0, float(fog_drawing.get("start", 10.0)))
+            w.mist_settings.depth = max(0.01, float(fog_drawing.get("thickness", 10.0)))
+            w.mist_settings.falloff = "LINEAR"
+        mist = rl.outputs.get("Mist")
+        if mist is not None:
+            def math_node(op, a=None, b=None):
+                n = nodes.new("ShaderNodeMath")
+                n.operation = op
+                for i, v in ((0, a), (1, b)):
+                    if v is not None and not hasattr(v, "node"):
+                        n.inputs[i].default_value = float(v)
+                    elif v is not None:
+                        links.new(v, n.inputs[i])
+                return n
+            sq = math_node("MULTIPLY", mist, mist)
+            twice = math_node("MULTIPLY", mist, 2.0)
+            rest = math_node("SUBTRACT", 3.0, twice.outputs[0])
+            smooth = math_node("MULTIPLY", sq.outputs[0], rest.outputs[0])
+            fx = nodes.new("ShaderNodeMix")
+            fx.data_type = "RGBA"
+            col = fog_drawing.get("color")
+            fx.inputs["B"].default_value = ((*[float(c) for c in col[:3]], 1.0) if col else
+                                            ((0.012, 0.016, 0.03, 1.0) if fog_night else (0.80, 0.85, 0.92, 1.0)))
+            links.new(smooth.outputs[0], fx.inputs["Factor"])
+            links.new(cur, fx.inputs["A"])
+            cur = fx.outputs["Result"]
+            say("drawing's fog", f"from {fog_drawing.get('start')} m, {fog_drawing.get('thickness')} m thick")
     if saturation != 1.0:
         hs = nodes.new("CompositorNodeHueSat")
         sat = hs.inputs.get("Saturation")
@@ -2611,7 +2646,6 @@ def measure_exposure(scene, target=0.2, bias=0.0, fraction=25, samples=8, white=
     r = scene.render
     keep = (r.resolution_percentage, r.filepath, r.image_settings.file_format,
             scene.view_settings.exposure, getattr(r, "use_compositing", None))
-    freestyle = r.use_freestyle
     tmp = os.path.join(os.path.dirname(r.filepath) or HERE, "_meter.exr")
     # Glowing materials (light panels, screens) are metered as off: they
     # are meant to shine, not to darken the whole picture.
@@ -2627,7 +2661,6 @@ def measure_exposure(scene, target=0.2, bias=0.0, fraction=25, samples=8, white=
                 sock.default_value = 0.0
     try:
         r.resolution_percentage = fraction
-        r.use_freestyle = False                    # the outlines are no part of the light (and cost a lot on a big model)
         r.image_settings.file_format = "OPEN_EXR"
         r.filepath = tmp
         scene.view_settings.exposure = 0.0
@@ -2665,7 +2698,6 @@ def measure_exposure(scene, target=0.2, bias=0.0, fraction=25, samples=8, white=
             sock.default_value = value
         r.resolution_percentage, r.filepath, r.image_settings.file_format = keep[0], keep[1], keep[2]
         scene.view_settings.exposure = keep[3]
-        r.use_freestyle = freestyle
         if keep[4] is not None:
             r.use_compositing = keep[4]
         try:
@@ -3340,7 +3372,7 @@ def _expose(scene, job):
     build_compositor(scene, float(st.get("saturation", 1.0)), float(st.get("bloom", 0.0)),
                      float(st.get("vignette", 0.0)), scene.view_settings.exposure,
                      float(st.get("fog", 0.0)), float(st.get("fog_start", 30.0)), float(st.get("exposure_target", 0.2)) < 0.1,
-                     float(st.get("ao", 0.0)), float(st.get("ao_distance", 1.0)))
+                     float(st.get("ao", 0.0)), float(st.get("ao_distance", 1.0)), st.get("fog_drawing"))
     say("exposure", round(scene.view_settings.exposure, 2))
 
 
@@ -3540,7 +3572,7 @@ def build(job):
         make_ground(scene, ground, st)
     if (st.get("style") or {}).get("mode") not in (None, "none") or float((st.get("style") or {}).get("width") or 0.0) > 0.0:
         try:
-            apply_style(scene, st["style"], st)         # outlines, white, one material, calibrated light
+            apply_style(scene, st["style"], st)         # white, one material, calibrated light
         except Exception as exc:                       # never lose the render over it
             say("style failed", exc)
     core["set_engine"](scene, job.get("engine", "eevee"), int(job.get("samples", 64)))
@@ -3607,7 +3639,6 @@ def build(job):
     _expose(scene, job)
     _STATE["style"] = st.get("style")
     finish_style(scene, st.get("style"))
-    _STATE["outlines"] = bool(scene.render.use_freestyle)
     if st.get("shadow_catcher") and not ground:          # after the exposure: the floor is no part of what is metered
         add_shadow_floor(scene, float(st["shadow_catcher"]["z"]), float(st["shadow_catcher"]["size"]))
     last = {"text": None}
@@ -3716,12 +3747,10 @@ def serve(scene, figures):
         set_dof(scene, req["camera"], _DOF["amount"], _DOF["focus"])
         core["face_figures"](figures, req["camera"])
         core["set_samples"](scene, int(req.get("samples", 16)))
-        if _STATE.get("outlines"):                     # the frames of a moving camera go without outlines (slow on a big model)
-            r.use_freestyle = bool(req.get("outlines", True))
         r.resolution_x, r.resolution_y = w, h
         r.filepath = req["output"]
         say("rendering", w, "x", h)
-        render_styled(scene, _STATE.get("style"), req["output"])
+        render_styled(scene, _STATE.get("style"), req["output"], req.get("lines"))
         if req.get("final"):
             as_draft(scene)
         say("done", req["output"])
@@ -3731,79 +3760,11 @@ def serve(scene, figures):
 # ---- styles: outlines, white, model, light (lux), sketch, watercolour ----------------------------------------------------------------------
 #
 # The panel's Style (settings "style", see settings_store.style): ``mode`` none | white | model | light | sketch | watercolour, with
-# the outlines every mode can have (``width`` in pixels, 0 = none, and ``color``), and what each mode adds. The scene is changed here
-# (materials, outlines, calibrated light); what needs the finished picture (the lux colours and scale, the sketch's paper, the
+# the outlines every mode can have (``width`` in pixels, 0 = none, and ``color``; drawn by the app, laid over the picture here), and
+# what each mode adds. The scene is changed here (materials, calibrated light); what needs the finished picture (the lux colours and scale, the sketch's paper, the
 # watercolour) is made on the picture after the render (:func:`render_styled`).
 
 STYLE_PAPER = (0.97, 0.96, 0.93)
-
-
-def _outline_collection(scene):
-    """The collection whose objects get no outline: the generated ground, the skyline, the grass tufts."""
-    col = bpy.data.collections.get("Render Studio no outlines")
-    if col is None:
-        col = bpy.data.collections.new("Render Studio no outlines")
-        scene.collection.children.link(col)
-    for ob in list(bpy.data.objects):
-        if ob.name.startswith(("IngeTrazo ground", "IngeTrazo skyline", "studio grass")) and ob.name not in col.objects:
-            for c in list(ob.users_collection):
-                c.objects.unlink(ob)
-            col.objects.link(ob)
-    return col
-
-
-def setup_outlines(scene, width, color, noise=0.0, extend=0.0):
-    """Outlines with Blender's Freestyle: silhouettes, borders and creases, ``width`` pixels, ``color``. ``noise`` (0..1) makes the
-    stroke irregular (wobbling, doubled like a pencil going over it twice); ``extend`` (0..1) lets the lines run past their corners,
-    as a draughtsman's do."""
-    width = float(width)
-    if width <= 0.0:
-        scene.render.use_freestyle = False
-        return False
-    r = scene.render
-    r.use_freestyle = True
-    r.line_thickness_mode = "ABSOLUTE"
-    vl = bpy.context.view_layer
-    vl.use_freestyle = True
-    fs = vl.freestyle_settings
-    fs.crease_angle = math.radians(120.0)
-    for ls in list(fs.linesets):
-        fs.linesets.remove(ls)
-    col = _outline_collection(scene)
-    sets = [(0.0, 0)] if noise <= 0.05 else [(1.0, 0), (0.6, 7)]            # a second, lighter pass: the pencil goes over it again
-    for k, (weight, seed) in enumerate(sets):
-        ls = fs.linesets.new("Render Studio outline %d" % (k + 1))
-        ls.select_silhouette = True
-        ls.select_border = True
-        ls.select_crease = True
-        ls.select_contour = False
-        ls.select_edge_mark = False
-        ls.select_by_collection = True
-        ls.collection = col
-        if hasattr(ls, "collection_negation"):
-            ls.collection_negation = "EXCLUSIVE"            # the lines of what is NOT in that collection
-        elif hasattr(ls, "exclude_collection"):
-            ls.exclude_collection = True
-        ls.select_by_visibility = True
-        style = bpy.data.linestyles.new("Render Studio outline %d" % (k + 1))
-        style.color = tuple(float(c) for c in (color or (0.05, 0.05, 0.05))[:3])
-        style.thickness = width * (1.0 if k == 0 else 0.7)
-        style.use_chaining = True
-        if noise > 0.05:
-            samp = style.geometry_modifiers.new("sampling", "SAMPLING")
-            samp.sampling = 2.0
-            wob = style.geometry_modifiers.new("wobble", "PERLIN_NOISE_1D")
-            wob.frequency = 4.0 + 10.0 * float(noise)
-            wob.amplitude = 0.6 + 3.2 * float(noise) * (1.0 if k == 0 else 1.5)
-            wob.octaves = 3
-            wob.seed = seed + 1
-            wob.angle = math.radians(90.0)
-        if extend > 0.01:
-            st = style.geometry_modifiers.new("stretch", "BACKBONE_STRETCHER")
-            st.backbone_length = float(extend) * 14.0
-        ls.linestyle = style
-    say("outlines", f"{width:g} px", "sketchy" if noise > 0.05 else "", f"extended {extend:g}" if extend > 0.01 else "")
-    return True
 
 
 def _one_material(scene, style, st):
@@ -3884,7 +3845,8 @@ def _calibrate_lux(scene):
 
 
 def apply_style(scene, style, st):
-    """The scene's part of the style: outlines, white or one material, calibrated light."""
+    """The scene's part of the style: white or one material, calibrated light. (The outlines are not Blender's: they are a layer of ink
+lines laid over the picture, see overlay_lines.)"""
     mode = (style or {}).get("mode") or "none"
     if mode in ("white", "light", "sketch"):
         white_model(skip_ground=False)
@@ -3892,12 +3854,6 @@ def apply_style(scene, style, st):
     elif mode == "model":
         _one_material(scene, style, st)
         _whiten_ground()
-    noise = float(style.get("noise", 0.0)) if mode == "sketch" else 0.0
-    extend = float(style.get("extend", 0.0)) if mode == "sketch" else 0.0
-    width = float(style.get("width", 0.0) or 0.0)
-    if mode == "sketch" and width <= 0.0:
-        width = 1.5                                      # a sketch is lines
-    setup_outlines(scene, width, style.get("color"), noise, extend)
     if mode == "light":
         _calibrate_lux(scene)
     if mode == "sketch":
@@ -4131,12 +4087,42 @@ def paper_behind(arr):
     return out
 
 
-def render_styled(scene, style, path):
+def overlay_lines(arr, lines_png):
+    """The line layer (a transparent PNG the app drew, the size of the picture) laid over ``arr`` (H×W×4, as _read_pixels gives it). The
+    ink is over the style's picture, wash and all: it is the last thing a hand puts on a drawing."""
+    import numpy as np
+    if not lines_png or not os.path.isfile(lines_png):
+        return arr
+    layer = _read_pixels(lines_png)
+    if layer.shape[:2] != arr.shape[:2]:
+        say("lines skipped", "layer", layer.shape[:2], "picture", arr.shape[:2])
+        return arr
+    a = layer[..., 3:4]
+    out = arr.copy()
+    out[..., :3] = layer[..., :3] * a + arr[..., :3] * (1.0 - a)
+    out[..., 3:4] = a + arr[..., 3:4] * (1.0 - a)
+    say("outlines", "laid over the picture")
+    return out
+
+
+def render_styled(scene, style, path, lines=None):
     """Render the scene to ``path`` (a PNG) and make the style's picture of it: the lux colours, the sketch on its paper or the
-    watercolour. Without such a style it is the plain render."""
+    watercolour. ``lines``: the line layer to lay over it (see overlay_lines). Without a style or lines it is the plain render."""
     mode = (style or {}).get("mode") or "none"
     if mode not in ("light", "sketch", "watercolour"):
-        bpy.ops.render.render(write_still=True)
+        if not lines:
+            bpy.ops.render.render(write_still=True)
+            return None
+        r = scene.render
+        keep = (r.filepath, r.image_settings.file_format, r.image_settings.color_depth, r.image_settings.color_mode)
+        try:
+            r.image_settings.color_mode = "RGBA"
+            bpy.ops.render.render(write_still=True)
+            arr = overlay_lines(_read_pixels(path), lines)
+            r.filepath, r.image_settings.file_format, r.image_settings.color_depth, r.image_settings.color_mode = keep
+            _write_png(path, arr)
+        finally:
+            r.filepath, r.image_settings.file_format, r.image_settings.color_depth, r.image_settings.color_mode = keep
         return None
     r = scene.render
     keep = (r.filepath, r.image_settings.file_format, r.image_settings.color_depth, r.image_settings.color_mode)
@@ -4150,6 +4136,7 @@ def render_styled(scene, style, path):
             bpy.ops.render.render(write_still=True)
             arr = _read_pixels(tmp)
             res, lo, hi = lux_picture(arr, style)
+            res = overlay_lines(res, lines)
             try:
                 os.remove(tmp)
             except OSError:
@@ -4162,9 +4149,9 @@ def render_styled(scene, style, path):
         bpy.ops.render.render(write_still=True)
         arr = _read_pixels(path)
         if mode == "sketch":
-            arr = paper_behind(arr)
+            arr = paper_behind(overlay_lines(arr, lines))      # the lines are the sketch: on the white model, then on the paper
         else:
-            arr = watercolour(arr, style)
+            arr = overlay_lines(watercolour(arr, style), lines)    # ink over the wash
         r.filepath, r.image_settings.file_format, r.image_settings.color_depth, r.image_settings.color_mode = keep
         _write_png(path, arr)
         say("style picture", mode)
@@ -4325,8 +4312,9 @@ def main():
         scene.render.film_transparent = True
         scene.render.image_settings.color_mode = "RGBA"
     say("rendering", w, "x", h)
-    styled = (st_main.get("style") or {}).get("mode") in ("light", "sketch", "watercolour")
-    render_styled(scene, st_main.get("style"), job["output"])
+    lines = (st_main.get("style") or {}).get("lines")
+    styled = (st_main.get("style") or {}).get("mode") in ("light", "sketch", "watercolour") or bool(lines)
+    render_styled(scene, st_main.get("style"), job["output"], lines)
     if out.get("path"):
         if styled:
             save_final_from_png(scene, out, job["output"])

@@ -813,5 +813,20 @@
 "High": "Alta",
 "Preview quality": "Calidad de la vista previa",
 "How sharp the preview is, which is also how quickly it answers (changing a material or a light, moving the camera). Fast: smaller, rougher pictures. High: bigger, cleaner ones. Render has its own quality.": "Cuán nítida es la vista previa, que es también lo rápido que responde (cambiar un material o una luz, mover la cámara). Rápida: imágenes más pequeñas y toscas. Alta: más grandes y limpias. El Render tiene su propia calidad.",
-"Rendering in the preview's scene…": "Renderizando en la escena de la vista previa…"
+"Rendering in the preview's scene…": "Renderizando en la escena de la vista previa…",
+"Retouch": "Retoque",
+"Retouch: instant, nothing is rendered again": "Retoque: al instante, no se renderiza nada de nuevo",
+"Outlines: still lines until you save": "Contornos: líneas editables hasta que guardes",
+"Shows or hides the bar of the retouching and the outlines": "Muestra u oculta la barra del retoque y de los contornos",
+"As rendered": "Como se renderizó",
+"The outlines as the panel's style drew them": "Los contornos tal como los dibujó el estilo del panel",
+"Thickness": "Grosor",
+"Hand": "Mano",
+"Ink": "Tinta",
+"The thickness of the lines, in pixels of this picture": "El grosor de las líneas, en píxeles de esta imagen",
+"From a ruler (0) to a loose hand: wavering, swelling, drawn twice, broken": "De regla (0) a mano suelta: temblor, grosores variables, repasado y cortado",
+"How far the lines run past their corners": "Hasta dónde pasan las líneas más allá de las esquinas",
+"How dark the ink is": "Cuán oscura es la tinta",
+"Drawing the outlines…": "Dibujando los contornos…",
+"The drawing's own fog is on (it starts at {start} m and is {thickness} m thick, as in the 3D view): the render has that one. These sliders are used when it is off.": "La niebla del dibujo está activada (empieza a {start} m y tiene {thickness} m de grosor, como en la vista 3D): el render tiene esa. Estos deslizadores se usan cuando está desactivada."
 }
