@@ -91,7 +91,7 @@ class ImageWindow(QWidget):
         mid = QHBoxLayout()
         mid.setContentsMargins(0, 0, 0, 0)
         mid.addWidget(self.view, 1)
-        # The finished picture's tools (retouch, outlines and the buttons that go with them) are a panel beside it, which a handle on its
+        # The finished picture's tools (the retouch and the outlines) are a panel beside it, which a handle on its
         # edge (as IngeTrazo's own side trays have) hides and shows: more picture when it is not needed.
         self.side = QWidget()
         self.side.setFixedWidth(SIDE_WIDTH)
@@ -232,12 +232,15 @@ class ImageWindow(QWidget):
         self.save_btn.setToolTip("Saves the picture as you see it (with the retouching) as PNG or JPEG")
         self.save_btn.setDefault(True)
         self.save_btn.clicked.connect(self._save)
-        pair = QHBoxLayout()
-        pair.addWidget(self.reset_btn)
-        pair.addWidget(self.back_btn)
-        self.side_footer.addLayout(pair)
-        self.side_footer.addWidget(self.save_btn)
-        self.bar_final = self.side                  # (the final picture's tools: the tests and the panel ask for it by this name)
+        self.side_footer.addWidget(self.reset_btn)      # only what belongs to the panel's own sliders: the way out is below, always in view
+        # Back to preview and Save image… are NOT in the panel: they stay at the bottom, whether the panel is shown or folded.
+        self.bar_final = QWidget()
+        frow = QHBoxLayout(self.bar_final)
+        frow.setContentsMargins(0, 0, 0, 0)
+        frow.addWidget(self.back_btn)
+        frow.addStretch(1)
+        frow.addWidget(self.save_btn)
+        lay.addWidget(self.bar_final)
         self._side_open = str(QSettings().value(_SETTINGS + "side_open", "true")).lower() != "false"
         self._build_side_handle()
         self.set_mode("final" if panel is None else "preview")
@@ -421,6 +424,7 @@ class ImageWindow(QWidget):
         self.bar_preview.setVisible(mode in ("preview", "rendering") and has_panel)
         for w in (self.render_btn, self.render_save_btn, self.follow_camera_box, self.follow_changes_box):
             w.setEnabled(mode == "preview")
+        self.bar_final.setVisible(mode == "final")
         if hasattr(self, "side_handle"):
             self._apply_side()
         self.back_btn.setVisible(has_panel)
