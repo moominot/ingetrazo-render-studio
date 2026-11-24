@@ -13,6 +13,8 @@ macOS `Blender.app` is fine), a link to blender.org's download page and, on Linu
 newer) and saved under IngeTrazo's own key (`render/blender_path`), so the Render tab uses it too.
 **Open preview…** stays off until there is one.
 
+Render Studio speaks every language IngeTrazo does: English, Español, Català, Português (Brasil), 简体中文, 正體中文, Italiano, Bahasa Indonesia, Français, Deutsch, Polski, Русский, Tiếng Việt, ລາວ, ไทย, 日本語, 한국어, Українська, العربية, Български and Türkçe. It follows the language chosen in IngeTrazo; a text without a translation shows in English.
+
 ![Looks](docs/looks.png)
 
 ## Looks
