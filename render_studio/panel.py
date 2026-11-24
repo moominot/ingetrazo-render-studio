@@ -275,7 +275,7 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
     try:
         # Proxies: their full models go to Blender apart, as instances; the stand-ins stay
         # out of the model file. One whose original is missing renders as it is.
-        placed, missing = proxies.job_block(scene, doc_path)
+        placed, missing = proxies.job_block(scene, doc_path, progress=progress)
     except Exception:  # noqa: BLE001 - never stops a render: the stand-ins, as drawn
         _log.exception("proxies not read")
         placed, missing = [], []
