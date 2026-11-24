@@ -331,6 +331,9 @@ boxes, each as IngeTrazo keeps it:
 - Each is one undo step of IngeTrazo itself (Ctrl+Z brings back a deleted section, in its place), and the 3D view, the sheets and the
   live view follow, because they are the drawing's own sections. The list follows the drawing too: a section placed with the Section
   tools joins it.
+  In IngeTrazo 0.6.3.2 the 3D view can still show the model cut for one frame after a section is unticked (it shows whole as soon as
+  it is repainted: fixed in [ingelibre/ingetrazo#1590](https://github.com/ingelibre/ingetrazo/pull/1590)); the render and the live view
+  are not affected.
 
 It then sets how the cut looks:
 - **Close the cut with a face**: a flat cap. It can be made of a **material of the drawing** (concrete, plaster…: it takes the
