@@ -8,10 +8,10 @@ from __future__ import annotations
 
 from .i18n import tr, translate_on_show  # noqa: F401
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QLabel,
-                               QPushButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QColorDialog, QComboBox, QDoubleSpinBox, QFormLayout, QHBoxLayout,
+                               QInputDialog, QLabel, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget)
 
 from . import section as S
 from .widgets import NumberSlider
@@ -73,10 +73,37 @@ class SectionTab(QWidget):
         self._live = live                       # () -> bool: the preview window is open
         self._stale = False                     # the model changed while nobody needed the list
         self._wanted = None                     # the material chosen (kept while it is not in the list)
+        self._building = False                  # the list of sections is being filled: its ticks are not the person's
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         self.state = _note()
         lay.addWidget(self.state)
+        self.sections_title = QLabel("Sections in the drawing")
+        self.sections_title.setStyleSheet("font-weight: bold")
+        lay.addWidget(self.sections_title)
+        self.sections = QListWidget()
+        self.sections.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.sections.setMaximumHeight(130)
+        self.sections.setToolTip("The section planes and section boxes of the drawing. Tick one to make it cut; untick it to see the whole "
+                                 "model. One plane and one box can cut at the same time, so ticking one takes the cut off the other of "
+                                 "its kind. Double-click a row to rename it.")
+        self.sections.itemChanged.connect(self._ticked)
+        self.sections.itemDoubleClicked.connect(lambda _item: self._rename())
+        self.sections.itemSelectionChanged.connect(self._sections_buttons)
+        lay.addWidget(self.sections)
+        srow = QHBoxLayout()
+        self.rename_btn = QPushButton("Rename…")
+        self.rename_btn.setToolTip("Give the chosen section a name of its own (a section plane keeps its letter).")
+        self.rename_btn.clicked.connect(lambda: self._rename())
+        self.delete_btn = QPushButton("Delete")
+        self.delete_btn.setToolTip("Take the chosen sections out of the drawing. Undo (Ctrl+Z) in IngeTrazo brings them back.")
+        self.delete_btn.clicked.connect(lambda: self._delete())
+        srow.addWidget(self.rename_btn)
+        srow.addWidget(self.delete_btn)
+        srow.addStretch(1)
+        lay.addLayout(srow)
+        self.sections_note = _note("No sections in the drawing: place them with the Section tools.")
+        lay.addWidget(self.sections_note)
         form = QFormLayout()
         form.setRowWrapPolicy(QFormLayout.WrapLongRows)
         self.cap = QCheckBox("Close the cut with a face")
@@ -164,6 +191,7 @@ class SectionTab(QWidget):
                             "It is read again whenever the preview reloads."))
         lay.addStretch(1)
         self._fill()
+        self._fill_sections()
         self._paint()
 
     # -- values -----------------------------------------------------------------------
@@ -239,12 +267,99 @@ class SectionTab(QWidget):
     def catch_up(self) -> None:
         self._stale = False
         self._fill()
+        self._fill_sections()
         self._paint()
 
     def showEvent(self, ev) -> None:  # noqa: N802
         super().showEvent(ev)
         if self._stale:
             self.catch_up()
+
+    # -- the sections of the drawing: tick the one that cuts, rename, delete ---------------------
+    def _section_text(self, e) -> str:
+        """The row of a section: its name (a plane's letter too), and what kind it is."""
+        if e["kind"] == "plane":
+            name, symbol = e["name"], e["symbol"]
+            if name and symbol and name != symbol:
+                label = f"{name} ({symbol})"
+            else:
+                label = name or (tr("Section {symbol}", symbol=symbol) if symbol else tr("Section {n}", n=e["index"] + 1))
+            return f"{label}  ·  {tr('plane')}"
+        return f"{e['name'] or tr('Box {n}', n=e['index'] + 1)}  ·  {tr('box')}"
+
+    def _fill_sections(self) -> None:
+        """The list: every section plane and section box of the drawing, ticked when it cuts."""
+        scene = self.app.scene
+        shown = S.has_sections(scene)
+        found = S.entries(scene) if shown else []
+        chosen = {id(it.data(Qt.UserRole)[1]) for it in self.sections.selectedItems() if it.data(Qt.UserRole)}
+        self._building = True
+        self.sections.clear()
+        for e in found:
+            item = QListWidgetItem(self._section_text(e))
+            item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Checked if e["active"] else Qt.Unchecked)
+            item.setData(Qt.UserRole, (e["kind"], e["obj"]))
+            item.setToolTip(tr("Cutting the model now: untick it to see the whole model.") if e["active"]
+                            else tr("Tick it to make it cut the model."))
+            self.sections.addItem(item)
+            if id(e["obj"]) in chosen:
+                item.setSelected(True)
+        self._building = False
+        for w in (self.sections, self.rename_btn, self.delete_btn):
+            w.setVisible(bool(found))
+        self.sections_title.setVisible(shown)
+        self.sections_note.setVisible(shown and not found)
+        self._sections_buttons()
+
+    def _sections_buttons(self) -> None:
+        n = len(self.sections.selectedItems())
+        self.rename_btn.setEnabled(n == 1)
+        self.delete_btn.setEnabled(n >= 1)
+
+    def _row(self, item):
+        data = item.data(Qt.UserRole) if item is not None else None
+        return tuple(data) if data else None
+
+    def _execute(self, cmd) -> None:
+        """One of IngeTrazo's own commands, as one undo step of the drawing; the list and the 3D view follow."""
+        if cmd is None:
+            return
+        vp = self.app.viewport
+        vp.history.execute(cmd)
+        notify = getattr(vp, "notify_scene_changed", None)
+        if callable(notify):
+            notify()
+        vp.update()
+        self.catch_up()
+
+    def _ticked(self, item) -> None:
+        if self._building:
+            return
+        row = self._row(item)
+        if row is None:
+            return
+        kind, obj = row
+        on = item.checkState() == Qt.Checked
+        if bool(getattr(obj, "active", False)) == on:
+            return
+        self._execute(S.cut_command(self.app.scene, kind, obj, on))
+
+    def _rename(self) -> None:
+        chosen = self.sections.selectedItems()
+        row = self._row(chosen[0] if len(chosen) == 1 else self.sections.currentItem())     # (the list is made again after each change: its current row is lost, its chosen one is kept)
+        if row is None:
+            return
+        kind, obj = row
+        name = str(getattr(obj, "name", "") or "").strip()
+        text, ok = QInputDialog.getText(self, tr("Rename the section"), tr("Name"), text=name)
+        if not ok or text.strip() == name:
+            return
+        self._execute(S.rename_command(self.app.scene, kind, obj, text))
+
+    def _delete(self) -> None:
+        rows = [r for r in (self._row(it) for it in self.sections.selectedItems()) if r is not None]
+        self._execute(S.delete_command(self.app.scene, rows))
 
     # -- ui -----------------------------------------------------------------------------
     def _paint(self) -> None:

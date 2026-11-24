@@ -179,3 +179,60 @@ def job_block(scene, opts: dict | None = None) -> dict | None:
 def signature(scene, opts: dict | None = None) -> str:
     """What the render depends on in the section (for the live view)."""
     return json.dumps(job_block(scene, opts), sort_keys=True)
+
+
+# ---- the sections the drawing holds: tick, rename, delete --------------------------------------------------
+# (IngeTrazo's own commands, so each is one undo step of the drawing and the 3D view follows)
+
+def entries(scene) -> list:
+    """The sections the drawing holds, as the Section tab lists them: ``[{"kind": "plane" | "box", "obj", "index", "name", "symbol",
+    "active"}]``, the section planes first and then the section boxes, each in the drawing's own order (``index`` counts within its
+    kind). ``[]`` when there are none, or in an IngeTrazo without sections."""
+    out = []
+    for kind, attr in (("plane", "section_planes"), ("box", "section_boxes")):
+        for i, obj in enumerate(list(getattr(scene, attr, None) or [])):
+            out.append({"kind": kind, "obj": obj, "index": i, "name": str(getattr(obj, "name", "") or "").strip(),
+                        "symbol": str(getattr(obj, "symbol", "") or "").strip(), "active": bool(getattr(obj, "active", False))})
+    return out
+
+
+def has_sections(scene) -> bool:
+    """Whether this IngeTrazo keeps sections at all (so the tab can list them)."""
+    return hasattr(scene, "section_planes")
+
+
+def cut_command(scene, kind: str, obj, on: bool):
+    """The command that makes ``obj`` cut (``on``) or stop cutting: ONE section plane and ONE box cut at a time, so making one cut
+    takes the cut off the others of its kind. None when this IngeTrazo has no such command."""
+    from core import history as H
+    if kind == "plane":
+        return H.SetActiveSectionCommand(obj if on else None)
+    state = obj.copy()
+    state.active = bool(on)
+    return H.section_box_changed(scene, obj, state)
+
+
+def rename_command(scene, kind: str, obj, name: str):
+    """The command that gives ``obj`` the name ``name`` (a plane keeps its letter, the symbol on its frame and in the sheets' marks)."""
+    from core import history as H
+    name = (name or "").strip()
+    if kind == "plane":
+        return H.RenameSectionPlaneCommand(obj, name, getattr(obj, "symbol", "") or "")
+    state = obj.copy()
+    state.name = name
+    return H.section_box_changed(scene, obj, state)
+
+
+def delete_command(scene, items):
+    """The command that takes the sections ``items`` (``[(kind, obj)]``) out of the drawing, as one undo step; None when there are none."""
+    from core import history as H
+    planes = [o for k, o in items if k == "plane"]
+    boxes = [o for k, o in items if k == "box"]
+    cmds = []
+    if planes:
+        cmds.append(H.DeleteSectionPlanesCommand(planes))
+    if boxes:
+        cmds.append(H.section_boxes_removed(scene, boxes))
+    if not cmds:
+        return None
+    return cmds[0] if len(cmds) == 1 else H.CompoundCommand(cmds)

@@ -320,7 +320,19 @@ Studio cuts the meshes in Blender, proxies included, in the live view, in the fi
 A box is six cuts one after the other, so the caps end where the box does. With no plane or box active the tab says so and the
 render shows the whole model; with Section Cuts switched off in IngeTrazo nothing is cut.
 
-The **Section** tab sets how the cut looks:
+The **Section** tab starts with a list of **the sections the drawing holds**, the section planes first and then the section
+boxes, each as IngeTrazo keeps it:
+- **Tick** the one that cuts; untick it to see the whole model. A plane and a box can cut together, but only one of each kind: ticking
+  one takes the cut off the other of its kind. A plane is listed by its name and its letter (*Longitudinal (A)*), a box by its name
+  or its number.
+- **Rename…** (or a double click on the row) gives the chosen section a name of its own; a plane keeps its letter. An empty name goes
+  back to the letter or the number.
+- **Delete** takes the chosen sections out of the drawing (choose several with Ctrl or Shift).
+- Each is one undo step of IngeTrazo itself (Ctrl+Z brings back a deleted section, in its place), and the 3D view, the sheets and the
+  live view follow, because they are the drawing's own sections. The list follows the drawing too: a section placed with the Section
+  tools joins it.
+
+It then sets how the cut looks:
 - **Close the cut with a face**: a flat cap. It can be made of a **material of the drawing** (concrete, plaster…: it takes the
   material's picture, repeated at its real size, its finish and the settings of the material editor; without a material the cap is
   plain grey), a **flat colour**, a **hatch pattern** (diagonal lines, cross hatch, grid or dots, with their colours and the spacing
@@ -472,7 +484,7 @@ The simple controls are in view and the rest folded under *Advanced*:
   The **Horizon** group adds a distant **skyline** — mountains, hills, a distant forest or a city — that hides the line where the generated ground
   meets the sky: layers round the scene that melt into the horizon colour with distance, cast no shadow and go dark at night (its height is
   an angle above the horizon; Advanced: the distance, the shape — a seed — and a colour of your own).
-- **Section**: what cuts now (the active section **plane**, IngeTrazo 0.6.3's **section box**, both or none, or Section Cuts switched off); a box is six cuts, one after the other, so its caps end where the box does; the **outline of the cap** (colour and thickness: a ruled line, always straight, round every cut wall and slab, apart from the model's outlines; in the finished picture it is a vector line you restyle in the side panel, like the other outlines, until you save), whether the cut is closed with a cap, and what the cap is made of — a material of the drawing, a **flat colour**,
+- **Section**: the **list of the drawing's sections** (tick the one that cuts, rename, delete); what cuts now (the active section **plane**, IngeTrazo 0.6.3's **section box**, both or none, or Section Cuts switched off); a box is six cuts, one after the other, so its caps end where the box does; the **outline of the cap** (colour and thickness: a ruled line, always straight, round every cut wall and slab, apart from the model's outlines; in the finished picture it is a vector line you restyle in the side panel, like the other outlines, until you save), whether the cut is closed with a cap, and what the cap is made of — a material of the drawing, a **flat colour**,
   a **hatch pattern** or **like the drawing** (the fill IngeTrazo itself gives the cut: the plane's or the box's own, else the style's Section fill) (diagonal lines, cross hatch, grid, dots, with their colours and spacing in centimetres) — and
   *No shadows on the cap* (it neither casts nor receives them, as a drawn section); **Output**, in this order: **Projection** (normal, *flat panorama* — a cylindrical picture where verticals stay straight, over the
   angle you choose — or *360° panorama*, equirectangular 2:1; both from the camera's place and rendered with Cycles), **Size**,

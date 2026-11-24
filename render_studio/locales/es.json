@@ -863,5 +863,19 @@
 "From a ruler (0: straight lines, the same width all along) to a loose hand: wavering, swelling, drawn twice, broken": "De regla (0: líneas rectas, del mismo grosor en todo) a mano suelta: temblor, grosores variables, repasado y cortado",
 "How far the lines run past their corners, in centimetres of the model (estimated at the model's own distance from the camera). A ruler goes exactly that far; a hand, a little less or more": "Hasta dónde pasan las líneas más allá de las esquinas, en centímetros del modelo (estimados a la distancia del modelo a la cámara). Una regla llega exactamente hasta ahí; una mano, algo menos o más",
 "How dark the ink is (the model's lines and the cut's)": "Cuán oscura es la tinta (las líneas del modelo y las del corte)",
-"How far the lines run past their corners, as a draughtsman's do: in centimetres of the model (estimated at the model's own distance from the camera).": "Hasta dónde pasan las líneas más allá de las esquinas, como hace un delineante: en centímetros del modelo (estimados a la distancia del modelo a la cámara)."
+"How far the lines run past their corners, as a draughtsman's do: in centimetres of the model (estimated at the model's own distance from the camera).": "Hasta dónde pasan las líneas más allá de las esquinas, como hace un delineante: en centímetros del modelo (estimados a la distancia del modelo a la cámara).",
+"Sections in the drawing": "Secciones del dibujo",
+"The section planes and section boxes of the drawing. Tick one to make it cut; untick it to see the whole model. One plane and one box can cut at the same time, so ticking one takes the cut off the other of its kind. Double-click a row to rename it.": "Los planos de sección y las cajas de sección del dibujo. Marca una para que corte; desmárcala para ver el modelo entero. Pueden cortar a la vez un plano y una caja, así que marcar una quita el corte a la otra del mismo tipo. Haz doble clic en una fila para cambiarle el nombre.",
+"Rename…": "Cambiar el nombre…",
+"Give the chosen section a name of its own (a section plane keeps its letter).": "Da a la sección elegida un nombre propio (un plano de sección conserva su letra).",
+"Take the chosen sections out of the drawing. Undo (Ctrl+Z) in IngeTrazo brings them back.": "Quita del dibujo las secciones elegidas. Deshacer (Ctrl+Z) en IngeTrazo las devuelve.",
+"No sections in the drawing: place them with the Section tools.": "No hay ninguna sección en el dibujo: colócalas con las herramientas de sección.",
+"Section {symbol}": "Sección {symbol}",
+"Section {n}": "Sección {n}",
+"Box {n}": "Caja {n}",
+"plane": "plano",
+"box": "caja",
+"Cutting the model now: untick it to see the whole model.": "Corta el modelo ahora: desmárcala para ver el modelo entero.",
+"Tick it to make it cut the model.": "Márcala para que corte el modelo.",
+"Rename the section": "Cambiar el nombre de la sección"
 }
