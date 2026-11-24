@@ -195,10 +195,49 @@ def arm_paint_bucket(app, name):
 
 
 # ---- a material in a file of its own -------------------------------------------------------------------
+#
+# IngeTrazo's own material file is the ``.igmat`` (a ZIP: ``material.json`` and ``textures/``). Render Studio's
+# settings for the material travel in that same file, under the material's ``"render_studio"`` key, with the
+# pictures of its maps in ``rs-maps/``. IngeTrazo reads past them (it takes only the keys it knows), so the file
+# is also an ordinary material file for the palette's Import… and *My materials*. An IngeTrazo without
+# ``formats.igmat`` writes the older ``.rsmat`` (JSON and a folder of pictures); every build still reads it, and
+# the ``.skm`` material files IngeTrazo can import are read too (their colour or picture, no settings).
 
-FILE_FORMAT = "render-studio-material"
-EXTENSION = ".rsmat"
-FILTER = f"Render Studio material (*{EXTENSION})"
+FILE_FORMAT = "render-studio-material"          # the older .rsmat
+LEGACY_EXTENSION = ".rsmat"
+IGMAT = ".igmat"
+SKM = ".skm"
+SETTINGS_KEY = "render_studio"
+MAPS_DIR = "rs-maps/"
+_EPOCH = (1980, 1, 1, 0, 0, 0)                  # fixed ZIP times: the same material gives the same bytes
+_MAX_DOC = 8 << 20
+_MAX_MAP = 256 << 20
+
+
+def _igmat():
+    """IngeTrazo's ``formats.igmat``, or None in a build that does not have it yet."""
+    try:
+        from formats import igmat
+        return igmat
+    except ImportError:
+        return None
+
+
+def extension() -> str:
+    """The extension a saved material gets: ``.igmat``, or ``.rsmat`` in a build without material files."""
+    return IGMAT if _igmat() is not None else LEGACY_EXTENSION
+
+
+def save_filter() -> str:
+    return ("IngeTrazo material (*.igmat)" if _igmat() is not None
+            else f"Render Studio material (*{LEGACY_EXTENSION})")
+
+
+def open_filter() -> str:
+    if _igmat() is None:
+        return f"Render Studio material (*{LEGACY_EXTENSION})"
+    return ";;".join(("Material files (*.igmat *.skm *.rsmat)", "IngeTrazo material (*.igmat)",
+                      "SKM material (*.skm)", f"Render Studio material (*{LEGACY_EXTENSION})"))
 
 
 def _file_refs(spec) -> list:
@@ -208,6 +247,46 @@ def _file_refs(spec) -> list:
         if isinstance(m, dict) and m.get("path"):
             refs.append((m, "path"))
     return refs
+
+
+def _write_zip(path, entries) -> None:
+    """``entries`` (``[(member, bytes, compress_type)]``) as the ZIP ``path``, atomically."""
+    import os
+    import zipfile
+    from pathlib import Path
+    path = Path(path)
+    tmp = path.with_name(path.name + ".tmp")
+    with zipfile.ZipFile(tmp, "w") as zf:
+        for member, data, ctype in entries:
+            info = zipfile.ZipInfo(member, date_time=_EPOCH)
+            info.compress_type = ctype
+            zf.writestr(info, data)
+    os.replace(tmp, path)
+
+
+def _add_settings(path, spec) -> None:
+    """Put the Render Studio settings ``spec`` (its map pictures copied in) into the ``.igmat`` ``path``, as
+    those of the one material it holds."""
+    import zipfile
+    from pathlib import Path
+    maps = {}
+    for i, (holder, key) in enumerate(_file_refs(spec)):
+        src = Path(str(holder[key]))
+        if src.is_file():
+            member = f"{MAPS_DIR}map-{i + 1}{src.suffix.lower()}"
+            maps[member] = src.read_bytes()
+            holder[key] = member
+    entries = []
+    with zipfile.ZipFile(path) as zf:
+        for info in zf.infolist():
+            data = zf.read(info)
+            if info.filename == "material.json":
+                payload = json.loads(data.decode("utf-8"))
+                payload["materials"][0][SETTINGS_KEY] = spec
+                data = json.dumps(payload, ensure_ascii=False, indent=1).encode("utf-8")
+            entries.append((info.filename, data, info.compress_type))
+    entries += [(member, maps[member], zipfile.ZIP_STORED) for member in sorted(maps)]
+    _write_zip(path, entries)
 
 
 def _copy_beside(src, folder, stem, used):
@@ -227,18 +306,14 @@ def _copy_beside(src, folder, stem, used):
     return name
 
 
-def save_material(app, name, path) -> str:
-    """Write the material ``name`` (its colour or picture, translucency, finish and Render Studio settings) to
-    ``path`` (``.rsmat``, JSON), with its pictures copied beside it in a folder of the same name so the file can
-    be moved, shared and loaded in another drawing. Returns the file written, or '' when the document has no
-    such material."""
+def _save_rsmat(app, name, path) -> str:
+    """The older file, for an IngeTrazo without ``.igmat``: JSON, its pictures copied beside it in a folder of
+    the same name so the file can be moved, shared and loaded in another drawing."""
     from pathlib import Path
-    mat = (getattr(app.scene, "materials", None) or {}).get(name)
-    if mat is None:
-        return ""
+    mat = app.scene.materials[name]
     path = Path(path)
-    if path.suffix.lower() != EXTENSION:
-        path = path.with_suffix(EXTENSION)
+    if path.suffix.lower() != LEGACY_EXTENSION:
+        path = path.with_suffix(LEGACY_EXTENSION)
     path.parent.mkdir(parents=True, exist_ok=True)
     pics = path.with_suffix("")                      # <file>/ : the pictures
     used: set = set()
@@ -270,8 +345,32 @@ def save_material(app, name, path) -> str:
     return str(path)
 
 
+def save_material(app, name, path) -> str:
+    """Write the material ``name`` (its colour or picture, translucency, finish and Render Studio settings) to
+    ``path`` as an ``.igmat``, a single file with its pictures inside so it can be moved, shared and loaded in
+    another drawing or opened by IngeTrazo itself. Returns the file written, or '' when the document has no
+    such material."""
+    from pathlib import Path
+    mat = (getattr(app.scene, "materials", None) or {}).get(name)
+    if mat is None:
+        return ""
+    igmat = _igmat()
+    if igmat is None:
+        return _save_rsmat(app, name, path)
+    path = Path(path)
+    if path.suffix.lower() != IGMAT:
+        path = path.with_suffix(IGMAT)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    igmat.save_materials(path, [mat])
+    spec = json.loads(json.dumps(_specs(app).get(name) or {}))
+    if spec:
+        _add_settings(path, spec)
+    return str(path)
+
+
 def read_material(path) -> dict | None:
-    """The material file ``path`` as a dict with its pictures' paths made absolute; None when it is not one."""
+    """The older ``.rsmat`` file ``path`` as a dict with its pictures' paths made absolute; None when it is not
+    one."""
     from pathlib import Path
     path = Path(path)
     try:
@@ -291,15 +390,94 @@ def read_material(path) -> dict | None:
     return data
 
 
+def _read_settings(path) -> dict:
+    """The Render Studio settings kept in the ``.igmat`` ``path``, ``{material name: settings}``, their map
+    pictures taken out into IngeTrazo's texture cache (a picture the file lost keeps its path, which finds
+    nothing)."""
+    import zipfile
+    from core.texture import cache_image
+    out: dict = {}
+    with zipfile.ZipFile(path) as zf:
+        try:
+            info = zf.getinfo("material.json")
+            if info.file_size > _MAX_DOC:
+                return out
+            payload = json.loads(zf.read(info).decode("utf-8"))
+        except (KeyError, ValueError):
+            return out
+        raws = payload.get("materials") if isinstance(payload, dict) else None
+        for raw in raws if isinstance(raws, list) else []:
+            if not isinstance(raw, dict) or not isinstance(raw.get("name"), str):
+                continue
+            spec = raw.get(SETTINGS_KEY)
+            if not isinstance(spec, dict) or not spec:
+                continue
+            for holder, key in _file_refs(spec):
+                member = str(holder[key])
+                if not member.startswith(MAPS_DIR):
+                    continue
+                try:
+                    if zf.getinfo(member).file_size > _MAX_MAP:
+                        continue
+                    holder[key] = str(cache_image(zf.read(member), member.rsplit("/", 1)[-1], "embedded"))
+                except (KeyError, OSError):
+                    pass
+            out.setdefault(raw["name"].strip(), spec)
+    return out
+
+
+def read_materials(path) -> list | None:
+    """The materials in the file ``path`` (``.igmat``, ``.skm`` or the older ``.rsmat``) as
+    ``[(Material, Render Studio settings or None)]``; None when it is not a material file this build reads."""
+    import zipfile
+    from pathlib import Path
+    path = Path(path)
+    ext = path.suffix.lower()
+    try:
+        if ext == LEGACY_EXTENSION:
+            data = read_material(path)
+            if data is None:
+                return None
+            color = data.get("color")
+            mat = Material((data.get("name") or "Material"), color=tuple(color) if color else None,
+                           texture=data.get("texture") or None, opacity=data.get("opacity"),
+                           finish=data.get("finish") or None)
+            return [(mat, data.get("settings") or None)]
+        if ext == IGMAT:
+            igmat = _igmat()
+            if igmat is None:
+                return None
+            mats = igmat.load_materials(path)
+            settings = _read_settings(path)
+            return [(m, settings.get(m.name)) for m in mats]
+        if ext == SKM:
+            try:
+                from formats.skm import load_skm
+            except ImportError:
+                return None
+            return [(m, None) for m in load_skm(path)]
+    except (OSError, ValueError, zipfile.BadZipFile):      # MaterialFileError and SkmError are ValueErrors
+        return None
+    return None
+
+
+def load_materials(app, path) -> list:
+    """Bring every material of the file ``path`` into the document, each under a name of its own (one undo step
+    each; the selection is not painted). Returns the names, ``[]`` when it is not a material file."""
+    found = read_materials(path)
+    names = []
+    for mat, spec in found or []:
+        name, _n = create_material(app, mat.name or "Material", color=mat.color, texture=mat.texture,
+                                   opacity=mat.opacity, apply=False, spec=spec, finish=mat.finish)
+        names.append(name)
+    return names
+
+
 def load_material(app, path):
-    """Bring the material in the file ``path`` into the document, under a name of its own (one undo step; the
-    selection is not painted). Returns ``(name, 0)`` or ``(None, 0)`` when it is not a material file."""
-    data = read_material(path)
-    if data is None:
-        return None, 0
-    return create_material(app, data.get("name") or "Material", color=data.get("color"),
-                           texture=data.get("texture"), opacity=data.get("opacity"), apply=False,
-                           spec=data.get("settings"), finish=data.get("finish"))
+    """The first material of the file ``path`` brought into the document (see :func:`load_materials`).
+    Returns ``(name, 0)`` or ``(None, 0)`` when it is not a material file."""
+    names = load_materials(app, path)
+    return (names[0], 0) if names else (None, 0)
 
 
 def set_material_picture(app, name, path, width=1.0):

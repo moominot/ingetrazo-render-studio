@@ -468,7 +468,7 @@
 "Saved {name} in {path}": "{name} guardado en {path}",
 "{name} is not in the document's materials yet, so it cannot be saved (paint a face with it first).": "{name} aún no está en los materiales del documento, así que no se puede guardar (pinta una cara con él antes).",
 "Load a material": "Cargar un material",
-"That file is not a Render Studio material.": "Ese archivo no es un material de Render Studio.",
+"That file is not a material file.": "Ese archivo no es un archivo de material.",
 "Loaded": "Cargado",
 "Edit picture…": "Editar la imagen…",
 "Edit in {program}…": "Editar con {program}…",

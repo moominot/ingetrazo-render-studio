@@ -515,9 +515,7 @@ looks through the camera in Material Preview. The scene is then Blender's: it is
 change of the model needs the button again. Implemented as `"expert": true` in the job (studio_scene.py).
 
 **Update preview** (preview window, 0.20.0): with Follow changes off, shows the model and materials as they are now, once.
-**Save… / Load…** (material editor): a material goes to a `.rsmat` file (JSON: colour or picture, translucency, finish
-and Render Studio settings) with its pictures and map files copied into a folder beside it, by relative paths, so it can
-be moved, shared and loaded in another drawing (one undo step; the selection is not painted). The **Glow** slider is
+**Save… / Load…** (material editor): a material goes to an `.igmat` file, IngeTrazo's own material file (one ZIP: colour or picture, translucency and finish, with its pictures inside), and Render Studio's settings for it travel in the same file, with the map files, so it can be moved, shared and loaded in another drawing (one undo step; the selection is not painted). IngeTrazo's own Import… and *My materials* open the same file and take the colour or picture, leaving the settings aside. Load also takes a `.skm` material file (colour or picture) and the older `.rsmat` files; a file with several materials brings them all. In an IngeTrazo that has no material files yet the button still writes `.rsmat`. The **Glow** slider is
 finer at the low end (the value goes as the slider's position cubed: 1 is a third of the way up) and the Light panel
 preset starts at 4. The **Opacity map** can use the material's own picture in black and white, as the other maps do.
 

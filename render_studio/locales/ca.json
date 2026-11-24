@@ -468,7 +468,7 @@
 "Saved {name} in {path}": "{name} desat a {path}",
 "{name} is not in the document's materials yet, so it cannot be saved (paint a face with it first).": "{name} encara no és als materials del document, així que no es pot desar (pinta-hi una cara abans).",
 "Load a material": "Carrega un material",
-"That file is not a Render Studio material.": "Aquest fitxer no és un material del Render Studio.",
+"That file is not a material file.": "Aquest fitxer no és un fitxer de material.",
 "Loaded": "Carregat",
 "Edit picture…": "Edita la imatge…",
 "Edit in {program}…": "Edita amb {program}…",

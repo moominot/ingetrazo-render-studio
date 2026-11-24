@@ -1120,15 +1120,15 @@ class MaterialEditor(QDialog):
             self.title.setText(tr("{name} is painted on the model: paint those faces with another material first.", name=name))
 
     def save_current(self):
-        """The chosen material to a file of its own (``.rsmat``) with its pictures, to use in another drawing."""
+        """The chosen material to a file of its own (``.igmat``) with its pictures, to use in another drawing."""
         from . import material_tools
         name = self.current_name()
         if name is None:
             return
         self._flush()
         start = str(Path(str(QSettings().value(_SETTINGS + "materials_dir", "") or Path.home()))
-                    / (name.replace("/", "-").replace("\\", "-") + material_tools.EXTENSION))
-        path, _f = QFileDialog.getSaveFileName(self, tr("Save the material"), start, material_tools.FILTER)
+                    / (name.replace("/", "-").replace("\\", "-") + material_tools.extension()))
+        path, _f = QFileDialog.getSaveFileName(self, tr("Save the material"), start, material_tools.save_filter())
         if not path:
             return
         done = material_tools.save_material(self.app, name, path)
@@ -1143,15 +1143,15 @@ class MaterialEditor(QDialog):
         """A saved material into this drawing, under a name of its own (the selection is not painted)."""
         from . import material_tools
         start = str(QSettings().value(_SETTINGS + "materials_dir", "") or Path.home())
-        path, _f = QFileDialog.getOpenFileName(self, tr("Load a material"), start, material_tools.FILTER)
+        path, _f = QFileDialog.getOpenFileName(self, tr("Load a material"), start, material_tools.open_filter())
         if not path:
             return
-        name, _n = material_tools.load_material(self.app, path)
-        if name is None:
-            self.hint.setText(tr("That file is not a Render Studio material."))
+        names = material_tools.load_materials(self.app, path)
+        if not names:
+            self.hint.setText(tr("That file is not a material file."))
             return
         QSettings().setValue(_SETTINGS + "materials_dir", str(Path(path).parent))
-        self._made(name, 0, tr("Loaded"))
+        self._made(names[0], 0, tr("Loaded"))
 
     def pick_selection(self):
         name = M.selection_material(self.app.scene)
@@ -1162,7 +1162,7 @@ class MaterialEditor(QDialog):
     # -- the settings ------------------------------------------------------------------
     #: Sliders whose scale is not a straight line: the value goes as the slider's position to this power, so the
     #: low end (where a glow of 1 is already a lot of light) has room to be set finely.
-    _CURVES = {"glow": 3.0}
+    _CURVES = {"glow": 3.0, "grass_density": 2.0}
 
     def _set_slider(self, key, value):
         s = self.sliders[key]

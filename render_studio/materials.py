@@ -45,7 +45,7 @@ DEFAULT_TRANSPARENCY = {"glass": 0.85, "water": 0.7}
 DEFAULT_GRASS_HEIGHT = 0.08
 GRASS_HEIGHT_RANGE = (0.01, 0.60)
 #: Grass density: tufts per m² (each a few blades). The same in the live view and the render.
-GRASS_DENSITY_RANGE = (20.0, 800.0)
+GRASS_DENSITY_RANGE = (20.0, 2000.0)
 GRASS_DENSITY_SHORT = 260.0         # the automatic density of short grass…
 GRASS_DENSITY_TALL = 60.0           # …down to this for tall grass (fewer, bigger tufts)
 

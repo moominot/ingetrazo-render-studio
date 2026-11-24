@@ -224,7 +224,7 @@ def _grass(p: QPainter, faces, size: int, height: float, base: QColor, texture,
     length = max(3.0, metre * max(0.0, height))
     pts = []
     count = (int(260 + 900 * min(1.0, 0.12 / max(height, 0.01))) if not density
-             else int(max(40.0, min(2400.0, 4.0 * float(density)))))
+             else int(max(40.0, min(6000.0, 4.0 * float(density)))))
     for _ in range(count):
         u, v = rng.random(), rng.random()
         x = t0.x() + (t1.x() - t0.x()) * u + (t3.x() - t0.x()) * v
