@@ -385,7 +385,7 @@ the material, upright whatever the slope, in small tufts turned and sized at ran
 <b>picture</b> where each tuft stands (a lawn picture gives the lawn's patches), or its colour, darker at the root; the
 face under them fills the gaps. The cube preview shows the height.</td></tr>
 <tr><td valign='top'><b>Grass density</b></td><td>Grass only: how many tufts (of a few blades each) grow on a square metre,
-20 to 800. A thick lawn is 250 to 400, long grass 60 to 120 (taller tufts are bigger). The live view and the render use
+20 to 2000. A thick lawn is 250 to 400, long grass 60 to 120 (taller tufts are bigger). The live view and the render use
 the same density, whatever the camera sees. Only a huge lawn (more than 600 000 tufts in all) is thinned so Blender
 does not run out of memory; Blender's log says by how much.</td></tr>
 <tr><td valign='top'><b>Map image size</b></td><td>How big one image of a map file is on the model, in metres. Used when

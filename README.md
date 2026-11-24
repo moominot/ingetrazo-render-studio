@@ -43,6 +43,8 @@ Every look shares:
 editor. The list shows the materials used in the model.
 **From the selection** jumps to the material of the selected face or group.
 
+![The materials window: a grass material, with its picture, tile size, type, roughness, grass height and density](docs/materials_grass.png)
+
 For each material you can:
 - start from a preset: matte plaster, satin paint, gloss lacquer, polished
   stone, concrete, brick, varnished or raw wood, fabric, brushed metal,
@@ -132,10 +134,28 @@ else its colour, darker at the root. Short grass gets 260 tufts per m², taller 
 past 250 000 tufts in one render the whole lawn is thinned (the log says by how much). The job carries
 it in the material's settings: `{"type": "grass", "grass_height": 0.08, "grass_density": 260}`.
 
-**Grass density** (0.11.0) is the tufts per m², 20–800 (Lawn preset 260, Tall grass 90). The live
+**Grass density** (0.11.0) is the tufts per m², 20–2000 (800 before 0.27.0; Lawn preset 260, Tall grass 90). The slider is finer at the low end, where the usual values are (the value goes as the slider's position squared). The live
 view grows the same grass as the render (before 0.11.0 it had a third of it). A material saved
 without a density gets the old automatic one for its height. Past 600 000 tufts in one render the
 whole lawn is thinned, and Blender's log says by how much.
+
+### Material files (.igmat)
+
+**Save material…** writes the chosen material to an `.igmat` file, IngeTrazo's own material file: a single ZIP with the
+colour or picture, translucency, finish and tile size, and the picture itself inside, so the file can be moved, shared and
+opened in any drawing. **Load material…** brings one back into the drawing under a name of its own (a name already in use
+gets a number: `Brick (2)`), as one undo step; nothing is painted.
+
+Render Studio's own settings for the material travel in the same file, under the material's `render_studio` key, and the
+pictures of its maps in `rs-maps/`: type, roughness, metal, relief, glow, ripples, grass height and density, and every map.
+IngeTrazo itself opens the same file from **Import…** and **My materials** in its Materials palette; it takes what it knows
+(colour or picture, translucency, finish) and leaves the render settings aside, and saving it again from there drops them.
+
+- **Load** also reads SketchUp's `.skm` material files (their colour or picture and tile size; they carry no render
+  settings) and the older `.rsmat` files of Render Studio 0.26 and before (JSON with a folder of pictures beside it). A file
+  with several materials brings them all. Export to `.skm` is not offered: IngeTrazo does not write that format yet.
+- An IngeTrazo older than 0.6.3, which has no `.igmat`, still writes `.rsmat` (the dialogs say so).
+- The same material gives the same bytes every time it is saved.
 
 ### Recognised by the name
 
@@ -294,19 +314,28 @@ The **Output** tab sets the final picture's size and its file (kept in the docum
 
 ## Section
 
-The **Section** tab renders the drawing's active section plane (the Section tool): IngeTrazo
-only clips it on screen, so Render Studio cuts the meshes in Blender, proxies included.
-- **Close the cut with a face**: a flat cap made of a **material of the drawing** (concrete,
-  plaster…): it takes the material's picture (repeated at its real size), finish and the settings
-  of the material editor. Without a material the cap is plain grey. A material that no face of
-  the model wears has no picture in the render: only its colour. Walls keep their holes, so a
-  room shows as a room.
-- **Light**: *open*, the removed part is gone and the light enters the cut; *blocked*, it stays out
-  of the picture but still casts shadow and bounces light, so an interior is lit as in the real
-  building (Cycles; EEVEE may show it). 
+Render Studio renders what the drawing cuts: both the active **section plane** (the Section tool) and the active **section box**
+(IngeTrazo 0.6.3: a box that cuts with its six faces), together or on their own. IngeTrazo only clips them on screen, so Render
+Studio cuts the meshes in Blender, proxies included, in the live view, in the final render and in the scenes you render in bulk.
+A box is six cuts one after the other, so the caps end where the box does. With no plane or box active the tab says so and the
+render shows the whole model; with Section Cuts switched off in IngeTrazo nothing is cut.
+
+The **Section** tab sets how the cut looks:
+- **Close the cut with a face**: a flat cap. It can be made of a **material of the drawing** (concrete, plaster…: it takes the
+  material's picture, repeated at its real size, its finish and the settings of the material editor; without a material the cap is
+  plain grey), a **flat colour**, a **hatch pattern** (diagonal lines, cross hatch, grid or dots, with their colours and the spacing
+  in centimetres) or **like the drawing** (the fill IngeTrazo itself gives that cut: the plane's or the box's own, else the style's
+  Section fill). A material that no face of the model wears has no picture in the render: only its colour. Walls keep their holes,
+  so a room shows as a room.
+- **Outline of the cap**: its colour and thickness. A ruled, always straight line round every cut wall and slab, apart from the
+  model's own outlines; in the finished picture it is a vector line you restyle in the side panel until you save.
+- **No shadows on the cap**: it neither casts nor receives them, as a drawn section.
+- **Light**: *open*, the removed part is gone and the light enters the cut; *blocked*, it stays out of the picture but still casts
+  shadow and bounces light, so an interior is lit as in the real building (Cycles; EEVEE may show it).
 - Meshes that are not closed get no cap (a single surface has no section to fill).
 - Kept in the document under `settings["section"]`.
 
+![The Section tab](docs/tab_section.png)
 ## What is hidden
 
 Whatever is hidden in the drawing stays out of the render and of the preview, and out of the model
@@ -460,6 +489,53 @@ The panel has **Render** and **Render and save…** (the final picture right awa
 
 ![Panel](docs/panel.png)
 
+### The tabs
+
+**Main**: presets, the style of the picture, the camera and the quality (the panel scrolls: the second picture is its lower part).
+
+<table>
+<tr>
+<td valign="top"><img src="docs/tab_main.png" width="300" alt="Main tab: presets, style and camera"></td>
+<td valign="top"><img src="docs/tab_main_2.png" width="300" alt="Main tab, lower part: camera and quality"></td>
+<td valign="top"><img src="docs/tab_image.png" width="300" alt="Image tab: exposure, warmth, saturation, vignette and ambient occlusion"></td>
+</tr>
+</table>
+
+**Image**: exposure, warmth and saturation, and the effects (vignette, ambient occlusion and its reach).
+
+**Environment** (three parts of one long tab): sun and sky (date, hour, clouds, place and the shadows of the 3D view), the
+background and the ground, then the horizon and the fog.
+
+<table>
+<tr>
+<td valign="top"><img src="docs/tab_environment_1.png" width="300" alt="Environment tab: sun and sky"></td>
+<td valign="top"><img src="docs/tab_environment_2.png" width="300" alt="Environment tab: background and ground"></td>
+<td valign="top"><img src="docs/tab_environment_3.png" width="300" alt="Environment tab: ground, horizon and fog"></td>
+</tr>
+</table>
+
+**Section** closes the cut of the active section plane or section box with a cap (its material, the outline of the cap, shadows and light; [both are rendered](#section)) and **Output** sets the
+projection, the size, the file and where it is saved.
+
+<table>
+<tr>
+<td valign="top"><img src="docs/tab_section.png" width="300" alt="Section tab: the cap of the cut"></td>
+<td valign="top"><img src="docs/tab_output.png" width="300" alt="Output tab: projection, size, file and what to render"></td>
+</tr>
+</table>
+
+### Styles
+
+The **Style** group of the Main tab changes how the whole picture is drawn, in the live view and in the final render:
+
+<table>
+<tr>
+<td valign="top"><img src="docs/style_white.png" width="330" alt="White style: the model in white with outlines"><br><b>White</b>: every object white, with the sun's shadows.</td>
+<td valign="top"><img src="docs/style_light.png" width="330" alt="Light style: the lux each surface receives, in false colour with a scale"><br><b>Light</b>: the lux each surface receives, in false colour, with its scale.</td>
+<td valign="top"><img src="docs/style_sketch.png" width="330" alt="Sketch style: pencil lines on paper"><br><b>Sketch</b>: pencil lines on paper, with the hand and the line extension you choose.</td>
+</tr>
+</table>
+
 ## Preview window
 
 One window to look at the scene and to make the picture, in three states:
@@ -472,6 +548,13 @@ One window to look at the scene and to make the picture, in three states:
 - **Final picture**: the render with the retouch sliders (exposure in EV, contrast, saturation, warmth,
   vignette: they change the picture instantly, nothing is rendered again), **Reset retouch**, **Save image…**
   (what you see, PNG or JPEG) and **Back to preview**.
+
+The outlines of the picture have their own controls on the right (**Outlines of the model**, their colour, **Line thickness**,
+**Hand**, **Line extension** in centimetres and **Ink**, and **As rendered** to go back to what was drawn): they are vector lines,
+so they change at once and stay lines until the picture is saved. *Back to preview*, *Save image…* and the retouch sliders are
+always in view; the panel folds away with the handle on its edge.
+
+![A final picture: the retouch sliders and the outlines](docs/final_picture_outlines.png)
 
 The panel's sliders and the retouch sliders share some names but not their effect: the panel's change
 the **scene** (a new preview or render), the retouch ones only the **finished picture**; each shows its
@@ -525,9 +608,7 @@ looks through the camera in Material Preview. The scene is then Blender's: it is
 change of the model needs the button again. Implemented as `"expert": true` in the job (studio_scene.py).
 
 **Update preview** (preview window, 0.20.0): with Follow changes off, shows the model and materials as they are now, once.
-**Save… / Load…** (material editor): a material goes to a `.rsmat` file (JSON: colour or picture, translucency, finish
-and Render Studio settings) with its pictures and map files copied into a folder beside it, by relative paths, so it can
-be moved, shared and loaded in another drawing (one undo step; the selection is not painted). The **Glow** slider is
+**Save… / Load…** (material editor): a material goes to an `.igmat` file and comes back in another drawing ([Material files](#material-files-igmat)). The **Glow** slider is
 finer at the low end (the value goes as the slider's position cubed: 1 is a third of the way up) and the Light panel
 preset starts at 4. The **Opacity map** can use the material's own picture in black and white, as the other maps do.
 

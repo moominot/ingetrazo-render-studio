@@ -58,6 +58,12 @@ ok(abs(spec("Terreny").get("grass_density", 0) - M.auto_grass_density(M.DEFAULT_
 ed._set_slider("grass_density", 500.0); ed._changed(); ed._flush()
 ok(abs(spec("Terreny")["grass_density"] - 500.0) < 8 and ed.density_value.text().endswith("/m²"),
    f"the density slider sets it, in tufts per m² ({spec('Terreny')['grass_density']}, «{ed.density_value.text()}»)")
+ok(M.GRASS_DENSITY_RANGE[1] == 2000.0, f"the density can go up to 2000 tufts per m² ({M.GRASS_DENSITY_RANGE})")
+for want in (20.0, 60.0, 100.0, 260.0, 400.0, 1200.0, 2000.0):
+    ed._set_slider("grass_density", want)
+    got = ed._get("grass_density")
+    ok(abs(got - want) <= max(8.0, 0.05 * want), f"the density slider keeps {want:.0f} ({got:.0f})")
+ed._set_slider("grass_density", 500.0)
 few = cube_preview.render({**ed.cube_params(), "grass_density": 30.0}, 150).toImage()
 many = cube_preview.render({**ed.cube_params(), "grass_density": 600.0}, 150).toImage()
 green = lambda im: sum(1 for y in range(150) for x in range(150)
