@@ -34,6 +34,8 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, Qt, QTimer, Signal
 from PySide6.QtWidgets import QApplication
 
+from . import view_camera
+
 _log = logging.getLogger(__name__)
 
 #: How often the 3D view is looked at (ms).
@@ -156,7 +158,7 @@ class LiveSession(QObject):
         if not on:
             try:
                 cam = self.panel.app.viewport.camera
-                self._frozen = rb.camera_dict(cam)
+                self._frozen = view_camera.camera_dict(cam)
                 self.frozen_camera = _copy_camera(cam)
             except Exception:  # noqa: BLE001
                 self._frozen = None
@@ -184,6 +186,7 @@ class LiveSession(QObject):
         except Exception:  # noqa: BLE001
             return False
         req = json.loads(rb.sync_request(camera, output, width, height, engine))
+        req["camera"] = view_camera.camera_dict(camera)
         req["samples"] = int(samples)
         req["final"] = True
         if lines:
@@ -214,7 +217,7 @@ class LiveSession(QObject):
         from core import render_blender as rb
         if not self.follow_camera and self._frozen is not None:
             return ("kept", json.dumps(self._frozen, sort_keys=True))
-        return rb.camera_key(self.panel.app.viewport.camera)
+        return view_camera.camera_key(self.panel.app.viewport.camera)
 
     def _wanted_key(self):
         """What the live scene should be: (model, materials, settings) — with the
@@ -360,6 +363,8 @@ class LiveSession(QObject):
         req = json.loads(rb.sync_request(self.panel.app.viewport.camera, out, width, height, engine))
         if not self.follow_camera and self._frozen is not None:
             req["camera"] = self._frozen
+        else:
+            req["camera"] = view_camera.camera_dict(self.panel.app.viewport.camera)
         req["samples"] = samples
         # The outlines are drawn here (outlines.py: tenths of a second on an ordinary model, seconds on a very big one, and the 3D view
         # waits meanwhile): not on the frames of a moving camera, and not on a big model; the final render always has them.

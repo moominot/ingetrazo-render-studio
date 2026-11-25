@@ -806,6 +806,25 @@ def _unshadowed_light(scene, z, where):
     return max(value, 1e-4)
 
 
+def set_view(scene, cfg, width, height):
+    """IngeTrazo's camera, then what Render Studio adds to it (view_camera.py): the frame's shift of a two-point view or of a
+    matched photo, in view heights — the unit of this camera, which is fitted to its height."""
+    core["set_camera"](scene, cfg, width, height)
+    sx, sy = cfg.get("frame_shift") or (0.0, 0.0)
+    scene.camera.data.shift_x, scene.camera.data.shift_y = float(sx), float(sy)
+
+
+def add_flat_floor(z, size):
+    """Over a plain colour with no generated ground: a floor only to read where the shadows fall on it. The camera does not
+    see it while the picture is made (see _OverColour), and it gives the model no light."""
+    bpy.ops.mesh.primitive_plane_add(size=float(size), location=(0.0, 0.0, float(z)))
+    floor = bpy.context.active_object
+    floor.name = "IngeTrazo ground flat floor"
+    for ray in ("visible_camera", "visible_diffuse", "visible_glossy", "visible_transmission", "visible_shadow"):
+        setattr(floor, ray, False)
+    return floor
+
+
 def add_shadow_floor(scene, z, size):
     """No ground is made, but the model's shadow still falls on the floor: an invisible plane that only
     shows shadows, so the sky or the 360° image shows through everywhere else. Cycles has a shadow catcher;
@@ -3049,8 +3068,9 @@ def clip_section(section):
         uv_of = _plane_uv(co, no, sec.get("texture_size"))
         if want_cap and not sec.get("shadows", True):
             shadowless_mats.add(capmat)
+        own_cap = want_cap and bool(entry.get("cap_tris"))
         for obj in objs:
-            capping = want_cap
+            capping = want_cap and not own_cap        # (IngeTrazo's own cap, when it sends one: made below)
             if obj.data.users > 1:
                 obj.data = obj.data.copy()
             mw = obj.matrix_world.copy()
@@ -3100,7 +3120,20 @@ def clip_section(section):
             bm.free()
             obj.data.update()
             n += 1
-    loose = {}                                      # cap material -> its triangles (world, with uv), from every mesh
+        if own_cap:
+            # The cap IngeTrazo itself draws for this cut (its chords, rings and holes: core.section.fill_triangles), as one object.
+            polys = []
+            for poly in entry["cap_tris"]:          # triangles, or the convex polygons the other planes' cut leaves of them
+                pts = [Vector(p) for p in poly]
+                if len(pts) < 3:
+                    continue
+                if (pts[1] - pts[0]).cross(pts[2] - pts[0]).dot(no) < 0:
+                    pts.reverse()                  # facing the side that was cut away, towards the camera
+                polys.append([(tuple(p), tuple(uv_of(p))) for p in pts])
+            if polys:
+                _loose_cap(polys, capmat, shadows=bool(sec.get("shadows", True)))
+                capped += 1
+    loose = {}                                    # cap material -> its triangles (world, with uv), from every mesh
     if shadowless_mats:
         for obj in objs:
             mats = list(obj.data.materials)
@@ -3128,8 +3161,8 @@ def clip_section(section):
     return n
 
 
-def _loose_cap(polys, mat):
-    """One object for every cap triangle (world space), with its material: it casts no shadow, and
+def _loose_cap(polys, mat, shadows=False):
+    """One object for every cap triangle (world space), with its material: without ``shadows`` it casts no shadow, and
     its material is unlit, so it takes none either."""
     me = bpy.data.meshes.new("Section cap")
     verts, faces, uvs = [], [], []
@@ -3145,7 +3178,7 @@ def _loose_cap(polys, mat):
     me.materials.append(mat)
     obj = bpy.data.objects.new("Section cap", me)
     bpy.context.scene.collection.objects.link(obj)
-    obj.visible_shadow = False
+    obj.visible_shadow = bool(shadows)
     return obj
 
 
@@ -3526,7 +3559,7 @@ def build(job):
         white_model()
     figures = core["find_figures"]()
     w, h = int(job["width"]), int(job["height"])
-    core["set_camera"](scene, job["camera"], w, h)
+    set_view(scene, job["camera"], w, h)
     _DOF["amount"], _DOF["focus"] = st.get("dof", 0.0), st.get("focus", 0.0)
     set_dof(scene, job["camera"], _DOF["amount"], _DOF["focus"])
     core["face_figures"](figures, job["camera"])
@@ -3673,13 +3706,19 @@ def build(job):
     r.image_settings.file_format = "PNG"
     r.filepath = job["output"]
     r.film_transparent = False
+    scene["rs_flat"] = json.dumps(st.get("flat"))      # the plain-colour background: put behind the picture when it is rendered
+    scene["rs_shadows"] = json.dumps(st.get("shadows"))        # how the shadows are painted over it (None: as rendered)
     set_look(scene, st.get("looks") or ["AgX - Medium High Contrast", "Medium High Contrast"],
              st.get("white_balance"), st.get("tint"))
     _expose(scene, job)
     _STATE["style"] = st.get("style")
     finish_style(scene, st.get("style"))
     if st.get("shadow_catcher") and not ground:          # after the exposure: the floor is no part of what is metered
-        add_shadow_floor(scene, float(st["shadow_catcher"]["z"]), float(st["shadow_catcher"]["size"]))
+        catcher = st["shadow_catcher"]
+        if st.get("flat"):
+            add_flat_floor(float(catcher["z"]), float(catcher["size"]))
+        else:
+            add_shadow_floor(scene, float(catcher["z"]), float(catcher["size"]))
     last = {"text": None}
 
     def _stats(text, *_a):
@@ -3782,7 +3821,7 @@ def serve(scene, figures):
                 say("final refused")
                 continue
             say("final", "the live scene, as the final picture")
-        core["set_camera"](scene, req["camera"], w, h)
+        set_view(scene, req["camera"], w, h)
         set_dof(scene, req["camera"], _DOF["amount"], _DOF["focus"])
         core["face_figures"](figures, req["camera"])
         core["set_samples"](scene, int(req.get("samples", 16)))
@@ -4116,14 +4155,178 @@ def watercolour(arr, style):
     return out
 
 
-def paper_behind(arr):
-    """A picture with transparency (the sketch) on white paper."""
+def paper_behind(arr, colour=None):
+    """A picture with transparency (the sketch) on its paper: white paper, or ``colour`` (the plain-colour background)."""
     import numpy as np
     a = arr[..., 3:4]
     out = arr.copy()
-    out[..., :3] = arr[..., :3] * a + np.array(STYLE_PAPER, dtype=np.float32) * (1.0 - a)
+    out[..., :3] = arr[..., :3] * a + np.array(colour or STYLE_PAPER, dtype=np.float32) * (1.0 - a)
     out[..., 3] = 1.0
     return out
+
+
+def _whiten_slots():
+    """Every opaque material of the meshes swapped for plain white for the shadow mask, so a dark paint or a metal does not
+    read as shadow; what lets the sun through (glass, cut-outs) and what shines by itself stays. Returns what to undo."""
+    white = bpy.data.materials.new("Render Studio shadow mask")
+    white.use_nodes = True
+    bsdf = next(n for n in white.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
+    bsdf.inputs["Base Color"].default_value = (0.8, 0.8, 0.8, 1.0)
+    bsdf.inputs["Roughness"].default_value = 1.0
+
+    def stays(mat):
+        if mat is None or not mat.node_tree:
+            return False
+        for n in mat.node_tree.nodes:
+            if n.type in ("EMISSION", "BSDF_TRANSPARENT", "BSDF_GLASS"):
+                return True
+            if n.type == "BSDF_PRINCIPLED":
+                alpha, trans = n.inputs.get("Alpha"), n.inputs.get("Transmission Weight") or n.inputs.get("Transmission")
+                if alpha is not None and (alpha.is_linked or alpha.default_value < 0.99):
+                    return True
+                if trans is not None and (trans.is_linked or trans.default_value > 0.5):
+                    return True
+        return False
+
+    undo, done = [], set()
+    for ob in bpy.data.objects:
+        if ob.type != "MESH" or ob.data is None or ob.data.name in done:
+            continue
+        done.add(ob.data.name)
+        for i, mat in enumerate(ob.data.materials):
+            if not stays(mat):
+                undo.append((ob.data, i, mat))
+                ob.data.materials[i] = white
+    return white, undo
+
+
+def _restore_slots(white, undo):
+    for data, i, mat in undo:
+        data.materials[i] = mat
+    bpy.data.materials.remove(white)
+
+
+def shadow_mask(scene, path):
+    """Where the sun does not reach, as the camera sees it (H×W, 0..1, rows from the top): a second render with the sun alone —
+    its own light only, no sky, no lamps, no tone mapping, opaque things in white — in which what is black is in shadow or
+    turned away. What the camera does not see (the sky) is not shadow. None without a sun."""
+    import numpy as np
+    suns = [ob for ob in bpy.data.objects if ob.type == "LIGHT" and ob.data.type == "SUN" and not ob.hide_render]
+    if not suns:
+        say("hatching skipped", "no sun")
+        return None
+    r, vs = scene.render, scene.view_settings
+    keep_render = (r.filepath, r.image_settings.file_format, r.image_settings.color_depth, r.image_settings.color_mode,
+                   r.film_transparent)
+    keep_view = (vs.view_transform, vs.exposure)
+    keep_look = vs.look
+    keep_world = scene.world
+    has_comp = hasattr(scene, "compositing_node_group")
+    keep_comp = scene.compositing_node_group if has_comp else None
+    hidden = [ob for ob in bpy.data.objects if ob.type == "LIGHT" and ob not in suns and not ob.hide_render]
+    tmp = path + ".shadows.png"
+    swapped = None
+    cycles = getattr(scene, "cycles", None) if r.engine == "CYCLES" else None
+    keep_samples = cycles.samples if cycles is not None else None
+    keep_bounces = cycles.max_bounces if cycles is not None else None
+    # Exposed well over white for what faces the sun (clipping does not matter): only what gets no sun stays dark.
+    sun_w = max(1e-3, max(ob.data.energy for ob in suns))
+    try:
+        if cycles is not None:
+            cycles.samples = min(keep_samples, 16)       # a mask needs no more
+            cycles.max_bounces = 0                       # the sun's own light only: no bounce filling the shadows
+        for ob in hidden:
+            ob.hide_render = True
+        scene.world = None
+        if has_comp:
+            scene.compositing_node_group = None
+        vs.view_transform = "Standard"
+        try:
+            vs.look = "None"
+        except TypeError:
+            pass
+        vs.exposure = math.log2(2.0 * math.pi / (0.8 * sun_w))
+        r.film_transparent = True
+        r.filepath = tmp
+        r.image_settings.file_format = "PNG"
+        r.image_settings.color_mode = "RGBA"
+        r.image_settings.color_depth = "8"
+        swapped = _whiten_slots()
+        bpy.ops.render.render(write_still=True)
+        arr = _read_pixels(tmp)
+    finally:
+        if swapped is not None:
+            _restore_slots(*swapped)
+        for ob in hidden:
+            ob.hide_render = False
+        if cycles is not None:
+            cycles.samples = keep_samples
+            cycles.max_bounces = keep_bounces
+        scene.world = keep_world
+        if has_comp:
+            scene.compositing_node_group = keep_comp
+        vs.view_transform, vs.exposure = keep_view
+        try:
+            vs.look = keep_look
+        except TypeError:
+            pass
+        r.filepath = keep_render[0]
+        r.image_settings.file_format = keep_render[1]
+        r.image_settings.color_depth, r.image_settings.color_mode, r.film_transparent = keep_render[2:]
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+    lum = 0.299 * arr[..., 0] + 0.587 * arr[..., 1] + 0.114 * arr[..., 2]
+    return np.clip((0.16 - lum) / 0.08, 0.0, 1.0) * arr[..., 3]
+
+
+def hatch_cover(h, w, sh):
+    """A hatching's pattern over an H×W picture (0..1, how much of each pixel is ink): ``draw`` lines, cross or dots, ``spacing``
+    and ``width`` in pixels, ``angle`` in degrees (counter-clockwise from level)."""
+    import numpy as np
+    kind = sh.get("draw") or "lines"
+    spacing = max(2.0, float(sh.get("spacing", 8.0)))
+    width = max(0.3, float(sh.get("width", 1.0)))
+    a = math.radians(float(sh.get("angle", 45.0)))
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+
+    def off(angle):                      # the distance to the nearest line of the family at ``angle``
+        v = xx * math.sin(angle) + yy * math.cos(angle)
+        return np.abs(np.mod(v + spacing / 2.0, spacing) - spacing / 2.0)
+
+    def line(angle):
+        return np.clip(width / 2.0 + 0.5 - off(angle), 0.0, 1.0)
+
+    if kind == "dots":
+        return np.clip(width + 0.5 - np.hypot(off(a), off(a + math.pi / 2.0)), 0.0, 1.0)
+    if kind == "cross":
+        return np.maximum(line(a), line(a + math.pi / 2.0))
+    return line(a)
+
+
+def paint_shadows(arr, mask, sh):
+    """The shadows (``mask``) painted over ``arr`` (H×W×4, straight alpha) as ``sh`` says: a flat colour or a hatching of it."""
+    import numpy as np
+    if mask is None or mask.shape != arr.shape[:2]:
+        return arr
+    ink = np.array([float(c) for c in (sh.get("color") or (0.1, 0.1, 0.1))[:3]], dtype=np.float32)
+    cover = 1.0 if sh.get("draw") == "colour" else hatch_cover(arr.shape[0], arr.shape[1], sh)
+    a = (cover * mask * float(sh.get("opacity", 0.5)))[..., None]
+    under = arr[..., 3:4] * (1.0 - a)
+    alpha = a + under
+    out = arr.copy()
+    out[..., :3] = (ink * a + arr[..., :3] * under) / np.maximum(alpha, 1e-6)
+    out[..., 3:4] = alpha
+    return out.astype(np.float32)
+
+
+def shadows_of(scene):
+    """How the scene's shadows are painted, or None (as rendered)."""
+    try:
+        return json.loads(scene.get("rs_shadows") or "null")
+    except (TypeError, ValueError):
+        return None
 
 
 def overlay_lines(arr, lines_png):
@@ -4144,20 +4347,145 @@ def overlay_lines(arr, lines_png):
     return out
 
 
+class _OverColour:
+    """While rendering over a plain colour: the generated ground is out of the camera's sight (it still bounces light), without its
+    grass; the distant skyline is hidden; the sky is transparent."""
+
+    def __init__(self, scene):
+        self.scene = scene
+
+    def __enter__(self):
+        self.ground = [ob for ob in bpy.data.objects if ob.name.startswith("IngeTrazo ground")]
+        self.gone = [ob for ob in bpy.data.objects if ob.name.startswith("IngeTrazo skyline") and not ob.hide_render]
+        self.visible = [(ob, ob.visible_camera) for ob in self.ground]
+        self.mods = [(m, m.show_render) for ob in self.ground for m in ob.modifiers]
+        self.film = self.scene.render.film_transparent
+        for ob in self.ground:
+            ob.visible_camera = False
+        for m, _on in self.mods:
+            m.show_render = False
+        for ob in self.gone:
+            ob.hide_render = True
+        self.scene.render.film_transparent = True
+        return self
+
+    def shadows(self, path, floor):
+        """The shadow mask of the model and, with ``floor``, of the floor beside it."""
+        for ob in self.ground:
+            ob.visible_camera = floor
+        try:
+            return shadow_mask(self.scene, path)
+        finally:
+            for ob in self.ground:
+                ob.visible_camera = False
+
+    def __exit__(self, *_exc):
+        for ob, on in self.visible:
+            ob.visible_camera = on
+        for m, on in self.mods:
+            m.show_render = on
+        for ob in self.gone:
+            ob.hide_render = False
+        self.scene.render.film_transparent = self.film
+        return False
+
+
+#: Over a plain colour with the shadows «as rendered», the floor's shadow is this much darker than the colour.
+FLOOR_SHADOW = 0.35
+
+
+def over_colour(arr, flat, floor_shadow=None):
+    """The model (``arr``, straight alpha) over the plain colour; ``floor_shadow`` (a mask) darkens the colour beside it."""
+    import numpy as np
+    bg = np.broadcast_to(np.array(flat["color"][:3], dtype=np.float32), arr.shape[:2] + (3,))
+    if floor_shadow is not None and floor_shadow.shape == arr.shape[:2]:
+        bg = bg * (1.0 - FLOOR_SHADOW * floor_shadow)[..., None]
+    a = arr[..., 3:4]
+    out = arr.copy()
+    out[..., :3] = arr[..., :3] * a + bg * (1.0 - a)
+    out[..., 3] = 1.0
+    return out.astype(np.float32)
+
+
+def flat_of(scene):
+    """The scene's plain-colour background, or None."""
+    try:
+        return json.loads(scene.get("rs_flat") or "null")
+    except (TypeError, ValueError):
+        return None
+
+
+def _bare_picture(render):
+    """An empty, see-through picture the size of the render: the sketch with nothing under its lines."""
+    import numpy as np
+    scale = render.resolution_percentage / 100.0
+    return np.zeros((int(render.resolution_y * scale), int(render.resolution_x * scale), 4), dtype=np.float32)
+
+
+def render_flat(scene, style, path, flat, lines=None):
+    """The picture over the plain colour, written to ``path``: with the shadows painted, the watercolour, the sketch or the
+    lines when asked."""
+    mode = (style or {}).get("mode") or "none"
+    sh = shadows_of(scene)
+    floor = bool(flat.get("floor", True))
+    r = scene.render
+    keep = (r.filepath, r.image_settings.file_format, r.image_settings.color_depth, r.image_settings.color_mode)
+    try:
+        r.filepath = path
+        r.image_settings.file_format = "PNG"
+        r.image_settings.color_mode = "RGBA"
+        sketch = mode == "sketch"
+        with _OverColour(scene) as over:
+            if sketch and not style.get("base", True):
+                arr = _bare_picture(r)
+            else:
+                bpy.ops.render.render(write_still=True)
+                arr = _read_pixels(path)
+            mask = over.shadows(path, floor) if sh or (floor and not sketch) else None
+        if sketch:
+            # (the sketch's paper is the colour: its shadows, when painted, go over the model and the floor alike)
+            if sh:
+                arr = paint_shadows(arr, mask, sh)
+            out = paper_behind(overlay_lines(arr, lines), tuple(flat["color"][:3]))
+        else:
+            if sh:
+                out = paint_shadows(over_colour(arr, flat), mask, sh)
+            else:
+                out = over_colour(arr, flat, None if mask is None else mask * (1.0 - arr[..., 3]))
+            if mode == "watercolour":
+                out = watercolour(out, style)
+            out = overlay_lines(out, lines)
+        r.filepath, r.image_settings.file_format, r.image_settings.color_depth, r.image_settings.color_mode = keep
+        _write_png(path, out)
+        say("plain background", flat["color"], "floor", floor, "shadows", (sh or {}).get("draw", "as rendered"))
+    finally:
+        r.filepath, r.image_settings.file_format, r.image_settings.color_depth, r.image_settings.color_mode = keep
+
+
 def render_styled(scene, style, path, lines=None):
     """Render the scene to ``path`` (a PNG) and make the style's picture of it: the lux colours, the sketch on its paper or the
     watercolour. ``lines``: the line layer to lay over it (see overlay_lines). Without a style or lines it is the plain render."""
     mode = (style or {}).get("mode") or "none"
+    flat = flat_of(scene)
+    if flat and mode != "light":                          # (the lux picture has no sky to replace)
+        render_flat(scene, style, path, flat, lines)
+        return None
+    sh = shadows_of(scene) if mode != "light" else None
     if mode not in ("light", "sketch", "watercolour"):
-        if not lines:
+        if not lines and not sh:
             bpy.ops.render.render(write_still=True)
             return None
         r = scene.render
         keep = (r.filepath, r.image_settings.file_format, r.image_settings.color_depth, r.image_settings.color_mode)
         try:
+            mask = shadow_mask(scene, path) if sh else None
+            r.filepath = path
             r.image_settings.color_mode = "RGBA"
             bpy.ops.render.render(write_still=True)
-            arr = overlay_lines(_read_pixels(path), lines)
+            arr = _read_pixels(path)
+            if sh:
+                arr = paint_shadows(arr, mask, sh)
+            arr = overlay_lines(arr, lines)
             r.filepath, r.image_settings.file_format, r.image_settings.color_depth, r.image_settings.color_mode = keep
             _write_png(path, arr)
         finally:
@@ -4184,13 +4512,24 @@ def render_styled(scene, style, path, lines=None):
             _write_png(path, res)
             say("lux scale", f"{lo:g} to {hi:g} lx")
             return (lo, hi)
+        sketch = mode == "sketch"
+        mask = shadow_mask(scene, path) if sh else None
+        r.filepath = path
         r.image_settings.color_mode = "RGBA"
-        bpy.ops.render.render(write_still=True)
-        arr = _read_pixels(path)
-        if mode == "sketch":
+        if sketch and not style.get("base", True):
+            arr = _bare_picture(r)                             # only the lines: nothing under them to render
+        else:
+            bpy.ops.render.render(write_still=True)
+            arr = _read_pixels(path)
+        if sketch:
+            if sh:
+                arr = paint_shadows(arr, mask, sh)
             arr = paper_behind(overlay_lines(arr, lines))      # the lines are the sketch: on the white model, then on the paper
         else:
-            arr = overlay_lines(watercolour(arr, style), lines)    # ink over the wash
+            arr = watercolour(arr, style)
+            if sh:
+                arr = paint_shadows(arr, mask, sh)
+            arr = overlay_lines(arr, lines)                    # ink over the wash
         r.filepath, r.image_settings.file_format, r.image_settings.color_depth, r.image_settings.color_mode = keep
         _write_png(path, arr)
         say("style picture", mode)
@@ -4350,9 +4689,10 @@ def main():
         # The sky left transparent — only now: the exposure was measured with it.
         scene.render.film_transparent = True
         scene.render.image_settings.color_mode = "RGBA"
+        scene["rs_flat"] = "null"                      # a transparent sky was asked for: no colour behind it
     say("rendering", w, "x", h)
     lines = (st_main.get("style") or {}).get("lines")
-    styled = (st_main.get("style") or {}).get("mode") in ("light", "sketch", "watercolour") or bool(lines)
+    styled = (st_main.get("style") or {}).get("mode") in ("light", "sketch", "watercolour") or bool(lines) or bool(flat_of(scene)) or bool(shadows_of(scene))
     render_styled(scene, st_main.get("style"), job["output"], lines)
     if out.get("path"):
         if styled:

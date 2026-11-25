@@ -75,6 +75,31 @@ def _colour(v, default):
         return list(default)
 
 
+def flat(raw) -> dict | None:
+    """The plain-colour background, cleaned: ``color`` (sRGB 0..1); None: none."""
+    if not isinstance(raw, dict):
+        return None
+    return {"color": _colour(raw.get("color"), [1.0, 1.0, 1.0])}
+
+
+def shadows(raw, old_style=None) -> dict:
+    """How the shadows are drawn, cleaned (see presets.SHADOW_DEFAULT). A document that kept a sketch's hatching in its style
+    (``old_style``) and says nothing of shadows brings it here; its colour was the outlines', in linear light."""
+    d = dict(presets.SHADOW_DEFAULT)
+    if not isinstance(raw, dict):
+        if not (isinstance(old_style, dict) and old_style.get("mode") == "sketch" and old_style.get("hatch") in presets.SHADOW_DRAWS):
+            return d
+        linear = _colour(old_style.get("color"), presets.STYLE_DEFAULT["color"])
+        raw = {"draw": old_style["hatch"], "opacity": old_style.get("hatch_opacity", 0.7),
+               "spacing": old_style.get("hatch_spacing"), "angle": old_style.get("hatch_angle"),
+               "color": [12.92 * c if c <= 0.0031308 else 1.055 * c ** (1.0 / 2.4) - 0.055 for c in linear]}
+    d["draw"] = raw.get("draw") if raw.get("draw") in presets.SHADOW_DRAWS else "render"
+    d["color"] = _colour(raw.get("color"), presets.SHADOW_DEFAULT["color"])
+    for key, lo, hi in (("opacity", 0.05, 1.0), ("spacing", 3.0, 60.0), ("angle", 0.0, 180.0)):
+        d[key] = _num(raw.get(key), lo, hi, presets.SHADOW_DEFAULT[key])
+    return d
+
+
 def style(raw) -> dict:
     """The render's style, cleaned: ``mode`` (none, white, model, light, sketch, watercolour), the outlines every style can have
     (``width`` in pixels, 0 = none, and ``color``) and what each adds: the model's ``material`` (a name; "" = ``model_color``), the
@@ -92,6 +117,7 @@ def style(raw) -> dict:
     d["lux_max"] = _num(raw.get("lux_max"), 0.0, 1e6, 0.0)
     for key in ("noise", "extend", "wetness", "paper", "edges"):
         d[key] = _num(raw.get(key), 0.0, 1.0, presets.STYLE_DEFAULT[key])
+    d["base"] = bool(raw.get("base", True))
     return d
 
 
@@ -161,9 +187,11 @@ def clean(raw) -> dict | None:
         "ground_look": ground_look(raw.get("ground_look")),
         "skyline": skyline(raw.get("skyline")),
         "style": style(raw.get("style")),
+        "shadows": shadows(raw.get("shadows"), raw.get("style")),
         "ground_material": None,
         "hdri": None,
         "backdrop": None,
+        "flat": flat(raw.get("flat")),
         "output": output.clean(raw.get("output")),
         "section": section.clean(raw.get("section")),
     }

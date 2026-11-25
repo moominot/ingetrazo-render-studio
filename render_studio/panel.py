@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDoubleSpinBo
                                QToolButton, QVBoxLayout, QWidget)
 
 from . import drawing_fog, user_presets, lights as studio_lights, materials as mats, fast_export, output, pbr, presets, proxies, section, settings_store, studio_data, visibility, widgets
+from . import view_camera
 from .live import LiveSession
 from .preview import ImageWindow  # noqa: F401 - re-exported: panel.ImageWindow
 from .widgets import SliderRow
@@ -109,6 +110,25 @@ def apply_backdrop(block: dict, backdrop: dict | None) -> dict:
     return block
 
 
+def apply_flat(block: dict, flat: dict | None, floor: bool = True) -> dict:
+    """The look's block with one plain colour behind the model: ``flat`` = {color (sRGB, as the screen shows it)}. ``floor``: the
+    sun's shadows fall on the floor, over the colour. The look keeps lighting the scene."""
+    st = settings_store.flat(flat)
+    if st:
+        block["flat"] = dict(st, floor=bool(floor))
+    return block
+
+
+def apply_shadows(block: dict, shadows: dict | None, style: dict | None = None) -> dict:
+    """The look's block with the way the shadows are drawn (settings_store.shadows); nothing when they stay as rendered. A hatching's
+    lines are as thick as the style's outlines."""
+    st = settings_store.shadows(shadows) if shadows else None
+    if st and st["draw"] != "render":
+        st["width"] = settings_store.style(style)["width"] or 1.0
+        block["shadows"] = st
+    return block
+
+
 def apply_style_block(block: dict, scene, style: dict | None, lines: str | None = None) -> dict:
     """The look's block with the render's style (settings_store.style): only what the style uses goes to Blender. ``lines``: the line layer
     (outlines.write_layer) the script lays over the picture. A model made of one
@@ -131,6 +151,7 @@ def apply_style_block(block: dict, scene, style: dict | None, lines: str | None 
         out["lux_max"] = st["lux_max"]
     elif st["mode"] == "sketch":
         out["noise"], out["extend"] = st["noise"], st["extend"]
+        out["base"] = st["base"]
     elif st["mode"] == "watercolour":
         out.update(wetness=st["wetness"], paper=st["paper"], edges=st["edges"])
     if lines:
@@ -202,7 +223,7 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
                      skyline: dict | None = None, style: dict | None = None, lines: str | None = None,
                      serve: bool = False, live: bool = False, reuse_model: bool = False,
                      output: dict | None = None, doc_path=None, section_opts: dict | None = None,
-                     progress=None):
+                     progress=None, viewport=None, flat: dict | None = None, shadows: dict | None = None):
     """Export the model (IngeTrazo's own job writer) and add the look (and
     the 360° background, if any). ``serve``: Blender builds the scene and then
     waits for cameras on its input (the live view). ``live``: a draft scene
@@ -234,6 +255,8 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
         if sk["type"]:
             block["skyline"] = {k: v for k, v in sk.items() if v is not None}
     block = apply_style_block(block, scene, style, lines)
+    block = apply_flat(block, flat, ground_shadow)
+    block = apply_shadows(block, shadows, style)
     block = presets.apply_sliders(block, sliders)
     block = drawing_fog.apply(block, scene)           # the drawing's own fog (IngeTrazo 0.6.3), when it has one
     try:
@@ -259,7 +282,7 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
     if live:
         block["live"] = True
     try:
-        sec = section.job_block(scene, section_opts)        # the active section cuts the render too
+        sec = section.job_block(scene, section_opts, viewport)      # the active section cuts the render too
     except Exception:  # noqa: BLE001 - never stops a render: the whole model
         _log.exception("section not read")
         sec = None
@@ -318,6 +341,7 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
     data = json.loads(job.read_text(encoding="utf-8"))
     if out_of_file and ground:
         data["ground"] = ground_block
+    data["camera"] = view_camera.camera_dict(camera)       # with the two-point view's level sight line and frame shift
     if output is not None and not live:
         # The final file: the PNG Blender always writes (the preview window reads it) is it
         # for PNG and JPEG; the deeper formats get a file of their own beside it.
@@ -582,6 +606,10 @@ class StudioPanel(QWidget):
         self.style_extend.setToolTip("How far the lines run past their corners, as a draughtsman's do: in centimetres of the model "
                                      "(estimated at the model's own distance from the camera).")
         form_s.addRow("Line extension", self.style_extend)
+        self.style_base = QCheckBox("Render under the lines")
+        self.style_base.setToolTip("On: the white model, lit, under the lines. Off: only the lines (and the shadows' hatching) on paper.")
+        self.style_base.setChecked(True)
+        form_s.addRow(self.style_base)
         # Watercolour
         self.style_wet = widgets.NumberSlider(0.0, 1.0, 0.05, "{:.0%}")
         self.style_wet.setToolTip("How far the colour spreads: dry and detailed ← → wet washes.")
@@ -596,9 +624,10 @@ class StudioPanel(QWidget):
         form_s.addRow(self.style_note)
         self._style_rows = {
             "white": (), "model": (self.style_material, self.style_model_colour), "light": (self.style_lux,),
-            "sketch": (self.style_noise, self.style_extend), "watercolour": (self.style_wet, self.style_edges, self.style_paper),
+            "sketch": (self.style_noise, self.style_extend, self.style_base), "watercolour": (self.style_wet, self.style_edges, self.style_paper),
             "none": ()}
         col_main.addWidget(box_style)
+        col_main.addWidget(self._build_shadows_box())
         col_main.addWidget(self._build_camera_box())          # the camera, under the style
 
         # The background: the look's own sky, a 360° panorama, or one fixed picture.
@@ -608,13 +637,15 @@ class StudioPanel(QWidget):
         self.bg_mode.addItem(tr("Sky of the look"), "sky")
         self.bg_mode.addItem(tr("360° panorama"), "pano")
         self.bg_mode.addItem(tr("Fixed picture"), "picture")
+        self.bg_mode.addItem(tr("Plain colour"), "flat")
         saved_pano = str(st.value(_SETTINGS + "hdri", "") or "")
         saved_pic = str(st.value(_SETTINGS + "backdrop", "") or "")
         mode0 = str(st.value(_SETTINGS + "bg_mode", "pano" if saved_pano else ("picture" if saved_pic else "sky")))
         self.bg_mode.setCurrentIndex(max(0, self.bg_mode.findData(mode0)))
         self.bg_mode.setToolTip("What is seen behind the model. Sky of the look: the sky the look makes. "
                                 "360° panorama: a photo all round you, which also lights the model. "
-                                "Fixed picture: one flat picture behind it, which stays put when the view turns.")
+                                "Fixed picture: one flat picture behind it, which stays put when the view turns. "
+                                "Plain colour: exactly that colour behind the model (white, for instance).")
         form2.addRow("Show", self.bg_mode)
         self.bg_note = self._caption("")
         self.bg_note.setStyleSheet("color: #b36b00; font-size: 11px")
@@ -666,6 +697,15 @@ class StudioPanel(QWidget):
         self.backdrop_strength_row = SliderRow(self.backdrop_strength, "{:+.1f} stops",
                                                "How bright the picture is in the render")
         form2.addRow("Picture brightness", self.backdrop_strength_row)
+        # the plain colour's own controls
+        from .section_panel import ColourButton
+        try:
+            colour0 = [float(c) for c in str(st.value(_SETTINGS + "flat_color", "1,1,1")).split(",")][:3]
+        except ValueError:
+            colour0 = [1.0, 1.0, 1.0]
+        self.flat_colour = ColourButton(colour0 if len(colour0) == 3 else [1.0, 1.0, 1.0], "Background colour")
+        self.flat_colour.setToolTip("The colour behind the model, exactly as it is: the exposure and the look do not tone it.")
+        form2.addRow("Colour", self.flat_colour)
         # advanced
         self.bg_more = widgets.Section()            # (in view when it is a panorama: what is touched first, not an «advanced» part)
         self.hdri_height = _slider(0.5, 30.0, float(st.value(_SETTINGS + "hdri_height", 2.5)), 295)
@@ -687,9 +727,11 @@ class StudioPanel(QWidget):
         self._bg_rows = {
             "pano": [self.hdri, self.hdri_light],
             "picture": [self.backdrop, self.backdrop_fit, self.backdrop_strength_row],
+            "flat": [self.flat_colour],
         }
         self._form_bg = form2
         self.bg_mode.currentIndexChanged.connect(self._bg_enable)
+        self.bg_mode.currentIndexChanged.connect(self._floor_enable)
         col.addWidget(box_bg)
 
         # The ground under the model.
@@ -704,14 +746,14 @@ class StudioPanel(QWidget):
         form_g.addRow("", self.ground)
         self.ground_shadow = QCheckBox("Shadow on the floor")
         self.ground_shadow.setToolTip(
-            "With no generated ground: the model still throws its shadow on the floor, at its foot, and "
-            "nothing else of the floor is drawn (the background, or the 360° image, shows through). "
-            "Needs the sun or a light that casts shadows.")
+            "The model throws its shadow on the floor, at its foot. With no generated ground, or over a plain colour, "
+            "nothing else of the floor is drawn (what is behind shows through). A generated ground seen as it is "
+            "always takes the shadows. Needs the sun or a light that casts shadows.")
         self.ground_shadow.setChecked(str(st.value(_SETTINGS + "ground_shadow", "true")).lower() != "false")
         self.ground_shadow.toggled.connect(lambda on: QSettings().setValue(_SETTINGS + "ground_shadow", "true" if on else "false"))
-        self.ground.toggled.connect(lambda on: self.ground_shadow.setEnabled(not on))
-        self.ground_shadow.setEnabled(not self.ground.isChecked())
+        self.ground.toggled.connect(self._floor_enable)
         form_g.addRow("", self.ground_shadow)
+        self._floor_enable()
         self.ground_type = QComboBox()
         self.ground_type.addItem(tr("Look's own"), "")
         for key, (label, _c, _r) in presets.GROUND_TYPES.items():
@@ -1239,12 +1281,13 @@ class StudioPanel(QWidget):
         return write_studio_job(
             self.app.scene, self.app.viewport.camera, work, self.preset.currentData(),
             self.slider_values(), engine=self.live_engine(), quality=0, width=width,
-            height=height, hdri=self.hdri_settings(), backdrop=self.backdrop_settings(), ground=self.ground.isChecked(),
+            height=height, hdri=self.hdri_settings(), backdrop=self.backdrop_settings(), flat=self.flat_settings(), shadows=self.shadow_settings(), ground=self.ground.isChecked(),
                 ground_material=self.ground_material_settings(), ground_look=self.ground_look_settings(), skyline=self.skyline_settings(), style=self.style_settings(),
             ground_shadow=self.ground_shadow.isChecked(),
             materials=self.material_specs() if materials is None else materials, serve=True,
             live=True, reuse_model=reuse_model, doc_path=self.doc_path(),
-            section_opts=self.section_tab.settings(), progress=self._export_progress())
+            section_opts=self.section_tab.settings(), progress=self._export_progress(),
+                viewport=getattr(self.app, "viewport", None))
 
     def doc_path(self):
         """The drawing's file (None until it is saved): proxies keep their originals
@@ -1309,11 +1352,12 @@ class StudioPanel(QWidget):
             job, script = write_studio_job(
                 self.app.viewport.scene, self.render_camera(), work, self.preset.currentData(),
                 self.slider_values(), engine=self.engine.currentData(), quality=self.quality.currentIndex(),
-                width=width, height=height, hdri=self.hdri_settings(), backdrop=self.backdrop_settings(), ground=self.ground.isChecked(),
+                width=width, height=height, hdri=self.hdri_settings(), backdrop=self.backdrop_settings(), flat=self.flat_settings(), shadows=self.shadow_settings(), ground=self.ground.isChecked(),
                 ground_material=self.ground_material_settings(), ground_look=self.ground_look_settings(), skyline=self.skyline_settings(), style=self.style_settings(),
                 ground_shadow=self.ground_shadow.isChecked(), materials=self.material_specs(),
                 output=self.output_tab.settings(), doc_path=self.doc_path(),
-                section_opts=self.section_tab.settings(), progress=self._export_progress())
+                section_opts=self.section_tab.settings(), progress=self._export_progress(),
+                viewport=getattr(self.app, "viewport", None))
             data = json.loads(job.read_text(encoding="utf-8"))
             blend = work / "scene.blend"
             data["expert"], data["blend"] = True, str(blend)
@@ -1631,6 +1675,7 @@ class StudioPanel(QWidget):
             sl.valueChanged.connect(self._schedule_save)
         self.hdri_light.toggled.connect(self._schedule_save)
         self.ground.toggled.connect(self._schedule_save)
+        self.flat_colour.changed.connect(self._schedule_save)
         self.ground_shadow.toggled.connect(self._schedule_save)
         self.ground_material.currentIndexChanged.connect(self._schedule_save)
         self.ground_material.currentIndexChanged.connect(lambda _i: self._ground_grass_hint())
@@ -1648,7 +1693,9 @@ class StudioPanel(QWidget):
         self.style_mode.currentIndexChanged.connect(self._style_mode_chosen)
         for sig in (self.style_mode.currentIndexChanged, self.style_width.valueChanged, self.style_lux.valueChanged,
                     self.style_noise.valueChanged, self.style_extend.valueChanged, self.style_wet.valueChanged,
-                    self.style_edges.valueChanged, self.style_paper.valueChanged, self.style_material.currentIndexChanged):
+                    self.style_edges.valueChanged, self.style_paper.valueChanged, self.style_material.currentIndexChanged,
+                    self.style_base.toggled, self.shadow_draw.currentIndexChanged, self.shadow_opacity.valueChanged,
+                    self.shadow_spacing.valueChanged, self.shadow_angle.valueChanged, self.shadow_colour.changed):
             sig.connect(self._schedule_save)
         for b in (self.style_colour, self.style_model_colour):
             b.changed.connect(self._schedule_save)
@@ -1690,6 +1737,7 @@ class StudioPanel(QWidget):
             "ground_look": self.ground_look_settings(),
             "skyline": self.skyline_settings(),
             "style": self.style_settings(),
+            "shadows": self.shadow_settings(),
             "hdri": ({"path": hdri, "rotation": round(_value(self.hdri_rotation), 3),
                       "brightness": round(_value(self.hdri_strength), 3),
                       "height": round(_value(self.hdri_height), 2),
@@ -1698,6 +1746,7 @@ class StudioPanel(QWidget):
             "backdrop": ({"path": pic, "fit": self.backdrop_fit.currentData(),
                           "brightness": round(_value(self.backdrop_strength), 3)}
                          if pic and pic != _CHOOSE and self.bg_mode.currentData() == "picture" else None),
+            "flat": self.flat_settings(),
         }
 
     def _interior_toggled(self, on: bool) -> None:
@@ -1723,8 +1772,9 @@ class StudioPanel(QWidget):
                    self.ground_offset, self.ground_grass, self.ground_radius, self.skyline_type, self.skyline_height,
                    self.skyline_distance, self.skyline_seed, self.style_mode, self.style_width, self.style_lux, self.style_noise,
                    self.style_extend, self.style_wet, self.style_edges, self.style_paper, self.style_material,
+                   self.style_base, self.shadow_draw, self.shadow_colour, self.shadow_opacity, self.shadow_spacing, self.shadow_angle,
                    self.hdri_rotation, self.hdri_strength, self.hdri_height, self.hdri_light,
-                   self.bg_mode, self.backdrop, self.backdrop_fit, self.backdrop_strength,
+                   self.bg_mode, self.backdrop, self.backdrop_fit, self.backdrop_strength, self.flat_colour,
                    *self.sliders.values()]
         for w in widgets:
             w.blockSignals(True)
@@ -1735,7 +1785,6 @@ class StudioPanel(QWidget):
             self.width.setValue(data["width"])
             self.ground.setChecked(bool(data.get("ground", True)))
             self.ground_shadow.setChecked(bool(data.get("ground_shadow", True)))
-            self.ground_shadow.setEnabled(not self.ground.isChecked())
             self.ground_more.setEnabled(self.ground.isChecked())
             gl = data["ground_look"]
             self.ground_type.setCurrentIndex(max(0, self.ground_type.findData(gl["type"])))
@@ -1757,6 +1806,14 @@ class StudioPanel(QWidget):
             self.style_wet.setValue(sy["wetness"])
             self.style_edges.setValue(sy["edges"])
             self.style_paper.setValue(sy["paper"])
+            self.style_base.setChecked(sy["base"])
+            sh = settings_store.shadows(data.get("shadows"))
+            self.shadow_draw.setCurrentIndex(max(0, self.shadow_draw.findData(sh["draw"])))
+            self.shadow_colour.set_rgb(sh["color"])
+            self.shadow_opacity.setValue(sh["opacity"] * 100.0)
+            self.shadow_spacing.setValue(sh["spacing"])
+            self.shadow_angle.setValue(sh["angle"])
+
             if sy["material"] and self.style_material.findData(sy["material"]) < 0:
                 self.style_material.addItem(sy["material"], sy["material"])
             self.style_material.setCurrentIndex(max(0, self.style_material.findData(sy["material"])))
@@ -1803,12 +1860,16 @@ class StudioPanel(QWidget):
             else:
                 self.backdrop.setCurrentIndex(0)
             self._backdrop_prev = self.backdrop.currentIndex()
+            plain = data.get("flat")
+            if plain:
+                self.flat_colour.set_rgb(plain["color"])
             self.bg_mode.setCurrentIndex(self.bg_mode.findData(
-                "pano" if self.hdri.currentData() else ("picture" if self.backdrop.currentData() else "sky")))
+                "flat" if plain else "pano" if self.hdri.currentData() else ("picture" if self.backdrop.currentData() else "sky")))
         finally:
             for w in widgets:
                 w.blockSignals(False)
             self._applying = False
+        self._shadows_enable()
         for row in (self.ground_rough_row, self.ground_haze_row):
             row.update_value()
         for row in (*self.slider_rows.values(), self.hdri_rotation_row, self.hdri_strength_row, self.hdri_height_row,
@@ -1986,6 +2047,10 @@ class StudioPanel(QWidget):
         self._store_user_preset(name, preset)
         self._set_status(tr("Preset «{name}» imported. Choose it in the list to use it.", name=name))
 
+    def _floor_enable(self, *_a):
+        """«Shadow on the floor» can be chosen unless a generated ground is seen as it is."""
+        self.ground_shadow.setEnabled(not self.ground.isChecked() or self.bg_mode.currentData() == "flat")
+
     def _bg_enable(self, *_a):
         """Show the controls of the chosen background only (and say when the output hides it)."""
         mode = self.bg_mode.currentData()
@@ -2076,13 +2141,59 @@ class StudioPanel(QWidget):
         combo.setCurrentIndex(max(0, combo.findData(keep)))
         combo.blockSignals(False)
 
+    def _build_shadows_box(self):
+        """«Shadows»: how the sun's shadows are drawn, whatever the style. One choice; its settings only when it needs them."""
+        from .section_panel import ColourButton
+        box = QGroupBox("Shadows")
+        form = QFormLayout(box)
+        form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        self._form_shadows = form
+        self.shadow_draw = QComboBox()
+        for key, label in presets.SHADOW_DRAWS.items():
+            self.shadow_draw.addItem(tr(label), key)
+        self.shadow_draw.setToolTip("How the sun's shadows (and the faces turned away from it) are drawn: as Blender renders them, "
+                                    "or painted over in a colour or a hatching.")
+        form.addRow("Draw", self.shadow_draw)
+        self.shadow_colour = ColourButton(presets.SHADOW_DEFAULT["color"], "Shadow colour")
+        self.shadow_colour.setToolTip("The colour of the shadows, or of their hatching.")
+        form.addRow("Colour", self.shadow_colour)
+        self.shadow_opacity = widgets.NumberSlider(5.0, 100.0, 5.0, "{:.0f}%")
+        self.shadow_opacity.setToolTip("How much the colour covers what is under it.")
+        form.addRow("Intensity", self.shadow_opacity)
+        self.shadow_spacing = widgets.NumberSlider(3.0, 40.0, 1.0, "{:.0f} px")
+        self.shadow_spacing.setToolTip("The distance between lines or dots, in pixels of the picture. They are as thick as the outlines.")
+        form.addRow("Hatch spacing", self.shadow_spacing)
+        self.shadow_angle = widgets.NumberSlider(0.0, 175.0, 5.0, "{:.0f}°")
+        self.shadow_angle.setToolTip("The direction of the hatching.")
+        form.addRow("Hatch angle", self.shadow_angle)
+        d = presets.SHADOW_DEFAULT
+        self.shadow_opacity.setValue(d["opacity"] * 100.0)
+        self.shadow_spacing.setValue(d["spacing"])
+        self.shadow_angle.setValue(d["angle"])
+        self.shadow_draw.currentIndexChanged.connect(self._shadows_enable)
+        self._shadows_enable()
+        return box
+
+    def _shadows_enable(self, *_a) -> None:
+        draw = self.shadow_draw.currentData() or "render"
+        for w in (self.shadow_colour, self.shadow_opacity):
+            self._form_shadows.setRowVisible(w, draw != "render")
+        for w in (self.shadow_spacing, self.shadow_angle):
+            self._form_shadows.setRowVisible(w, draw in ("lines", "cross", "dots"))
+
+    def shadow_settings(self) -> dict:
+        return {"draw": self.shadow_draw.currentData() or "render", "color": [round(float(c), 4) for c in self.shadow_colour.rgb()],
+                "opacity": round(self.shadow_opacity.value() / 100.0, 3), "spacing": round(self.shadow_spacing.value(), 1),
+                "angle": round(self.shadow_angle.value(), 1)}
+
     def style_settings(self) -> dict:
         return {"mode": self.style_mode.currentData() or "none", "width": round(self.style_width.value(), 2),
                 "color": self.style_colour.rgb(), "material": self.style_material.currentData() or "",
                 "model_color": self.style_model_colour.rgb(), "lux_max": round(self.style_lux.value(), 0),
                 "noise": round(self.style_noise.value(), 3), "extend": round(self.style_extend.value() / 50.0, 3),
                 "wetness": round(self.style_wet.value(), 3), "paper": round(self.style_paper.value(), 3),
-                "edges": round(self.style_edges.value(), 3)}
+                "edges": round(self.style_edges.value(), 3),
+                "base": self.style_base.isChecked()}
 
     def _style_enable(self, *_a) -> None:
         """Only the rows the chosen style uses; the outlines' colour only when there are outlines."""
@@ -2252,6 +2363,11 @@ class StudioPanel(QWidget):
         return {"path": path, "fit": self.backdrop_fit.currentData(),
                 "strength": 2.0 ** _value(self.backdrop_strength)}
 
+    def flat_settings(self) -> dict | None:
+        if self.bg_mode.currentData() != "flat":
+            return None
+        return {"color": [round(float(c), 4) for c in self.flat_colour.rgb()]}
+
     def hdri_settings(self) -> dict | None:
         path = self.hdri.currentData()
         if self.bg_mode.currentData() != "pano" or not path or path == _CHOOSE:
@@ -2352,6 +2468,7 @@ class StudioPanel(QWidget):
         st.setValue(_SETTINGS + "hdri_height", _value(self.hdri_height))
         st.setValue(_SETTINGS + "hdri_light", self.hdri_light.isChecked())
         st.setValue(_SETTINGS + "bg_mode", self.bg_mode.currentData())
+        st.setValue(_SETTINGS + "flat_color", ",".join(f"{c:.4f}" for c in self.flat_colour.rgb()))
         pic = self.backdrop.currentData()
         st.setValue(_SETTINGS + "backdrop", pic if pic != _CHOOSE else "")
         st.setValue(_SETTINGS + "backdrop_fit", self.backdrop_fit.currentData())
@@ -2674,11 +2791,12 @@ class StudioPanel(QWidget):
                 self.app.viewport.scene, camera or self.app.viewport.camera, self.work,
                 self.preset.currentData(), self.slider_values(),
                 engine=self.engine.currentData(), quality=self.quality.currentIndex(),
-                width=width, height=height, hdri=self.hdri_settings(), backdrop=self.backdrop_settings(), ground=self.ground.isChecked(),
+                width=width, height=height, hdri=self.hdri_settings(), backdrop=self.backdrop_settings(), flat=self.flat_settings(), shadows=self.shadow_settings(), ground=self.ground.isChecked(),
                 ground_material=self.ground_material_settings(), ground_look=self.ground_look_settings(), skyline=self.skyline_settings(), style=self.style_settings(), lines=lines,
                 ground_shadow=self.ground_shadow.isChecked(),
                 materials=self.material_specs(), output=out, doc_path=self.doc_path(),
-                section_opts=self.section_tab.settings(), progress=self._export_status)
+                section_opts=self.section_tab.settings(), progress=self._export_status,
+                viewport=getattr(self.app, "viewport", None))
         except Exception as exc:  # noqa: BLE001 - say it, never crash the app
             _log.exception("render job failed")
             self._set_status(tr("Could not prepare the render: {error}", error=exc))

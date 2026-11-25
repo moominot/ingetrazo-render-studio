@@ -117,7 +117,13 @@ GROUND_TYPES = {
 #: The styles of the render: key → label. Every style can have outlines; each adds its own settings.
 STYLES = {"none": "None", "white": "White", "model": "Model", "light": "Light", "sketch": "Sketch", "watercolour": "Watercolour"}
 STYLE_DEFAULT = {"mode": "none", "width": 0.0, "color": [0.05, 0.05, 0.05], "material": "", "model_color": [0.85, 0.80, 0.70],
-                 "lux_max": 0.0, "noise": 0.5, "extend": 0.4, "wetness": 0.5, "paper": 0.5, "edges": 0.4}
+                 "lux_max": 0.0, "noise": 0.5, "extend": 0.4, "wetness": 0.5, "paper": 0.5, "edges": 0.4,
+                 # the sketch: whether the render shows under its lines
+                 "base": True}
+#: How the sun's shadows are drawn, for every style: key → label. "render": as Blender makes them, nothing drawn over them.
+SHADOW_DRAWS = {"render": "As rendered", "colour": "Colour", "lines": "Lines", "cross": "Cross-hatch", "dots": "Dots"}
+#: ``color`` as the screen shows it; ``spacing`` in pixels and ``angle`` in degrees (the hatchings).
+SHADOW_DEFAULT = {"draw": "render", "color": [0.1, 0.12, 0.18], "opacity": 0.5, "spacing": 8.0, "angle": 45.0}
 
 #: The distant skyline that hides the line between ground and sky: key → label.
 SKYLINE_TYPES = {"mountains": "Mountains", "hills": "Hills", "forest": "Distant forest", "city": "City skyline"}

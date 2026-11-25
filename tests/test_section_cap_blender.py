@@ -93,4 +93,18 @@ studio["clip_section"](dict(SEC, style="material", material="Concrete", shadows=
 ok(not any(n.type == "EMISSION" for n in mine.node_tree.nodes), "the model's material is not changed by an unlit cap")
 cap = bpy.data.objects.get("Section cap")
 ok(cap is not None and any(n.type == "EMISSION" for n in cap.data.materials[0].node_tree.nodes), "…its copy is what the cap wears")
+
+# IngeTrazo's own cap (triangles sent in the job): an object of its own, facing the camera; the cut mesh keeps no cap face
+sc = fresh()
+tris = [[[0, -1, -1], [0, 1, -1], [0, 1, 1]], [[0, -1, -1], [0, 1, 1], [0, -1, 1]]]     # wound the wrong way round on purpose
+plane = {"point": [0, 0, 0], "normal": [1, 0, 0], "cap_tris": tris}
+studio["clip_section"](dict(SEC, planes=[plane]))
+cap = bpy.data.objects.get("Section cap")
+ok(cap is not None and len(cap.data.polygons) == 2 and cap.visible_shadow is True, "its own cap: an object of two triangles, shadows on")
+ok(cap is not None and all(p.normal.x > 0 for p in cap.data.polygons), "…facing the side that was cut away")
+cube = bpy.data.objects["Cube"]
+ok(len(cube.data.materials) <= 1 and not any(p.material_index > 0 for p in cube.data.polygons), "…and the cut mesh makes no cap of its own")
+pix = look(sc, "own")
+c = pix[len(pix) // 2]
+ok(c[0] > 30 and c[0] > 3 * c[1], f"…and it is seen, red as the cap's colour (centre pixel {c}, lit)")
 sys.exit(1 if fails else 0)
