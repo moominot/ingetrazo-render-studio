@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDoubleSpinBo
 from . import drawing_fog, user_presets, lights as studio_lights, materials as mats, fast_export, output, pbr, presets, proxies, section, settings_store, studio_data, visibility, widgets
 from . import look_model, view_camera
 from .style_groups import StyleGroups
+from .toolbar import Commands
 from .live import LiveSession
 from .preview import ImageWindow  # noqa: F401 - re-exported: panel.ImageWindow
 from .widgets import SliderRow
@@ -479,6 +480,7 @@ class StudioPanel(QWidget):
         self.work = None
         self.window = None
         self._log_lines = []
+        self.commands = Commands(self)                # the toolbar's, which also hold the live view's two switches
         st = QSettings()
         lang = _lang()
         outer = QVBoxLayout(self)
@@ -964,17 +966,6 @@ class StudioPanel(QWidget):
         self.help_btn.setToolTip("How Render Studio works, and what each control does")
         self.help_btn.clicked.connect(lambda: self.show_help("panel"))
         self.tabs.setCornerWidget(self.help_btn, Qt.TopRightCorner)          # the general help, beside the tabs
-        self.materials_btn = QPushButton("Materials…")
-        self.materials_btn.setToolTip("How each material renders: polish, metal, relief, glass, glow.")
-        self.materials_btn.clicked.connect(self.open_materials)
-        self.lights_btn = QPushButton("Lights…")
-        self.lights_btn.setToolTip("Point, spot, area and sun lights for the render: the list, each light's settings, "
-                                   "and placing them in the model.")
-        self.lights_btn.clicked.connect(self.open_lights)
-        mrow = QHBoxLayout()
-        mrow.addWidget(self.materials_btn, 1)
-        mrow.addWidget(self.lights_btn, 1)
-        outer.addLayout(mrow)
         self.editor = None
         self._live = None
         self._prep = None
@@ -982,7 +973,8 @@ class StudioPanel(QWidget):
         self._direct = False
         self._save_to = None
         self._cancelled = False
-        # Render, and under its arrow «Render and save…» and the scenes; Open preview, and under its arrow «Open in Blender…».
+        # Render, and under its arrow «Render and save…», the scenes and «Open in Blender…» (the preview, the materials and the
+        # lights are on the toolbar: toolbar.py).
         self.render_save_btn = QAction("Render and save…", self)
         self.render_save_btn.setToolTip("Asks where to save, makes the final picture and saves it straight away, "
                                         "without the live preview and without retouching.")
@@ -990,21 +982,16 @@ class StudioPanel(QWidget):
         self.render_scenes_btn = QAction("Render the selected scenes", self)
         self.render_scenes_btn.setToolTip("Renders the scenes ticked in the Output tab, one after another, into its folder.")
         self.render_scenes_btn.triggered.connect(lambda: self.render_scenes())
-        self.render_btn = widgets.split_button(
-            "Render", lambda: self.render_main(),
-            "Makes the final picture now, with the Engine, Quality and size above, without the live preview. It opens in "
-            "a window with the retouch tools and Save image…. With «Scenes» chosen in the Output tab it renders those.",
-            [self.render_save_btn, self.render_scenes_btn])
-        outer.addWidget(self.render_btn)
         self.expert_btn = QAction("Open in Blender…", self)
         self.expert_btn.setToolTip("Expert mode: opens the scene, as Render would make it, in a Blender with its own window "
                                    "to work in it. The file is saved first; nothing is rendered.")
         self.expert_btn.triggered.connect(lambda: self.open_in_blender())
-        self.preview_btn = widgets.split_button(
-            "Open preview…", lambda: self.open_preview(),
-            "Opens the preview window: a live view of the scene that you can zoom and move, with Render (then retouch and "
-            "save) and Render and save…", [self.expert_btn])
-        outer.addWidget(self.preview_btn)
+        self.render_btn = widgets.split_button(
+            "Render", lambda: self.render_main(),
+            "Makes the final picture now, with the Engine, Quality and size above, without the live preview. It opens in "
+            "a window with the retouch tools and Save image…. With «Scenes» chosen in the Output tab it renders those.",
+            [self.render_save_btn, self.render_scenes_btn, self.expert_btn])
+        outer.addWidget(self.render_btn)
         self.status = QLabel("")
         self.status.setWordWrap(True)
         outer.addWidget(self.status)
@@ -1098,7 +1085,7 @@ class StudioPanel(QWidget):
         except Exception:  # noqa: BLE001 - never breaks the panel
             found = None
         self.need_box.setVisible(found is None)
-        self.preview_btn.setEnabled(found is not None)
+        self.commands.need_blender(found is not None)
         self.render_btn.setEnabled(found is not None)
         self.render_save_btn.setEnabled(found is not None)
         self.expert_btn.setEnabled(found is not None)
@@ -1377,8 +1364,8 @@ class StudioPanel(QWidget):
             self._live.image.connect(self._live_image)
             self._live.state.connect(self._set_status)
         win = self.preview()
-        self._live.set_follow_camera(win.follow_camera_box.isChecked())
-        self._live.set_follow_changes(win.follow_changes_box.isChecked())
+        self._live.set_follow_camera(self.commands.follow_camera.isChecked())
+        self._live.set_follow_changes(self.commands.follow_changes.isChecked())
         if prep and not self._live.active and not self._live.usable and self._prep is None:
             from .prep_dialog import PrepDialog
             self._prep = PrepDialog(win)
@@ -1567,9 +1554,9 @@ class StudioPanel(QWidget):
 
     def _follow_toggled(self, key: str, on: bool):
         QSettings().setValue(_SETTINGS + key, bool(on))
-        if self._live is not None and self.window is not None:
-            self._live.set_follow_camera(self.window.follow_camera_box.isChecked())
-            self._live.set_follow_changes(self.window.follow_changes_box.isChecked())
+        if self._live is not None:
+            self._live.set_follow_camera(self.commands.follow_camera.isChecked())
+            self._live.set_follow_changes(self.commands.follow_changes.isChecked())
 
     def _live_image(self, path):
         """A frame of the live view: into the window while it shows the preview."""

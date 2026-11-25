@@ -240,6 +240,7 @@ class SunTab(QWidget):
         self.head_place = _bold("Place")
         lay.addWidget(self.head_place)
         form = QFormLayout()
+        form.setContentsMargins(0, 0, 0, 0)        # (the group has its margins: a narrow tray has no room for more)
         form.setRowWrapPolicy(QFormLayout.WrapLongRows)
         self.where = _note()
         form.addRow(self.where)
@@ -254,7 +255,7 @@ class SunTab(QWidget):
         self.lon.setSuffix("°")
         self.lon.setToolTip("Longitude: east positive, west negative")
         for w in (self.lat, self.lon):
-            w.setMinimumWidth(72)                      # not as wide as ±180.0000 asks: the tray is narrow
+            w.setMinimumWidth(62)                      # not as wide as ±180.0000 asks: the tray is narrow
             w.setButtonSymbols(QDoubleSpinBox.NoButtons)   # typed, not stepped
             w.setSizePolicy(QSizePolicy.Ignored, w.sizePolicy().verticalPolicy())
             w.setKeyboardTracking(False)
@@ -287,6 +288,7 @@ class SunTab(QWidget):
         self.head_clock = _bold("Date and hour")
         lay.addWidget(self.head_clock)
         form2 = QFormLayout()
+        form2.setContentsMargins(0, 0, 0, 0)        # (the group has its margins: a narrow tray has no room for more)
         self.form_clock = form2
         form2.setRowWrapPolicy(QFormLayout.WrapLongRows)
         self.date = QDateEdit()

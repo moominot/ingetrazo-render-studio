@@ -107,7 +107,7 @@ ok(wait(lambda: any("samples=8" in l for l in renders()[n2:])), "when it stops: 
 
 # ---- Follow the camera off: the image keeps its camera ---------------------------------
 ok(wait(lambda: live._ready and not live._busy and live._done_key == live._quick_key), "settled again")
-panel.window.follow_camera_box.setChecked(False)
+panel.commands.follow_camera.setChecked(False)
 kept_eye = str(live._frozen["eye"])
 n3 = len(renders())
 app.viewport.camera.yaw += 0.6
@@ -119,12 +119,12 @@ loads0 = live.loads
 panel.preset.setCurrentIndex(panel.preset.findData("overcast"))
 ok(wait(lambda: live.loads > loads0 and any("samples=8" in l for l in renders()[n3:])), "a change still renders...")
 ok(all(kept_eye in l for l in renders()[n3:]), "...from the kept camera")
-panel.window.follow_camera_box.setChecked(True)
+panel.commands.follow_camera.setChecked(True)
 ok(wait(lambda: any(kept_eye not in l for l in renders()[n3:])), "on again: it follows the 3D view again")
 
 # ---- Follow changes off: the live scene keeps its model and materials -------------------
 ok(wait(lambda: live._ready and not live._busy), "ready")
-panel.window.follow_changes_box.setChecked(False)
+panel.commands.follow_changes.setChecked(False)
 loads1, t_glb = live.loads, glb.stat().st_mtime_ns
 app.scene.version += 1
 app.data = {**app.data, "materials": {"X": {"type": "grass", "grass_height": 0.2}}}
@@ -138,7 +138,7 @@ jl = json.load(open(live._work / "job.json"))
 ok(glb.stat().st_mtime_ns == t_glb and "X" not in (jl["studio"].get("materials") or {}),
    "...with the kept model (not exported) and the kept materials")
 loads2 = live.loads
-panel.window.follow_changes_box.setChecked(True)
+panel.commands.follow_changes.setChecked(True)
 ok(wait(lambda: live.loads > loads2 and live._ready), "on again: the edits come in")
 jl = json.load(open(live._work / "job.json"))
 ok(glb.stat().st_mtime_ns != t_glb and "X" in (jl["studio"].get("materials") or {}), "...model exported, materials applied")
@@ -170,5 +170,5 @@ panel.window.close(); qa.processEvents()
 p2 = P.StudioPanel(app); p2.blender = lambda: None
 ok(p2.open_preview() is None and p2.window is None and "Blender was not found" in p2.status.text(),
    "without Blender: a message, and no window")
-ok(not p2.preview_btn.isEnabled(), "...and Open preview is off")
+ok(not p2.commands.preview.isEnabled(), "...and Open preview is off")
 print("FAILED" if fails else "ALL OK"); sys.exit(1 if fails else 0)

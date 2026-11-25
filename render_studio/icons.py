@@ -252,7 +252,46 @@ def _refresh(p, ink):
     _arc_arrow(p, 60, 270)
 
 
+def _preview(p, ink):
+    # A screen with a play mark: the picture, live.
+    p.setBrush(Qt.NoBrush)
+    p.drawRoundedRect(QRectF(7, 10, 34, 24), 3, 3)
+    p.drawLine(QPointF(17, 41), QPointF(31, 41))
+    p.drawLine(QPointF(24, 34), QPointF(24, 41))
+    _fill(p, QPolygonF([QPointF(20, 16), QPointF(31, 22), QPointF(20, 28)]), 220)
+
+
+def _materials(p, ink):
+    # A sample ball, half of it in the accent, its shine.
+    half = QPainterPath()
+    half.moveTo(24, 8)
+    half.arcTo(QRectF(8, 8, 32, 32), 90, -180)
+    half.closeSubpath()
+    _fill(p, half, 130)
+    p.setBrush(Qt.NoBrush)
+    p.drawEllipse(QPointF(24, 24), 16, 16)
+    p.drawLine(QPointF(24, 8), QPointF(24, 40))
+    shine = QPainterPath()
+    shine.arcMoveTo(QRectF(13, 13, 22, 22), 110)
+    shine.arcTo(QRectF(13, 13, 22, 22), 110, 55)
+    p.drawPath(shine)
+
+
+def _lights(p, ink):
+    # A bulb, lit.
+    glass = QPainterPath()
+    glass.addEllipse(QPointF(24, 19), 11, 11)
+    _fill(p, glass, 90)
+    p.setBrush(Qt.NoBrush)
+    p.drawEllipse(QPointF(24, 19), 11, 11)
+    p.drawLine(QPointF(19, 33), QPointF(29, 33))
+    p.drawLine(QPointF(20, 38), QPointF(28, 38))
+    p.drawLine(QPointF(22, 42), QPointF(26, 42))
+    p.drawPolyline(QPolygonF([QPointF(21, 29), QPointF(21, 22), QPointF(24, 25), QPointF(27, 22), QPointF(27, 29)]))
+
+
 _DRAW = {
+    "preview": _preview, "materials": _materials, "lights": _lights,
     "follow_camera": _follow_camera, "follow_changes": _follow_changes, "refresh": _refresh,
     "comp_import": _comp_import, "comp_export": _comp_export,
     "comp_settings": _comp_settings, "comp_help": _comp_help,

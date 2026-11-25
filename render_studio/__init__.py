@@ -35,6 +35,10 @@ def setup(app):
                         tip=tr("Photographic renders: looks, auto exposure, clouds, live adjustments."))
     app.add_menu_action(tr("Render Studio materials…"), panel.open_materials,
                         tip=tr("How each material renders: polish, metal, relief, glass, glow."))
+    try:
+        panel.commands.build(app)                  # the toolbar: preview, the two syncs | materials, lights, Library
+    except Exception:  # noqa: BLE001 - a toolbar must never stop the extension loading
+        _log.exception("could not build the toolbar")
     if hasattr(app, "on_document_changed"):
         app.on_document_changed(panel.document_changed)
 

@@ -74,8 +74,7 @@ tab = panel.output_tab
 panel.show()
 ok(hasattr(panel.render_btn, "menu") and panel.render_btn.menu() is not None, "the Render button has an arrow with a menu")
 names = [a.text() for a in panel.render_btn.menu().actions()]
-ok(names == ["Render and save…", "Render the selected scenes"], f"…holding Render and save… and the scenes ({names})")
-ok([a.text() for a in panel.preview_btn.menu().actions()] == ["Open in Blender…"], "Open preview… has Open in Blender… under its arrow")
+ok(names == ["Render and save…", "Render the selected scenes", "Open in Blender…"], f"…holding Render and save…, the scenes and Open in Blender… ({names})")
 ok(not tab.scenes_box.isVisibleTo(tab), "the Output tab starts in «Current view»: no scenes list")
 tab.mode_scenes.setChecked(True); qa.processEvents()
 ok(tab.scenes_box.isVisibleTo(tab) and tab.scene_list.count() == 3 and all(tab.scene_list.item(i).checkState() for i in range(3)),

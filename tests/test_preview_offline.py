@@ -113,16 +113,17 @@ ok(w.mode == "preview" and see(w.bar_preview) and not see(w.bar_final), "the win
 ok(see(w.render_btn) and w.render_btn.isEnabled() and "Render and save" in w.render_save_btn.text() and w.render_btn.menu() is not None
    and w.render_save_btn in w.render_btn.menu().actions(), "…with Render, and Render and save… under its arrow")
 ok(see(w.scene_btn), "…and «New scene from this view…» always in view")
-ok(not see(w.update_btn), "…«Update preview» is not shown while Follow changes is on")
 ok(not any(see(s) for s in w.adj.values()), "…and the retouch sliders are hidden")
-ok(not hasattr(w, "more_btn"), "…there is no «More» fold any more")
-ok(see(w.follow_camera_box) and see(w.follow_changes_box) and see(w.render_btn)
-   and w.follow_camera_box.isCheckable() and not w.follow_camera_box.icon().isNull(),
-   "…the two live view switches are icon toggle buttons, always in view")
+ok(not any(hasattr(w, n) for n in ("more_btn", "follow_camera_box", "follow_changes_box", "update_btn")),
+   "…no «More» fold, and the live view's switches are not here: they are on the toolbar")
 ok(w.expert_btn in w.render_btn.menu().actions(), "…and Open in Blender… is under Render's arrow")
-w.follow_changes_box.setChecked(False); qa.processEvents()
-ok(see(w.update_btn), "…with Follow changes off, «Update preview» appears (it was not just disabled)")
-w.follow_changes_box.setChecked(True); qa.processEvents()
+c = panel.commands
+ok(c.follow_camera.isCheckable() and c.follow_changes.isCheckable() and not c.follow_camera.icon().isNull(),
+   "the two switches are commands with icons")
+ok(not c.update.isVisible(), "…«Update preview» is not offered while the changes are synced")
+c.follow_changes.setChecked(False); qa.processEvents()
+ok(c.update.isVisible(), "…and it is when they are not")
+c.follow_changes.setChecked(True); qa.processEvents()
 ok(w.summary.text() == "Render: EEVEE · Medium · 1920 × 1080 px · PNG, 8 bits", f"…and says what Render will use («{w.summary.text()}»)")
 panel.quality.setCurrentIndex(2); panel.engine.setCurrentIndex(panel.engine.findData("cycles")); panel.width.setValue(1280)
 ok(w.summary.text() == "Render: Cycles · High · 1280 × 720 px · PNG, 8 bits", f"…following the panel («{w.summary.text()}»)")
@@ -168,7 +169,8 @@ solo.close()
 # ---- the panel ---------------------------------------------------------------------------------------------
 ok(hasattr(panel, "render_btn") and hasattr(panel, "render_save_btn") and not hasattr(panel, "live_box"),
    "the panel has Render and Render and save…, and no Live view box (that is in the preview window)")
-ok(panel.preview_btn.text() == "Open preview…" and panel.preview_btn.isEnabled(), "…it opens the preview")
+ok(panel.commands.preview.isEnabled() and not hasattr(panel, "preview_btn") and not hasattr(panel, "materials_btn"),
+   "…and the preview, the materials and the lights are commands of the toolbar, not buttons of the panel")
 ok(set(panel.slider_rows) == set(presets.SLIDERS), "every panel slider has a row with a value and a hint")
 ok(all(r.hint.text() and r.value_label.text() for r in panel.slider_rows.values()), "…each says what it does and its value")
 ok(panel.slider_rows["exposure_bias"].value_label.text() == "+0.0 EV" and panel.slider_rows["clouds"].value_label.text().endswith("%"),

@@ -192,10 +192,10 @@ ok(ed.maps["opacity"].spec() == {"source": "picture"}, "...and that is what the 
 # ---- the Update button ----------------------------------------------------------------------------
 panel = P.StudioPanel(src)
 win = panel.preview()
-win.follow_changes_box.setChecked(True)
-ok(win.update_btn.isHidden(), "Update is out of sight while the preview follows the changes")
-win.follow_changes_box.setChecked(False)
-ok(not win.update_btn.isHidden(), "...and in view when it does not")
+panel.commands.follow_changes.setChecked(True)
+ok(not panel.commands.update.isVisible(), "Update is out of sight while the preview follows the changes")
+panel.commands.follow_changes.setChecked(False)
+ok(panel.commands.update.isVisible(), "...and in view when it does not")
 class Stub(QObject):
     def __init__(self): super().__init__(); self.key = (2, "mats-new", "look-new")
     def live_key(self): return self.key

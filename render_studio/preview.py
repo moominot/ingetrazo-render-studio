@@ -132,40 +132,10 @@ class ImageWindow(QWidget):
         prow.addWidget(self.cancel_btn)
         lay.addLayout(prow)
 
-        # -- preview: the two switches of the live view, and Render
+        # -- preview: what Render will use, a new scene and Render (the live view's switches are on the toolbar)
         self.bar_preview = QWidget()
         pv = QVBoxLayout(self.bar_preview)
         pv.setContentsMargins(0, 0, 0, 0)
-        from PySide6.QtCore import QSize
-        from . import icons
-        st = QSettings()
-
-        def icon_button(key: str, tip: str, checkable: bool) -> QToolButton:
-            b = QToolButton()
-            b.setIcon(icons.icon(key))
-            b.setIconSize(QSize(20, 20))
-            b.setFixedSize(30, 28)
-            b.setCheckable(checkable)
-            b.setToolTip(tip)
-            return b
-
-        # The two switches of the live view are toggle buttons with a vector icon (pressed = on); Update appears,
-        # as another icon, when updating is not automatic.
-        self.follow_camera_box = icon_button(
-            "follow_camera", "Sync with the view. On: frames come while you move the 3D view, then a cleaner image "
-            "when you stop. Off: the preview keeps its camera.", True)
-        self.follow_changes_box = icon_button(
-            "follow_changes", "Automatic update. On: edits of the model, its textures and the materials show in the "
-            "preview. Off: it keeps the model and materials it has (the look and sliders still apply).", True)
-        for box, key in ((self.follow_camera_box, "live_follow_camera"),
-                         (self.follow_changes_box, "live_follow_changes")):
-            box.setChecked(str(st.value(_SETTINGS + key, "true")).lower() in ("true", "1"))
-            box.toggled.connect(lambda on, k=key: self.panel and self.panel._follow_toggled(k, on))
-        self.update_btn = icon_button(
-            "refresh", "Update the preview: shows the model and materials as they are now (with automatic update "
-            "off, the preview keeps the ones it had until then).", False)
-        self.update_btn.clicked.connect(lambda: self.panel and self.panel.update_preview())
-        self.follow_changes_box.toggled.connect(lambda on: self.update_btn.setVisible(not on))
         self.summary = QLabel("")
         self.summary.setStyleSheet("color: gray")
         self.summary.setToolTip("The engine, quality and width set in the panel: Render uses them "
@@ -189,13 +159,9 @@ class ImageWindow(QWidget):
             "Makes the final picture with the panel's engine, quality and width, then shows the retouch tools and "
             "Save image…. The arrow: Render and save…, Open in Blender….", [self.render_save_btn, self.expert_btn])
         main = QHBoxLayout()
-        main.addWidget(self.follow_camera_box)
-        main.addWidget(self.follow_changes_box)
-        main.addWidget(self.update_btn)              # only when automatic update is off
         main.addWidget(self.summary, 1)
         main.addWidget(self.scene_btn)               # always in view
         main.addWidget(self.render_btn)
-        self.update_btn.setVisible(not self.follow_changes_box.isChecked())
         pv.addLayout(main)
         lay.addWidget(self.bar_preview)
 
@@ -482,7 +448,7 @@ class ImageWindow(QWidget):
         self.mode = mode
         has_panel = self.panel is not None
         self.bar_preview.setVisible(mode in ("preview", "rendering") and has_panel)
-        for w in (self.render_btn, self.render_save_btn, self.expert_btn, self.follow_camera_box, self.follow_changes_box):
+        for w in (self.render_btn, self.render_save_btn, self.expert_btn):
             w.setEnabled(mode == "preview")
         self.bar_final.setVisible(mode == "final")
         if hasattr(self, "side_handle"):

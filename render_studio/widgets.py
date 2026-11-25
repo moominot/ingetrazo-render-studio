@@ -379,6 +379,7 @@ class FoldBox(QGroupBox):
         from PySide6.QtWidgets import QFormLayout
         self._key = "render_studio/fold_" + key if key else ""
         lay = QVBoxLayout(self)
+        lay.setContentsMargins(5, 6, 5, 6)                 # a narrow tray has no room for wide margins
         self.body = QWidget(self)
         lay.addWidget(self.body)
         self.form = QFormLayout(self.body)
