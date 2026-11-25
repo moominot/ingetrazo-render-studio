@@ -4,7 +4,7 @@ import os, sys
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 SRC, REPO = [os.path.abspath(a) for a in sys.argv[1:3]]
 sys.path[:0] = [SRC, REPO, os.path.join(REPO, "tests")]
-from PySide6.QtWidgets import QApplication, QDockWidget, QMainWindow, QToolBar, QWidget
+from PySide6.QtWidgets import QApplication, QDockWidget, QLineEdit, QMainWindow, QTabWidget, QToolBar, QWidget
 qa = QApplication.instance() or QApplication([])
 import reference_cases as R
 from render_studio import toolbar as T
@@ -19,9 +19,23 @@ c = panel.commands
 ok(c.build(panel.app) is None, "with no window there is no toolbar, and nothing breaks")
 asked = []
 
+class Manager(QWidget):
+    """As IngeTrazo's: pages with their search boxes, built when the dialog is."""
+    def __init__(self):
+        super().__init__()
+        self._tabs = QTabWidget(self)
+        for name in ("browse", "installed"):
+            self._tabs.addTab(QWidget(), name)
+        self._tabs.setCurrentIndex(1)
+        self._pages = {"browse": {"search": QLineEdit(self)}}
+
 class Window(QMainWindow):
+    _extension_manager_dialog = None
     def _on_manage_extensions(self):
         asked.append("manager")
+        self._extension_manager_dialog = Manager()
+        for _ in range(20):                       # the dialog's own event loop
+            qa.processEvents()
 
 win = Window(); panel.app.window = win
 shown = []
@@ -51,6 +65,9 @@ answers = []
 T.ask_install = lambda p, can: (answers.append(can), True)[1]
 c.library.trigger()
 ok(answers == [True] and asked == ["manager"] and not shown, "without the Library: it says so and opens the extension manager when asked")
+manager = win._extension_manager_dialog
+ok(manager._pages["browse"]["search"].text() == "asset_manager" and manager._tabs.currentIndex() == 0,
+   "…already searching for the Library, on the Browse page")
 T.ask_install = lambda p, can: False
 c.library.trigger()
 ok(asked == ["manager"], "…and not when the person closes the message")

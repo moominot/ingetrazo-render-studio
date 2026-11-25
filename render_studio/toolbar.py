@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QSettings, QTimer
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QApplication, QMessageBox, QToolBar
 
@@ -17,6 +17,8 @@ from .i18n import tr
 
 _log = logging.getLogger(__name__)
 OBJECT_NAME = "render_studio_toolbar"          # stable: the saved layout keys on it
+#: What the extension manager is asked for: the Library's identifier, which it searches along with its name, whatever it is called.
+LIBRARY_SEARCH = "asset_manager"
 _SETTINGS = "render_studio/"
 #: The toolbar's order; None is a separator.
 ORDER = ("preview", "follow_changes", "update", "follow_camera", None, "materials", "lights", "library")
@@ -41,7 +43,7 @@ class Commands:
                                       lambda: panel.open_materials())
         self.lights = self._action("lights", "Lights", "Point, spot, area and sun lights for the render, placed in the model.",
                                    lambda: panel.open_lights())
-        self.library = self._action("comp_manager", "Library", "Models, materials and backgrounds (the Library extension).",
+        self.library = self._action("comp_manager", "Library", "Models, materials and backgrounds (Render Studio Library).",
                                     lambda: open_library(panel))
         self.update.setVisible(not self.follow_changes.isChecked())          # only when changes do not arrive by themselves
         self.follow_changes.toggled.connect(lambda on: self.update.setVisible(not on))
@@ -106,18 +108,38 @@ def open_library(panel) -> None:
                 dock.show()
                 dock.raise_()
                 return
-    manager = getattr(getattr(panel.app, "window", None), "_on_manage_extensions", None)
+    window = getattr(panel.app, "window", None)
+    manager = getattr(window, "_on_manage_extensions", None)
     if ask_install(panel, callable(manager)):
+        QTimer.singleShot(0, lambda: search_manager(window, LIBRARY_SEARCH))     # runs once the dialog is up
         manager()
+
+
+def search_manager(window, text: str, tries: int = 50) -> None:
+    """Type ``text`` in the search box of IngeTrazo's extension manager, on its Browse page. It is the manager's own window,
+    with no public way in: an IngeTrazo that builds it otherwise just opens it as it is."""
+    dialog = getattr(window, "_extension_manager_dialog", None)
+    page = (getattr(dialog, "_pages", None) or {}).get("browse") if dialog is not None else None
+    if page is None:
+        if tries > 0:
+            QTimer.singleShot(100, lambda: search_manager(window, text, tries - 1))
+        return
+    try:
+        tabs = getattr(dialog, "_tabs", None)
+        if tabs is not None:
+            tabs.setCurrentIndex(0)
+        page["search"].setText(text)
+    except Exception:  # noqa: BLE001 - never in the way of the manager
+        _log.exception("could not search in the extension manager")
 
 
 def ask_install(panel, can_open: bool) -> bool:
     """«The Library is not installed»: True when the person asks for the extension manager."""
     box = QMessageBox(getattr(panel.app, "window", None) or panel)
     box.setIcon(QMessageBox.Information)
-    box.setWindowTitle(tr("Library"))
-    box.setText(tr("The Library extension is not installed."))
-    box.setInformativeText(tr("Install «Library» from Extensions ▸ Extension manager, then restart IngeTrazo."))
+    box.setWindowTitle(tr("Render Studio Library"))
+    box.setText(tr("Render Studio Library is not installed."))
+    box.setInformativeText(tr("Install «Render Studio Library» from Extensions ▸ Extension manager, then restart IngeTrazo."))
     open_button = box.addButton(tr("Open the extension manager"), QMessageBox.AcceptRole) if can_open else None
     box.addButton(QMessageBox.Close)
     box.exec()

@@ -1,4 +1,8 @@
 {
+"Render Studio Library": "Render Studio Library",
+"Render Studio Library is not installed.": "Render Studio Library no està instal·lada.",
+"Install «Render Studio Library» from Extensions ▸ Extension manager, then restart IngeTrazo.": "Instal·la «Render Studio Library» des d'Extensions ▸ Gestor d'extensions i reinicia IngeTrazo.",
+"Models, materials and backgrounds (Render Studio Library).": "Models, materials i fons (Render Studio Library).",
 "Open preview": "Obre la previsualització",
 "A live view of the scene that you can zoom and move, with Render.": "Una vista en directe de l'escena, que pots ampliar i moure, amb Render.",
 "Sync changes": "Sincronitza els canvis",
