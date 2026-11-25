@@ -46,6 +46,7 @@ def group_of(w):
 doc = Doc(); panel = P.StudioPanel(doc); doc.panels.append(panel)
 panel.show()
 TAB = {panel.tabs.tabText(i): i for i in range(panel.tabs.count())}
+panel.expert.filter.set_shown(set(panel.expert.controls))      # every control in view: what is checked here is what applies
 ok(list(TAB) == ['Main', 'Style', 'Environment', 'Section', 'Output'], f"the tabs: {list(TAB)}")
 panel.tabs.setCurrentIndex(TAB['Environment'])
 ok(panel.bg_mode.currentData() == "sky" and panel.hdri_settings() is None and panel.backdrop_settings() is None, "starts on the look's own sky")

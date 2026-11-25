@@ -111,8 +111,8 @@ def _build() -> tuple:
         # -- Environment: the sky
         _slider("sun_scale", "environment", "sky", "sky.sun_scale", simple=True),
         _slider("clouds", "environment", "sky", "sky.clouds", simple=True),
-        _slider("stars", "environment", "sky", "sky.stars"),
-        _slider("moon", "environment", "sky", "sky.moon"),
+        _slider("stars", "environment", "sky", "sky.stars", simple=True),           # (only at night, where the sun's slider
+        _slider("moon", "environment", "sky", "sky.moon", simple=True),             # is gone: they cost the day nothing)
         # -- Environment: the shadows
         Param("shadows.draw", "environment", "shadows", "Draw", "choice", sh["draw"], choices=tuple(presets.SHADOW_DRAWS), simple=True),
         Param("shadows.colour", "environment", "shadows", "Colour", "colour", tuple(sh["color"]), when=painted, simple=True, colour_space="screen"),

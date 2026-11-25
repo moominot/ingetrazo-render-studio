@@ -4,7 +4,7 @@ surface, the outlines or the finish. Each is one of the panel's looks."""
 from __future__ import annotations
 
 from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtWidgets import QButtonGroup, QGridLayout, QGroupBox, QLabel, QToolButton
+from PySide6.QtWidgets import QButtonGroup, QGroupBox, QHBoxLayout, QLabel, QSizePolicy, QToolButton, QVBoxLayout
 
 from . import icons
 from .i18n import tr
@@ -17,7 +17,6 @@ AMBIENTS = (
     ("night", "amb_night", "Night", "Night: the moon, the stars and the lamps."),
     ("interior", "amb_interior", "Interior", "A room: metered for the inside, the window allowed to burn out."),
 )
-COLUMNS = 5
 
 
 class AmbientBox(QGroupBox):
@@ -25,13 +24,13 @@ class AmbientBox(QGroupBox):
 
     def __init__(self, parent=None):
         super().__init__("Light", parent)
-        grid = QGridLayout(self)
-        grid.setContentsMargins(6, 6, 6, 6)
-        grid.setSpacing(2)
+        lay = QVBoxLayout(self)                   # margins and gaps as the camera's buttons have them
+        row = QHBoxLayout()
+        lay.addLayout(row)
         self.group = QButtonGroup(self)
         self.group.setExclusive(False)            # (a look with no button, as an old document's, leaves them all up)
         self.buttons = {}
-        for i, (look, icon_key, name, tip) in enumerate(AMBIENTS):
+        for look, icon_key, name, tip in AMBIENTS:
             b = QToolButton()
             b.setText(tr(name))
             b.setToolTip(tr(tip))
@@ -39,18 +38,20 @@ class AmbientBox(QGroupBox):
             b.setIconSize(QSize(26, 26))
             b.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
             b.setCheckable(True)
-            b.setMinimumWidth(36)
-            b.setStyleSheet("QToolButton { font-size: 10px; padding: 2px 0; }")
+            font = b.font()
+            font.setPixelSize(10)
+            b.setFont(font)
+            b.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)      # the same share of the width, whatever its word
+            b.setMinimumHeight(52)                                       # as tall as the camera's
             b.clicked.connect(lambda _c=False, key=look: self.chosen.emit(key))
-            grid.addWidget(b, i // COLUMNS, i % COLUMNS)
-            grid.setColumnStretch(i % COLUMNS, 1)
+            row.addWidget(b, 1)
             self.group.addButton(b)
             self.buttons[look] = b
         self.note = QLabel("")
         self.note.setWordWrap(True)
         self.note.setStyleSheet("color: gray; font-size: 11px")
         self.note.setVisible(False)
-        grid.addWidget(self.note, 1, 0, 1, COLUMNS)
+        lay.addWidget(self.note)
 
     def show_state(self, look: str, sun_set: bool = False) -> None:
         """Press the button of what the picture will be: ``look``, or the night when the sun has set (``sun_set``) under a look

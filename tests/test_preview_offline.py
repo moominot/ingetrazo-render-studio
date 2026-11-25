@@ -182,7 +182,7 @@ ok(panel.slider_rows["clouds"].value_label.text() == f"{presets.studio('night')[
 panel.apply_settings(panel.settings_dict() | {"sliders": {"clouds": 0.8}});
 ok(panel.slider_rows["clouds"].value_label.text() == "80%", "…and settings put in from the document")
 titles = [g.title() for g in panel.findChildren(P.QGroupBox) if not g.isHidden()]       # (the look's group is hidden)
-ok(set(titles) == {"Presets", "Light", "Surface", "Outline", "Finish", "Shadows", "Camera", "Corrections", "Effects", "Sun and sky", "Background", "Ground", "Horizon", "Fog", "Quality"}, f"the panel's groups ({titles})")
+ok(set(titles) == {"Presets", "Light", "Surface", "Outline", "Finish", "Shadows", "Camera", "Corrections", "Sun and sky", "Background", "Ground", "Horizon", "Fog", "Quality"}, f"the panel's groups ({titles})")
 ok({"preview", "rendering", "final"} <= set(__import__("render_studio.preview", fromlist=["x"]).NOTES), "each state has its own note")
 _restore_settings()
 # ---- the preview's quality: fast, normal, high ----

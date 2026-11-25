@@ -121,7 +121,7 @@ STYLE_DEFAULT = {"mode": "none", "width": 0.0, "color": [0.05, 0.05, 0.05], "mat
                  # the sketch: whether the render shows under its lines
                  "base": True}
 #: How the sun's shadows are drawn, for every style: key → label. "render": as Blender makes them, nothing drawn over them.
-SHADOW_DRAWS = {"render": "As rendered", "colour": "Colour", "lines": "Lines", "cross": "Cross-hatch", "dots": "Dots"}
+SHADOW_DRAWS = {"render": "From the render", "colour": "Colour", "lines": "Lines", "cross": "Cross-hatch", "dots": "Dots"}
 #: ``color`` as the screen shows it; ``spacing`` in pixels and ``angle`` in degrees (the hatchings).
 SHADOW_DEFAULT = {"draw": "render", "color": [0.1, 0.12, 0.18], "opacity": 0.5, "spacing": 8.0, "angle": 45.0}
 

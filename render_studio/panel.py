@@ -33,7 +33,9 @@ from .style_groups import StyleGroups
 from .toolbar import Commands
 from . import preset_files
 from .ambient import AmbientBox
-from .preset_gallery import PresetGallery
+from .preset_gallery import PresetGallery, presets_folder
+from . import layouts
+from .expert import ExpertTab
 from .live import LiveSession
 from .preview import ImageWindow  # noqa: F401 - re-exported: panel.ImageWindow
 from .widgets import SliderRow
@@ -969,9 +971,18 @@ class StudioPanel(QWidget):
             "a window with the retouch tools and Save image…. With «Scenes» chosen in the Output tab it renders those.",
             [self.render_save_btn, self.render_scenes_btn, self.expert_btn])
         outer.addWidget(self.render_btn)
+        self.expert_mode = QCheckBox("Expert mode")
+        self.expert_mode.setToolTip("Adds the Expert page: every setting, with an eye to choose what each page shows.")
+        outer.addWidget(self.expert_mode)
         self.status = QLabel("")
         self.status.setWordWrap(True)
         outer.addWidget(self.status)
+        # Every setting's control is in place: the layout takes out of the pages what it does not show (expert.py).
+        self.expert = ExpertTab(self, layouts.Folder(presets_folder().parent / "layouts"))
+        self.expert_page = scrolled(self.expert)
+        self.expert_mode.setChecked(str(QSettings().value(_SETTINGS + "expert_mode", "false")).lower() == "true")
+        self.set_expert_mode(self.expert_mode.isChecked())
+        self.expert_mode.toggled.connect(self.set_expert_mode)
         self.clock = widgets.ClockLabel()
         outer.addWidget(self.clock)
         for combo in (self.engine, self.quality):
@@ -1812,6 +1823,9 @@ class StudioPanel(QWidget):
         self._bg_enable()
         self._skyline_enable()
         self._update_summary()
+        self._filter_layout()
+        if getattr(self, "expert", None) is not None and self.expert.isVisible():
+            self.expert.refresh()
 
     def _schedule_save(self, *_a):
         if not self._applying:
@@ -1890,6 +1904,34 @@ class StudioPanel(QWidget):
                 self.slider_rows[key].setEnabled(not lit)
 
     # -- your presets ---------------------------------------------------------------
+    # -- the expert page and the layout ---------------------------------------------------------
+    def set_expert_mode(self, on: bool) -> None:
+        """The Expert page there or not; what the pages show is the layout's, either way."""
+        index = self.tabs.indexOf(self.expert_page)
+        if on and index < 0:
+            self.tabs.addTab(self.expert_page, tr("Expert"))
+        elif not on and index >= 0:
+            self.tabs.removeTab(index)
+        self.expert_page.setVisible(on and self.tabs.currentWidget() is self.expert_page)
+        QSettings().setValue(_SETTINGS + "expert_mode", "true" if on else "false")
+
+    def reapply_conditions(self) -> None:
+        """Every row that depends on a choice, shown or hidden again as that choice says."""
+        self.style_groups.enable()
+        self._bg_enable()
+        self._floor_enable()
+        self._shadows_enable()
+        self._skyline_enable()
+        self._ground_grass_hint()
+        try:
+            self.sun_tab._show_sun()                    # the night's sliders or the sun's
+        except Exception:  # noqa: BLE001 - while the panel is being built
+            _log.exception("sun not shown")
+
+    def _filter_layout(self) -> None:
+        if getattr(self, "expert", None) is not None:
+            self.expert.filter.apply()
+
     def _floor_enable(self, *_a):
         """«Shadow on the floor» can be chosen unless a generated ground is seen as it is."""
         self.ground_shadow.setEnabled(not self.ground.isChecked() or self.bg_mode.currentData() == "flat")
@@ -2081,6 +2123,7 @@ class StudioPanel(QWidget):
         if "sun_scale" in self.slider_rows:
             form.setRowVisible(self.slider_rows["sun_scale"], not night)       # the sun by day, the moonlight by night
         self._ambient_state()                       # the sun may have set (or risen): the buttons say what will be rendered
+        self._filter_layout()
 
     def _ground_grass_hint(self):
         """Under the grass radius: how far the grass of the chosen material can reach at its density."""

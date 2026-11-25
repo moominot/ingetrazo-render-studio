@@ -363,7 +363,31 @@ def _amb_interior(p, ink):
     p.drawLine(QPointF(24, 24), QPointF(24, 34))
 
 
+def _eye_outline():
+    q = QPainterPath()
+    q.moveTo(6, 24)
+    q.cubicTo(14, 10, 34, 10, 42, 24)
+    q.cubicTo(34, 38, 14, 38, 6, 24)
+    return q
+
+
+def _eye(p, ink):
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(_eye_outline())
+    _dot(p, 24, 24, 7.0)
+
+
+def _eye_off(p, ink):
+    faint = QColor(ink)
+    faint.setAlpha(110)
+    p.setPen(_pen(faint))
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(_eye_outline())
+    p.drawLine(QPointF(10, 40), QPointF(38, 8))
+
+
 _DRAW = {
+    "eye": _eye, "eye_off": _eye_off,
     "amb_sunny": _amb_sunny, "amb_cloudy": _amb_cloudy, "amb_golden": _amb_golden, "amb_night": _amb_night,
     "amb_interior": _amb_interior,
     "preview": _preview, "materials": _materials, "lights": _lights,
