@@ -136,29 +136,36 @@ class ImageWindow(QWidget):
         self.bar_preview = QWidget()
         pv = QVBoxLayout(self.bar_preview)
         pv.setContentsMargins(0, 0, 0, 0)
-        self.more_row = QWidget()                 # the live view's options: folded, the usual use needs none
-        ml = QHBoxLayout(self.more_row)
-        ml.setContentsMargins(0, 0, 0, 0)
-        pl = ml
+        from PySide6.QtCore import QSize
+        from . import icons
         st = QSettings()
-        self.follow_camera_box = QCheckBox("Follow the camera")
-        self.follow_camera_box.setToolTip("On: frames come while you move the 3D view, then a cleaner image when "
-                                          "you stop. Off: the preview keeps its camera.")
-        self.follow_changes_box = QCheckBox("Follow changes")
-        self.follow_changes_box.setToolTip("On: edits of the model, its textures and the materials show in the "
-                                           "preview. Off: it keeps the model and materials it has (the look and "
-                                           "sliders still apply).")
+
+        def icon_button(key: str, tip: str, checkable: bool) -> QToolButton:
+            b = QToolButton()
+            b.setIcon(icons.icon(key))
+            b.setIconSize(QSize(20, 20))
+            b.setFixedSize(30, 28)
+            b.setCheckable(checkable)
+            b.setToolTip(tip)
+            return b
+
+        # The two switches of the live view are toggle buttons with a vector icon (pressed = on); Update appears,
+        # as another icon, when updating is not automatic.
+        self.follow_camera_box = icon_button(
+            "follow_camera", "Sync with the view. On: frames come while you move the 3D view, then a cleaner image "
+            "when you stop. Off: the preview keeps its camera.", True)
+        self.follow_changes_box = icon_button(
+            "follow_changes", "Automatic update. On: edits of the model, its textures and the materials show in the "
+            "preview. Off: it keeps the model and materials it has (the look and sliders still apply).", True)
         for box, key in ((self.follow_camera_box, "live_follow_camera"),
                          (self.follow_changes_box, "live_follow_changes")):
             box.setChecked(str(st.value(_SETTINGS + key, "true")).lower() in ("true", "1"))
             box.toggled.connect(lambda on, k=key: self.panel and self.panel._follow_toggled(k, on))
-            pl.addWidget(box)
-        self.update_btn = QPushButton("Update preview")
-        self.update_btn.setToolTip("With Follow changes off: shows the model and materials as they are now "
-                                   "(the preview keeps the ones it had until then).")
+        self.update_btn = icon_button(
+            "refresh", "Update the preview: shows the model and materials as they are now (with automatic update "
+            "off, the preview keeps the ones it had until then).", False)
         self.update_btn.clicked.connect(lambda: self.panel and self.panel.update_preview())
         self.follow_changes_box.toggled.connect(lambda on: self.update_btn.setVisible(not on))
-        pl.addStretch(1)
         self.summary = QLabel("")
         self.summary.setStyleSheet("color: gray")
         self.summary.setToolTip("The engine, quality and width set in the panel: Render uses them "
@@ -167,12 +174,11 @@ class ImageWindow(QWidget):
         self.scene_btn.setToolTip("Saves the view this preview shows (the camera it keeps while Follow the camera is off, "
                                   "else the 3D view's) as a scene of the drawing, to come back to it or render it later.")
         self.scene_btn.clicked.connect(lambda: self.panel and self.panel.scene_from_preview())
-        self.expert_btn = QPushButton("Open in Blender…")
+        from PySide6.QtGui import QAction
+        self.expert_btn = QAction("Open in Blender…", self)
         self.expert_btn.setToolTip("Expert mode: opens this scene, as Render would make it, in a Blender with its own "
                                    "window to work in it. Nothing is rendered; the file is saved first.")
-        self.expert_btn.clicked.connect(lambda: self.panel and self.panel.open_in_blender())
-        pl.addWidget(self.expert_btn)
-        from PySide6.QtGui import QAction
+        self.expert_btn.triggered.connect(lambda: self.panel and self.panel.open_in_blender())
         from .widgets import split_button
         self.render_save_btn = QAction("Render and save…", self)
         self.render_save_btn.setToolTip("Asks where to save, makes the final picture and saves it straight away, "
@@ -181,25 +187,16 @@ class ImageWindow(QWidget):
         self.render_btn = split_button(
             "Render", lambda: self.panel and self.panel.render_main(),
             "Makes the final picture with the panel's engine, quality and width, then shows the retouch tools and "
-            "Save image…. The arrow: Render and save….", [self.render_save_btn])
+            "Save image…. The arrow: Render and save…, Open in Blender….", [self.render_save_btn, self.expert_btn])
         main = QHBoxLayout()
-        self.more_btn = QToolButton()
-        self.more_btn.setText("More")
-        self.more_btn.setCheckable(True)
-        self.more_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        self.more_btn.setStyleSheet("QToolButton { border: none; }")
-        self.more_btn.setToolTip("Live view options (follow the camera, follow changes) and opening the scene in Blender")
-        self.more_btn.toggled.connect(self._more_toggled)
-        main.addWidget(self.more_btn)
+        main.addWidget(self.follow_camera_box)
+        main.addWidget(self.follow_changes_box)
+        main.addWidget(self.update_btn)              # only when automatic update is off
         main.addWidget(self.summary, 1)
         main.addWidget(self.scene_btn)               # always in view
-        main.addWidget(self.update_btn)              # only when Follow changes is off
         main.addWidget(self.render_btn)
         self.update_btn.setVisible(not self.follow_changes_box.isChecked())
         pv.addLayout(main)
-        pv.addWidget(self.more_row)
-        self.more_btn.setChecked(str(st.value(_SETTINGS + "preview_more", "false")).lower() == "true")
-        self._more_toggled(self.more_btn.isChecked())
         lay.addWidget(self.bar_preview)
 
         # -- final: the retouch sliders, the outlines and Save, all in the side panel (everything in view: there is room)
@@ -485,7 +482,7 @@ class ImageWindow(QWidget):
         self.mode = mode
         has_panel = self.panel is not None
         self.bar_preview.setVisible(mode in ("preview", "rendering") and has_panel)
-        for w in (self.render_btn, self.render_save_btn, self.follow_camera_box, self.follow_changes_box):
+        for w in (self.render_btn, self.render_save_btn, self.expert_btn, self.follow_camera_box, self.follow_changes_box):
             w.setEnabled(mode == "preview")
         self.bar_final.setVisible(mode == "final")
         if hasattr(self, "side_handle"):
@@ -498,14 +495,6 @@ class ImageWindow(QWidget):
         self.note.setText(tr(NOTES[mode]) if has_panel or mode == "final" else "")
         if mode == "final":
             self.status.setText("")
-
-    def _more_toggled(self, on: bool) -> None:
-        self.more_btn.setArrowType(Qt.DownArrow if on else Qt.RightArrow)
-        self.more_row.setVisible(on)
-        try:
-            QSettings().setValue(_SETTINGS + "preview_more", "true" if on else "false")
-        except Exception:  # noqa: BLE001
-            pass
 
     def set_status(self, text: str) -> None:
         self.status.setText(text)

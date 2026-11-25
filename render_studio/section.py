@@ -132,7 +132,52 @@ def drawing_fill(plane, scene) -> dict | None:
     return {"cap": True, "style": "flat", "color": rgb}
 
 
-def job_block(scene, opts: dict | None = None) -> dict | None:
+def _clip_side(poly, point, normal):
+    """The convex polygon ``poly`` (a list of (x, y, z)) without what lies on ``normal``'s side of the plane through ``point``."""
+    d = [sum((c - q) * n for c, q, n in zip(v, point, normal)) for v in poly]
+    out = []
+    for i, v in enumerate(poly):
+        w, dv, dw = poly[(i + 1) % len(poly)], d[i], d[(i + 1) % len(poly)]
+        if dv <= 1e-7:
+            out.append(v)
+        if (dv <= 1e-7) != (dw <= 1e-7):
+            t = dv / (dv - dw)
+            out.append(tuple(a + (b - a) * t for a, b in zip(v, w)))
+    return out if len(out) >= 3 else []
+
+
+def program_cap(viewport, scene, plane, others=()) -> list | None:
+    """The cap IngeTrazo itself draws on the cut ``plane`` (``core.section.fill_triangles`` over the cut's chords: closed rings, holes
+    left open), world space, as polygons ``[[[x, y, z] …] …]`` — each triangle cut at the ``others`` (the rest of the cutting planes:
+    the cap of a section box's face ends where the box does, as the viewer's clip planes end it). None when this IngeTrazo does not say
+    (no viewport, no such function) or there is nothing to fill: Blender then makes the cap itself."""
+    try:
+        from core.section import fill_triangles
+        try:
+            segs = viewport._section_cut_segments(plane)
+        except TypeError:                          # an IngeTrazo without section boxes: the active plane only
+            segs = viewport._section_cut_segments()
+        if segs is None:
+            return None
+        tris = fill_triangles(segs, plane.normal)
+        if not len(tris):
+            return None
+        cuts = [((o.point.x(), o.point.y(), o.point.z()), (o.normal.x(), o.normal.y(), o.normal.z())) for o in others]
+        out = []
+        for t in tris:
+            poly = [tuple(float(c) for c in p) for p in t]
+            for pt, nn in cuts:
+                poly = _clip_side(poly, pt, nn)
+                if not poly:
+                    break
+            if poly:
+                out.append([[round(c, 5) for c in p] for p in poly])
+        return out or None
+    except Exception:  # noqa: BLE001 - an IngeTrazo without it: Blender's own cap
+        return None
+
+
+def job_block(scene, opts: dict | None = None, viewport=None) -> dict | None:
     """The cut, with the options, as ``studio_scene.clip_section`` reads it: ``planes`` (the active plane and the faces of the active box,
     each ``point`` and ``normal`` — the normal's side is the one that disappears — and, with the cap «like the drawing», the plane's own
     cap options), and the first plane's ``point``, ``normal`` besides, then ``cap``, ``color``, ``light``. None when nothing is cut."""
@@ -153,6 +198,13 @@ def job_block(scene, opts: dict | None = None) -> dict | None:
         if o["style"] == "drawing":
             entry.update(drawing_fill(pl, scene) or {})
         block["planes"].append(entry)
+    if viewport is not None:
+        # Every cut's cap is the one IngeTrazo draws (a plane's and each face of a box's), cut where the other planes cut it.
+        for k, (pl, entry) in enumerate(zip(cutting, block["planes"])):
+            if entry.get("cap", o["cap"]):
+                tris = program_cap(viewport, scene, pl, [c for j, c in enumerate(cutting) if j != k])
+                if tris:
+                    entry["cap_tris"] = tris
     if o["style"] == "drawing":
         block["style"] = "flat"           # (what a plane says nothing about)
         return block

@@ -216,7 +216,44 @@ def _clock(p, ink):
     _dot(p, 24, 27, 2.2)
 
 
+def _arc_arrow(p, start: float, span: float, r: float = 15.0) -> None:
+    """An arc of the circle of radius ``r`` about (24, 24), from ``start`` degrees (counter-clockwise, as Qt counts)
+    over ``span``, with an accent arrow head at its end."""
+    p.setBrush(Qt.NoBrush)
+    q = QPainterPath()
+    q.arcMoveTo(QRectF(24 - r, 24 - r, 2 * r, 2 * r), start)
+    q.arcTo(QRectF(24 - r, 24 - r, 2 * r, 2 * r), start, span)
+    p.drawPath(q)
+    a = math.radians(start + span)
+    sign = 1.0 if span >= 0 else -1.0
+    _arrow_head(p, QPointF(24 + r * math.cos(a), 24 - r * math.sin(a)),
+                -sign * math.sin(a), -sign * math.cos(a), 7.0)
+
+
+def _follow_camera(p, ink):
+    # The viewport's frame (corner marks) with a cube in it: the preview follows the 3D view.
+    p.setBrush(Qt.NoBrush)
+    for pts in ((8, 16, 8, 8, 16, 8), (32, 8, 40, 8, 40, 16),
+                (40, 32, 40, 40, 32, 40), (16, 40, 8, 40, 8, 32)):
+        p.drawPolyline(QPolygonF([QPointF(pts[0], pts[1]), QPointF(pts[2], pts[3]),
+                                  QPointF(pts[4], pts[5])]))
+    _cube(p, ink, 24, 24, 9)
+
+
+def _follow_changes(p, ink):
+    # Two arrows chasing each other round a dot: it updates by itself.
+    _arc_arrow(p, 30, 130)
+    _arc_arrow(p, 210, 130)
+    _dot(p, 24, 24, 3.0)
+
+
+def _refresh(p, ink):
+    # One arrow round: update now.
+    _arc_arrow(p, 60, 270)
+
+
 _DRAW = {
+    "follow_camera": _follow_camera, "follow_changes": _follow_changes, "refresh": _refresh,
     "comp_import": _comp_import, "comp_export": _comp_export,
     "comp_settings": _comp_settings, "comp_help": _comp_help,
     "comp_options": _comp_options, "comp_attributes": _comp_attributes,

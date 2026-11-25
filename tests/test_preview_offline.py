@@ -115,9 +115,11 @@ ok(see(w.render_btn) and w.render_btn.isEnabled() and "Render and save" in w.ren
 ok(see(w.scene_btn), "…and «New scene from this view…» always in view")
 ok(not see(w.update_btn), "…«Update preview» is not shown while Follow changes is on")
 ok(not any(see(s) for s in w.adj.values()), "…and the retouch sliders are hidden")
-ok(not see(w.follow_camera_box) and see(w.render_btn), "…the live view's options folded under More, Render in view")
-w.more_btn.setChecked(True)
-ok(see(w.follow_camera_box) and see(w.follow_changes_box) and see(w.expert_btn), "…More opens the live view's switches and Open in Blender…")
+ok(not hasattr(w, "more_btn"), "…there is no «More» fold any more")
+ok(see(w.follow_camera_box) and see(w.follow_changes_box) and see(w.render_btn)
+   and w.follow_camera_box.isCheckable() and not w.follow_camera_box.icon().isNull(),
+   "…the two live view switches are icon toggle buttons, always in view")
+ok(w.expert_btn in w.render_btn.menu().actions(), "…and Open in Blender… is under Render's arrow")
 w.follow_changes_box.setChecked(False); qa.processEvents()
 ok(see(w.update_btn), "…with Follow changes off, «Update preview» appears (it was not just disabled)")
 w.follow_changes_box.setChecked(True); qa.processEvents()
@@ -178,7 +180,7 @@ ok(panel.slider_rows["clouds"].value_label.text() == f"{presets.studio('night')[
 panel.apply_settings(panel.settings_dict() | {"sliders": {"clouds": 0.8}});
 ok(panel.slider_rows["clouds"].value_label.text() == "80%", "…and settings put in from the document")
 titles = [g.title() for g in panel.findChildren(P.QGroupBox) if not g.isHidden()]       # (the look's group is hidden)
-ok(set(titles) == {"Presets", "Style", "Camera", "Corrections", "Effects", "Sun and sky", "Background", "Ground", "Horizon", "Fog", "Quality"}, f"the panel's groups ({titles})")
+ok(set(titles) == {"Presets", "Style", "Shadows", "Camera", "Corrections", "Effects", "Sun and sky", "Background", "Ground", "Horizon", "Fog", "Quality"}, f"the panel's groups ({titles})")
 ok({"preview", "rendering", "final"} <= set(__import__("render_studio.preview", fromlist=["x"]).NOTES), "each state has its own note")
 _restore_settings()
 # ---- the preview's quality: fast, normal, high ----
