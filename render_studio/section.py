@@ -16,6 +16,11 @@ The options (the Section tab) are kept in the document, ``settings["section"]``:
      "pattern": "diagonal",  # style "hatch": diagonal, cross, grid, dots
      "line": [r, g, b],      # style "hatch": the colour of the lines or dots
      "spacing": 0.1,         # style "hatch": metres between lines
+     "line_width": 0.14,     # style "hatch": the line's thickness, as a share of the spacing
+     "line_hand": 0.0,       # style "hatch": 0 ruled lines .. 1 a loose hand
+     "line_opacity": 1.0,    # style "hatch": the ink of the lines over the colour
+     "outline_hand": 0.0,    # the rim's hand (never less than the model's outlines')
+     "outline_opacity": 1.0, # the rim's ink
      "shadows": true,        # false: the cap neither casts nor receives shadows (flat, as drawn)
      "outline": true,        # the rim of the cap is drawn (a line, apart from the outlines of the model)
      "outline_color": [r, g, b],   # its colour (sRGB, as the picture shows it)
@@ -34,7 +39,11 @@ STYLES = ("material", "flat", "hatch", "drawing")
 PATTERNS = ("diagonal", "cross", "grid", "dots")
 DEFAULT = {"cap": True, "style": "material", "material": None, "color": [0.35, 0.37, 0.41],
            "pattern": "diagonal", "line": [0.1, 0.1, 0.1], "spacing": 0.1, "shadows": True, "light": "open",
-           "outline": True, "outline_color": [0.05, 0.05, 0.05], "outline_width": 2.4}
+           "outline": True, "outline_color": [0.05, 0.05, 0.05], "outline_width": 2.4,
+           "line_width": 0.14, "line_hand": 0.0, "line_opacity": 1.0, "outline_hand": 0.0, "outline_opacity": 1.0}
+#: The new numbers' limits.
+_RANGES = {"line_width": (0.02, 0.6), "line_hand": (0.0, 1.0), "line_opacity": (0.0, 1.0), "outline_hand": (0.0, 1.0),
+           "outline_opacity": (0.05, 1.0)}
 #: IngeTrazo's default colour for a cut's fill (core/section.py's style).
 FALLBACK_COLOR = (0.35, 0.37, 0.41)
 
@@ -65,6 +74,12 @@ def clean(raw) -> dict:
     except (TypeError, ValueError):
         ow = DEFAULT["outline_width"]
     out["outline_width"] = max(0.3, min(20.0, ow)) if ow == ow else DEFAULT["outline_width"]
+    for key, (lo, hi) in _RANGES.items():
+        try:
+            value = float(raw.get(key, DEFAULT[key]))
+        except (TypeError, ValueError):
+            value = DEFAULT[key]
+        out[key] = max(lo, min(hi, value)) if value == value else DEFAULT[key]
     return out
 
 
@@ -211,7 +226,8 @@ def job_block(scene, opts: dict | None = None, viewport=None) -> dict | None:
     if o["style"] in ("flat", "hatch"):
         block["color"] = list(o["color"])
         if o["style"] == "hatch":
-            block.update(pattern=o["pattern"], line=list(o["line"]), spacing=o["spacing"], texture_size=[1.0, 1.0])
+            block.update(pattern=o["pattern"], line=list(o["line"]), spacing=o["spacing"], texture_size=[1.0, 1.0],
+                         line_width=o["line_width"], line_hand=o["line_hand"], line_opacity=o["line_opacity"])
         return block                                  # (the pattern is made in metres: uv = metres)
     name = o["material"]
     mat = (getattr(scene, "materials", None) or {}).get(name) if name else None

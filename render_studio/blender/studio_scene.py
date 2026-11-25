@@ -2872,14 +2872,35 @@ def _hatch_nodes(mat, section):
     nodes, links = mat.node_tree.nodes, mat.node_tree.links
     pattern = section.get("pattern", "diagonal")
     spacing = max(0.005, float(section.get("spacing", 0.1)))
-    width = 0.14                                   # the line's share of the spacing
-    uv = nodes.new("ShaderNodeTexCoord")
+    width = max(0.02, min(0.6, float(section.get("line_width", 0.14))))     # the line's share of the spacing
+    hand = max(0.0, min(1.0, float(section.get("line_hand", 0.0))))
+    ink = max(0.0, min(1.0, float(section.get("line_opacity", 1.0))))
+    coords = nodes.new("ShaderNodeTexCoord")
+    uv = coords.outputs["UV"]
+    if hand > 0.0:                                 # a hand's lines waver: the pattern is looked up a little off, by a slow noise
+        noise = nodes.new("ShaderNodeTexNoise")
+        noise.inputs["Scale"].default_value = 0.3 / spacing          # long waves, none of the noise's fine tremble
+        noise.inputs["Detail"].default_value = 0.0
+        links.new(coords.outputs["UV"], noise.inputs["Vector"])
+        centred = nodes.new("ShaderNodeVectorMath")
+        centred.operation = "SUBTRACT"
+        links.new(noise.outputs["Color"], centred.inputs[0])
+        centred.inputs[1].default_value = (0.5, 0.5, 0.5)
+        scaled = nodes.new("ShaderNodeVectorMath")
+        scaled.operation = "SCALE"
+        links.new(centred.outputs["Vector"], scaled.inputs[0])
+        scaled.inputs["Scale"].default_value = hand * spacing * 0.75
+        moved = nodes.new("ShaderNodeVectorMath")
+        moved.operation = "ADD"
+        links.new(coords.outputs["UV"], moved.inputs[0])
+        links.new(scaled.outputs["Vector"], moved.inputs[1])
+        uv = moved.outputs["Vector"]
 
     def lines(angle_deg):
         mp = nodes.new("ShaderNodeMapping")
         mp.inputs["Rotation"].default_value = (0.0, 0.0, math.radians(angle_deg))
         mp.inputs["Scale"].default_value = (1.0 / spacing, 1.0 / spacing, 1.0)
-        links.new(uv.outputs["UV"], mp.inputs["Vector"])
+        links.new(uv, mp.inputs["Vector"])
         wave = nodes.new("ShaderNodeTexWave")
         wave.wave_type = "BANDS"
         wave.bands_direction = "X"
@@ -2899,7 +2920,7 @@ def _hatch_nodes(mat, section):
     if pattern == "dots":
         mp = nodes.new("ShaderNodeMapping")
         mp.inputs["Scale"].default_value = (1.0 / spacing, 1.0 / spacing, 1.0)
-        links.new(uv.outputs["UV"], mp.inputs["Vector"])
+        links.new(uv, mp.inputs["Vector"])
         vor = nodes.new("ShaderNodeTexVoronoi")
         vor.voronoi_dimensions = "2D"
         vor.feature = "F1"
@@ -2910,7 +2931,7 @@ def _hatch_nodes(mat, section):
         ramp.color_ramp.interpolation = "CONSTANT"
         ramp.color_ramp.elements[0].position = 0.0
         ramp.color_ramp.elements[0].color = (1, 1, 1, 1)
-        ramp.color_ramp.elements[1].position = 0.2
+        ramp.color_ramp.elements[1].position = min(0.48, 0.2 * width / 0.14)
         ramp.color_ramp.elements[1].color = (0, 0, 0, 1)
         links.new(vor.outputs["Distance"], ramp.inputs["Fac"])
         mask = ramp.outputs["Color"]
@@ -2929,7 +2950,10 @@ def _hatch_nodes(mat, section):
     out.data_type = "RGBA"
     links.new(mask, out.inputs[0])
     out.inputs[6].default_value = (*_lin(section.get("color")), 1.0)         # where the mask is 0: the ground
-    out.inputs[7].default_value = (*_lin(section.get("line")), 1.0)          # where it is 1: the lines
+    ground, line = section.get("color"), section.get("line")
+    if ground and line and ink < 1.0:                                        # a paler ink: nearer the colour under it
+        line = [g + (c - g) * ink for g, c in zip(ground, line)]
+    out.inputs[7].default_value = (*_lin(line), 1.0)                         # where it is 1: the lines
     return out.outputs[2]
 
 
@@ -3063,7 +3087,8 @@ def clip_section(section):
         sec = dict(section)
         sec.update({k: v for k, v in entry.items() if k not in ("point", "normal")})
         want_cap = bool(sec.get("cap", True))
-        key = json.dumps([sec.get(k) for k in ("style", "color", "material", "pattern", "line", "spacing", "shadows")], default=str)
+        key = json.dumps([sec.get(k) for k in ("style", "color", "material", "pattern", "line", "spacing", "shadows",
+                                                       "line_width", "line_hand", "line_opacity")], default=str)
         if want_cap and key not in capmats:
             capmats[key] = _cap_material(sec)
         capmat = capmats.get(key) if want_cap else None

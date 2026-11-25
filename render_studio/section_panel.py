@@ -8,13 +8,13 @@ from __future__ import annotations
 
 from .i18n import tr, translate_on_show  # noqa: F401
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QColorDialog, QComboBox, QDoubleSpinBox, QFormLayout, QHBoxLayout,
                                QInputDialog, QLabel, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget)
 
 from . import section as S
-from . import icons, widgets
+from . import cap_widgets, icons, widgets
 from .widgets import NumberSlider
 
 
@@ -75,6 +75,7 @@ class SectionTab(QWidget):
         self._stale = False                     # the model changed while nobody needed the list
         self._wanted = None                     # the material chosen (kept while it is not in the list)
         self._building = False                  # the list of sections is being filled: its ticks are not the person's
+        self.after_paint = None                 # the panel's: its layout over the rows this page has just shown
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 8, 4, 0)
         self.state = _note()                    # what cuts now, over the cards
@@ -136,7 +137,17 @@ class SectionTab(QWidget):
         self.material.setToolTip("The cap is made of this material of the drawing, so it takes its "
                                  "picture, finish and the settings of the material editor.")
         self.material.currentIndexChanged.connect(self._edited)
-        form.addRow("Material", self.material)
+        self.grid = cap_widgets.MaterialGrid()                 # the drawing's materials as pictures; the list box holds the value
+        self.grid.picked.connect(self._grid_picked)
+        self.material_box = QWidget()
+        mbox = QVBoxLayout(self.material_box)
+        mbox.setContentsMargins(0, 0, 0, 0)
+        mbox.addWidget(self.grid)
+        mbox.addWidget(self.material)
+        self.material.setVisible(False)
+        self.preview = cap_widgets.CapPreview()
+        form.addRow(self.preview)
+        form.addRow(self.material_box)
         self.drawing_note = _note("The cap is filled as the drawing fills its cut: the plane's or the box's own fill, else the style's "
                                   "Section fill (a solid colour, a hatch, a cross hatch, or none).")
         form.addRow(self.drawing_note)
@@ -149,10 +160,6 @@ class SectionTab(QWidget):
             self.pattern.addItem(tr(label), key)
         self.pattern.currentIndexChanged.connect(self._edited)
         form.addRow("Pattern", self.pattern)
-        self.line = ColourButton(S.DEFAULT["line"], "Line colour")
-        self.line.setToolTip("The colour of the lines or dots.")
-        self.line.changed.connect(self._edited)
-        form.addRow("Lines", self.line)
         self.spacing = QDoubleSpinBox()
         self.spacing.setRange(0.5, 500.0)
         self.spacing.setDecimals(1)
@@ -163,22 +170,50 @@ class SectionTab(QWidget):
         self.spacing.setToolTip("The distance between lines (or dots), in the real size of the drawing.")
         self.spacing.valueChanged.connect(self._edited)
         form.addRow("Spacing", self.spacing)
+        # the hatching's lines, in the order lines always have here: thickness, colour, hand, ink
+        self.line_width = NumberSlider(2.0, 60.0, 1.0, "{:.0f}%")
+        self.line_width.setValue(S.DEFAULT["line_width"] * 100.0)
+        self.line_width.setToolTip("The thickness of the hatching's lines (or the size of its dots), as a share of the spacing.")
+        self.line_width.valueChanged.connect(self._edited)
+        form.addRow("Thickness", self.line_width)
+        self.line = ColourButton(S.DEFAULT["line"], "Line colour")
+        self.line.setToolTip("The colour of the lines or dots.")
+        self.line.changed.connect(self._edited)
+        form.addRow("Colour", self.line)
+        self.line_hand = NumberSlider(0.0, 1.0, 0.05, "{:.0%}")
+        self.line_hand.setToolTip("From ruled lines (0) to a loose hand.")
+        self.line_hand.valueChanged.connect(self._edited)
+        form.addRow("Hand", self.line_hand)
+        self.line_opacity = NumberSlider(0.0, 1.0, 0.05, "{:.0%}")
+        self.line_opacity.setValue(1.0)
+        self.line_opacity.setToolTip("How dark the ink of the lines is over the cap's colour.")
+        self.line_opacity.valueChanged.connect(self._edited)
+        form.addRow("Ink", self.line_opacity)
         self.outline = QCheckBox("Outline of the cap")
         self.outline.setChecked(True)
         self.outline.setToolTip("Draws the rim of the cap: a line round every cut wall and slab, with its own colour and thickness. In the "
                                 "finished picture it stays a line you can restyle (colour, thickness) until you save.")
         self.outline.toggled.connect(self._edited)
         rim_box.form.addRow(self.outline)
-        self.outline_colour = ColourButton(S.DEFAULT["outline_color"], "Colour of the cap's outline")
-        self.outline_colour.setToolTip("The colour of the cap's outline.")
-        self.outline_colour.changed.connect(self._edited)
-        rim_box.form.addRow("Colour", self.outline_colour)
         self.outline_width = NumberSlider(0.5, 10.0, 0.1, "{:.1f} px")
         self.outline_width.setValue(S.DEFAULT["outline_width"])
         self.outline_width.setToolTip("The thickness of the cap's outline, in pixels of the finished picture.")
         self.outline_width.valueChanged.connect(self._edited)
         rim_box.form.addRow("Thickness", self.outline_width)
-        self.outline.toggled.connect(lambda on: (self.outline_colour.setEnabled(on), self.outline_width.setEnabled(on)))
+        self.outline_colour = ColourButton(S.DEFAULT["outline_color"], "Colour of the cap's outline")
+        self.outline_colour.setToolTip("The colour of the cap's outline.")
+        self.outline_colour.changed.connect(self._edited)
+        rim_box.form.addRow("Colour", self.outline_colour)
+        self.outline_hand = NumberSlider(0.0, 1.0, 0.05, "{:.0%}")
+        self.outline_hand.setToolTip("From an even line (0) to a hand's pressure.")
+        self.outline_hand.valueChanged.connect(self._edited)
+        rim_box.form.addRow("Hand", self.outline_hand)
+        self.outline_opacity = NumberSlider(0.05, 1.0, 0.05, "{:.0%}")
+        self.outline_opacity.setValue(1.0)
+        self.outline_opacity.setToolTip("How dark the ink of the cap's outline is.")
+        self.outline_opacity.valueChanged.connect(self._edited)
+        rim_box.form.addRow("Ink", self.outline_opacity)
+        self.outline.toggled.connect(self._rim_enable)
         self.shadows = QCheckBox("No shadows on the cap")
         self.shadows.setToolTip("The cap neither casts nor receives shadows: it keeps its colour evenly, "
                                 "as a drawn section, whatever the sun does.")
@@ -194,11 +229,49 @@ class SectionTab(QWidget):
             "out of the picture but still casts shadow and bounces light, so the inside is "
             "lit as in the real building (Cycles; EEVEE may show it).")
         self.light.currentIndexChanged.connect(self._edited)
-        light_box.form.addRow(self.light)
+        self.light_buttons = widgets.ChoiceButtons([tr("Light enters"), tr("Light blocked")], icons=("light_open", "light_blocked"))
+        for n, button in enumerate(self.light_buttons._buttons):
+            button.setIconSize(QSize(34, 34))
+            button.setMinimumHeight(66)
+            button.setToolTip(self.light.itemText(n) + "\n" + self.light.toolTip())
+        self.light_buttons.currentIndexChanged.connect(self.light.setCurrentIndex)
+        self.light.currentIndexChanged.connect(self._light_follow)
+        self.light_box = QWidget()
+        lbox = QVBoxLayout(self.light_box)
+        lbox.setContentsMargins(0, 0, 0, 0)
+        lbox.addWidget(self.light_buttons)
+        lbox.addWidget(self.light)
+        self.light.setVisible(False)
+        light_box.form.addRow(self.light_box)
         lay.addStretch(1)
         self._fill()
         self._fill_sections()
         self._paint()
+
+    def _rim_enable(self, on: bool) -> None:
+        for w in (self.outline_width, self.outline_colour, self.outline_hand, self.outline_opacity):
+            w.setEnabled(on)
+        if hasattr(self, "preview"):
+            self.preview.show_cap(self.settings())
+
+    def _light_follow(self, index: int) -> None:
+        was = self.light_buttons.blockSignals(True)
+        self.light_buttons.setCurrentIndex(index)
+        self.light_buttons.blockSignals(was)
+
+    def _grid_picked(self, index: int) -> None:
+        self.material.setCurrentIndex(index)
+
+    def _tile(self, name):
+        """The picture of the material ``name`` for the grid (None: the plain grey cap)."""
+        mat = (getattr(self.app.scene, "materials", None) or {}).get(name) if name else None
+        if mat is None:
+            return cap_widgets.plain_tile((0.55, 0.55, 0.55))
+        try:
+            from .material_editor import _swatch
+            return _swatch(mat)
+        except Exception:  # noqa: BLE001 - no picture of it: its colour
+            return cap_widgets.plain_tile(getattr(mat, "color", None) or (0.55, 0.55, 0.55))
 
     # -- values -----------------------------------------------------------------------
     def settings(self) -> dict:
@@ -206,12 +279,15 @@ class SectionTab(QWidget):
                 "color": self.colour.rgb(), "pattern": self.pattern.currentData(), "line": self.line.rgb(),
                 "spacing": round(self.spacing.value() / 100.0, 4), "shadows": not self.shadows.isChecked(),
                 "light": self.light.currentData(), "outline": self.outline.isChecked(),
-                "outline_color": self.outline_colour.rgb(), "outline_width": round(self.outline_width.value(), 2)}
+                "outline_color": self.outline_colour.rgb(), "outline_width": round(self.outline_width.value(), 2),
+                "line_width": round(self.line_width.value() / 100.0, 3), "line_hand": round(self.line_hand.value(), 3),
+                "line_opacity": round(self.line_opacity.value(), 3), "outline_hand": round(self.outline_hand.value(), 3),
+                "outline_opacity": round(self.outline_opacity.value(), 3)}
 
     def apply(self, raw) -> None:
         d = S.clean(raw)
         mine = (self.cap, self.material, self.light, self.style, self.pattern, self.spacing, self.shadows, self.outline,
-                self.outline_width)
+                self.outline_width, self.line_width, self.line_hand, self.line_opacity, self.outline_hand, self.outline_opacity)
         for w in mine:
             w.blockSignals(True)
         self.cap.setChecked(d["cap"])
@@ -224,10 +300,16 @@ class SectionTab(QWidget):
         self.outline.setChecked(d["outline"])
         self.outline_colour.set_rgb(d["outline_color"])
         self.outline_width.setValue(d["outline_width"])
-        self.outline_colour.setEnabled(d["outline"])
-        self.outline_width.setEnabled(d["outline"])
+        self.line_width.setValue(d["line_width"] * 100.0)
+        self.line_hand.setValue(d["line_hand"])
+        self.line_opacity.setValue(d["line_opacity"])
+        self.outline_hand.setValue(d["outline_hand"])
+        self.outline_opacity.setValue(d["outline_opacity"])
+        for w in (self.outline_width, self.outline_colour, self.outline_hand, self.outline_opacity):
+            w.setEnabled(d["outline"])
         self._wanted = d["material"]
         self.light.setCurrentIndex(max(0, self.light.findData(d["light"])))
+        self._light_follow(self.light.currentIndex())
         self._fill()
         for w in mine:
             w.blockSignals(False)
@@ -379,11 +461,17 @@ class SectionTab(QWidget):
         capped = self.cap.isChecked()
         style = self.style.currentData()
         self.drawing_note.setVisible(style == "drawing")
-        for w, shown in ((self.style, True), (self.material, style == "material"), (self.colour, style in ("flat", "hatch")),
-                         (self.pattern, style == "hatch"), (self.line, style == "hatch"),
-                         (self.spacing, style == "hatch"), (self.shadows, True)):
+        hatch = style == "hatch"
+        for w, shown in ((self.style, True), (self.preview, style in ("flat", "hatch")), (self.material_box, style == "material"),
+                         (self.colour, style in ("flat", "hatch")), (self.pattern, hatch), (self.spacing, hatch),
+                         (self.line_width, hatch), (self.line, hatch), (self.line_hand, hatch), (self.line_opacity, hatch),
+                         (self.shadows, True)):
             self.form.setRowVisible(w, shown)
             w.setEnabled(capped)
+        self.grid.follow(self.material, self._tile)
+        self.preview.show_cap(self.settings())
+        if self.after_paint is not None:
+            self.after_paint()                                  # (the layout takes out again what it does not show)
         name = self.material.currentData() if style == "material" else None
         if name and not (getattr(self, "_counts", {}) or {}).get(name):
             self.state.setText(self.state.text() + "\n" + tr("The cap material is in no face of the model: "

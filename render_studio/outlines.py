@@ -131,7 +131,8 @@ def cut_line_style(style: dict, height: int) -> st.LineStyle:
     cut = cut_of(style) or {}
     base = line_style(style, height)
     width = max(0.3, float(cut.get("width", 2.4) or 2.4))
-    return st.LineStyle(hand=base.hand, width=width * st.REFERENCE_HEIGHT / max(1, height), profile_scale=1.0, overshoot=0.0, extend_px=0.0,
+    hand = max(base.hand, max(0.0, min(1.0, float(cut.get("hand", 0.0) or 0.0))))
+    return st.LineStyle(hand=hand, width=width * st.REFERENCE_HEIGHT / max(1, height), profile_scale=1.0, overshoot=0.0, extend_px=0.0,
                         double_stroke=False, breaks=False,
                         opacity=max(0.05, min(1.0, float(cut.get("opacity", 1.0) or 1.0))))
 

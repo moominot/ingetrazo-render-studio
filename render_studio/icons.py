@@ -523,6 +523,43 @@ def _check_none(p, ink):
     p.drawRoundedRect(QRectF(9, 9, 30, 30), 4, 4)
 
 
+def _plus(p, ink):
+    # More of this: a ringed plus, the cross in the accent.
+    p.setBrush(Qt.NoBrush)
+    p.drawEllipse(QPointF(24, 24), 17, 17)
+    p.setPen(_pen(_accent(), _WIDTH * 1.5))
+    p.drawLine(QPointF(15, 24), QPointF(33, 24))
+    p.drawLine(QPointF(24, 15), QPointF(24, 33))
+
+
+def _cut_box(p, ink):
+    # A room cut open at the top: its floor and walls.
+    p.setBrush(Qt.NoBrush)
+    p.drawPolyline(QPolygonF([QPointF(9, 22), QPointF(9, 41), QPointF(39, 41), QPointF(39, 22)]))
+
+
+def _light_open(p, ink):
+    # The sun's rays go into the cut.
+    _cut_box(p, ink)
+    _dot(p, 24, 9, 5.0)
+    p.setPen(_pen(_accent(), _WIDTH))
+    for x in (15, 24, 33):
+        p.drawLine(QPointF(24 + (x - 24) * 0.45, 17), QPointF(x, 32))
+    _arrow_head(p, QPointF(24, 36), 0, 1, 7.0)
+
+
+def _light_blocked(p, ink):
+    # The removed part is still there for the light: a lid, and the rays end on it.
+    _cut_box(p, ink)
+    _dot(p, 24, 8, 5.0)
+    p.setPen(_pen(_accent(), _WIDTH))
+    for x in (17, 24, 31):
+        p.drawLine(QPointF(24 + (x - 24) * 0.6, 14), QPointF(x, 18))
+    p.setPen(_pen(ink, _WIDTH, Qt.DashLine))
+    p.drawLine(QPointF(9, 22), QPointF(39, 22))
+    _fill(p, QPolygonF([QPointF(9, 22), QPointF(39, 22), QPointF(39, 40), QPointF(9, 40)]), 60)
+
+
 def _preview(p, ink):
     # A screen with a play mark: the picture, live.
     p.setBrush(Qt.NoBrush)
@@ -671,7 +708,7 @@ _DRAW = {
     "amb_sunny": _amb_sunny, "amb_cloudy": _amb_cloudy, "amb_golden": _amb_golden, "amb_night": _amb_night,
     "amb_interior": _amb_interior,
     "preview": _preview, "materials": _materials, "lights": _lights,
-    "follow_camera": _follow_camera, "follow_changes": _follow_changes, "refresh": _refresh, "capture": _capture,
+    "follow_camera": _follow_camera, "follow_changes": _follow_changes, "refresh": _refresh, "capture": _capture, "light_open": _light_open, "light_blocked": _light_blocked, "plus": _plus,
     "grp_section": _grp_section, "grp_cap": _grp_cap, "grp_size": _grp_size, "grp_file": _grp_file, "pencil": _pencil,
     "trash": _trash, "folder": _folder, "swap": _swap, "check_all": _check_all, "check_none": _check_none, "tools": _tools,
     "grp_presets": _grp_presets, "grp_camera": _grp_camera, "grp_quality": _grp_quality, "grp_surface": _grp_surface,

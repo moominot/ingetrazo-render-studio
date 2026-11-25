@@ -24,7 +24,8 @@ QToolButton, QToolButton:checked, QToolButton:pressed { border: none; background
 QToolButton:hover { background: rgba(128,128,128,50); border-radius: 4px; }
 """
 #: The groups whose icon is not called after them.
-GROUP_ICONS = {"ambient": "grp_light", "image": "grp_corrections"}
+GROUP_ICONS = {"ambient": "grp_light", "image": "grp_corrections", "cap": "grp_cap", "rim": "grp_outline",
+               "cutlight": "grp_light"}
 
 
 def _plain(text: str) -> str:

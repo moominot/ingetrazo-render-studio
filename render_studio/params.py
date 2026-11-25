@@ -26,10 +26,11 @@ TABS = {
     "main": ("Main", ("ambient", "camera", "quality")),
     "style": ("Style", ("surface", "outline", "finish", "image")),
     "environment": ("Environment", ("sky", "shadows", "background", "ground", "horizon", "fog")),
+    "section": ("Section", ("cap", "rim", "cutlight")),
 }
 GROUPS = {"ambient": "Light", "camera": "Camera", "quality": "Quality", "surface": "Surface", "outline": "Outline",
           "finish": "Finish", "image": "Picture", "sky": "Sun and sky", "shadows": "Shadows", "background": "Background",
-          "ground": "Ground", "horizon": "Horizon", "fog": "Fog"}
+          "ground": "Ground", "horizon": "Horizon", "fog": "Fog", "cap": "Cap", "rim": "Cap outline", "cutlight": "Light"}
 
 #: "program": a control over data that is IngeTrazo's own (the sun's place, date and hour): it has a row and an eye, and
 #: no value, default or reset of Render Studio's.
@@ -37,6 +38,10 @@ KINDS = ("bool", "number", "int", "choice", "colour", "text", "path", "program")
 
 #: The surface's own white (what the old White style painted), in the same terms as a chosen colour.
 WHITE = (0.82, 0.82, 0.80)
+
+
+def _cut(group, key, label, simple=True) -> "Param":
+    return Param(key, "section", group, label, "program", None, simple=simple, optional=True, local=True)
 
 
 def _site(key, label, simple=False) -> "Param":
@@ -229,6 +234,24 @@ def _build() -> tuple:
         _slider("fog", "environment", "fog", "fog.amount", simple=True),
         _slider("fog_start", "environment", "fog", "fog.start"),
         Param("fog.ground_haze", "environment", "fog", "Ground haze", "number", gr["haze"], 0.0, 4.0, when=ground),
+        # -- Section: the cap, its outline and the light in the cut (section.py keeps them in the drawing)
+        _cut("cap", "section.cap", "Close the cut with a face"),
+        _cut("cap", "section.style", "Type"),
+        _cut("cap", "section.material", "Material"),
+        _cut("cap", "section.colour", "Colour"),
+        _cut("cap", "section.pattern", "Pattern"),
+        _cut("cap", "section.spacing", "Spacing"),
+        _cut("cap", "section.line_width", "Hatching thickness"),
+        _cut("cap", "section.line_colour", "Hatching colour"),
+        _cut("cap", "section.line_hand", "Hatching hand"),
+        _cut("cap", "section.line_ink", "Hatching ink"),
+        _cut("cap", "section.no_shadows", "No shadows on the cap", simple=False),
+        _cut("rim", "rim.on", "Outline of the cap"),
+        _cut("rim", "rim.width", "Thickness"),
+        _cut("rim", "rim.colour", "Colour"),
+        _cut("rim", "rim.hand", "Hand"),
+        _cut("rim", "rim.ink", "Ink"),
+        _cut("cutlight", "cutlight.mode", "Light"),
     )
 
 

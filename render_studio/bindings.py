@@ -44,6 +44,12 @@ def controls(panel) -> dict:
         "skyline.seed": panel.skyline_seed, "skyline.colour": panel.skyline_colour,
         "fog.amount": s["fog"], "fog.start": s["fog_start"], "fog.ground_haze": panel.ground_haze,
     }
+    c = panel.section_tab
+    out.update({"section.cap": c.cap, "section.style": c.style, "section.material": c.material, "section.colour": c.colour,
+                "section.pattern": c.pattern, "section.spacing": c.spacing, "section.line_width": c.line_width,
+                "section.line_colour": c.line, "section.line_hand": c.line_hand, "section.line_ink": c.line_opacity,
+                "section.no_shadows": c.shadows, "rim.on": c.outline, "rim.width": c.outline_width, "rim.colour": c.outline_colour,
+                "rim.hand": c.outline_hand, "rim.ink": c.outline_opacity, "cutlight.mode": c.light})
     sun, quick = panel.sun_tab, panel.sun_quick
     out.update({"sun.date": quick.date_slider, "sun.hour": quick.hour_slider, "site.location": sun.map_btn,
                 "site.coords": sun.coords, "site.north": sun.north, "site.zone": sun.zone, "site.shadows": sun.shadows,

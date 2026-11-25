@@ -1000,7 +1000,8 @@ class StudioPanel(QWidget):
         for tab_widget, title in ((self.section_tab, "Section"), (self.output_tab, "Output")):
             self.tabs.addTab(scrolled(tab_widget), title)
         self.tabs.setCurrentIndex(min(self.tabs.count() - 1, max(0, int(st.value(_SETTINGS + "tab", 0) or 0))))
-        self.tabs.currentChanged.connect(lambda i: QSettings().setValue(_SETTINGS + "tab", int(i)))
+        self._expert_peek = False                      # the Expert page opened by a group's «+», to go when it is left
+        self.tabs.currentChanged.connect(self._tab_chosen)
         for combo in self.findChildren(QComboBox):       # a long name must not widen a narrow tray
             combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
             combo.setMinimumContentsLength(8)
@@ -1081,6 +1082,7 @@ class StudioPanel(QWidget):
         self.fine = FineControls(self, {group: bindings.row_of(anchor)[0] for group, anchor in anchors.items()})
         self.fine.changed.connect(self._fine_changed)
         # Every setting's control is in place: the layout takes out of the pages what it does not show (expert.py).
+        self.section_tab.after_paint = self._filter_layout
         self.expert = ExpertTab(self, layouts.Folder(presets_folder().parent / "layouts"))
         self.expert_page = scrolled(self.expert)
         self.expert_mode.setChecked(str(QSettings().value(_SETTINGS + "expert_mode", "false")).lower() == "true")
@@ -1088,6 +1090,7 @@ class StudioPanel(QWidget):
         for button in (self.materials_btn, self.lights_btn, self.preview_btn, self.expert_mode, self.help_btn):
             button.setStyleSheet(flat if button not in (self.expert_mode, self.help_btn) else flat + widgets.SMALL_BUTTON)
         self.set_expert_mode(self.expert_mode.isChecked())
+        self._add_more_buttons()
         self.expert_mode.toggled.connect(self.set_expert_mode)
         self.clock = widgets.ClockLabel()
         self.foot_row.addWidget(self.clock)
@@ -2106,11 +2109,62 @@ class StudioPanel(QWidget):
         elif not on and index >= 0:
             self.tabs.removeTab(index)
         self.expert_page.setVisible(on and self.tabs.currentWidget() is self.expert_page)
+        self._expert_peek = False                  # what the button says is what stays
         QSettings().setValue(_SETTINGS + "expert_mode", "true" if on else "false")
+
+    # -- a group's «+»: all its settings, in the Expert page ----------------------------------------
+    def _add_more_buttons(self) -> None:
+        """Each group of the pages that has settings in the Expert page gets a «+» in its header that opens them there."""
+        groups: dict = {}
+        for key, control in self.expert.controls.items():
+            node = control
+            while node is not None and not isinstance(node, widgets.Card):
+                node = node.parentWidget()
+            if node is not None:
+                groups.setdefault(node, (params.BY_KEY[key].tab, params.BY_KEY[key].group))
+        groups.setdefault(self.fx, ("style", "image"))            # «Effects»: settings of the picture, as «Corrections»
+        tip = tr("All the settings of this group (Expert page)")
+        for card, (tab, group) in groups.items():
+            card.add_more_button(tip, lambda t=tab, g=group: self.open_expert_group(t, g))
+
+    def open_expert_group(self, tab: str, group: str) -> None:
+        """The Expert page at ``group``, unfolded. With «Expert mode» off the page is there only while one looks at it."""
+        keys = {p.key for p in params.PARAMS if p.tab == tab and p.group == group}
+        card = next((header for header, shown in self.expert.headers if keys & set(shown)), None)
+        if card is None:
+            return
+        if self.tabs.indexOf(self.expert_page) < 0:
+            self.tabs.addTab(self.expert_page, tr("Expert"))
+            self._expert_peek = True
+        self.tabs.setCurrentWidget(self.expert_page)
+        self.expert.search.clear()                            # (a search left behind could be hiding it)
+        card.set_open(True)
+        self.expert.refresh()
+        QTimer.singleShot(0, lambda: self._scroll_to(card))   # once the page is laid out
+
+    def _scroll_to(self, card) -> None:
+        try:
+            self.expert.layout().activate()
+            self.expert_page.verticalScrollBar().setValue(max(0, card.mapTo(self.expert, card.rect().topLeft()).y() - 4))
+        except RuntimeError:                                  # the panel gone meanwhile
+            _log.debug("no group to scroll to", exc_info=True)
+
+    def _tab_chosen(self, index: int) -> None:
+        if self._expert_peek and self.tabs.widget(index) is not self.expert_page:
+            self._expert_peek = False
+            QTimer.singleShot(0, self._drop_peek)             # (not while the tabs are telling of the change)
+        if not self._expert_peek:
+            QSettings().setValue(_SETTINGS + "tab", int(index))
+
+    def _drop_peek(self) -> None:
+        index = self.tabs.indexOf(self.expert_page)
+        if index >= 0 and not self.expert_mode.isChecked() and self.tabs.currentWidget() is not self.expert_page:
+            self.tabs.removeTab(index)
 
     def reapply_conditions(self) -> None:
         """Every row that depends on a choice, shown or hidden again as that choice says."""
         self.style_groups.enable()
+        self.section_tab._paint()
         self._bg_enable()
         self._floor_enable()
         self._shadows_enable()
@@ -2637,7 +2691,7 @@ class StudioPanel(QWidget):
             return style
         opts = self.section_tab.settings()
         return dict(style, cut={"on": bool(opts.get("outline", True)), "color": list(opts.get("outline_color") or (0.05, 0.05, 0.05)),
-                                "width": float(opts.get("outline_width", 2.4)), "opacity": 1.0, "cap": bool(opts.get("cap", True)), "srgb": True})
+                                "width": float(opts.get("outline_width", 2.4)), "cap": bool(opts.get("cap", True)), "srgb": True, "hand": float(opts.get("outline_hand", 0.0)), "opacity": float(opts.get("outline_opacity", 1.0))})
 
     def line_set(self, camera, width: int, height: int):
         """The outlines of the style as vectors for the FINAL picture (outlines.LineSet and the controls' starting style), or None. The

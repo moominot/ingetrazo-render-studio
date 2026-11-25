@@ -131,6 +131,91 @@ for _w in (_o.width, _o.height):
     ok(_inside(_w) and QWidget.width(_w) >= _w.sizeHint().width() - 4, f"…and each size box has room for its number ({QWidget.width(_w)} px, wants {_w.sizeHint().width()})")
 panel.hide(); panel.tabs.setCurrentIndex(0)
 
+# -- each group's «+» opens all its settings in the Expert page
+def _card_of(w):
+    while w is not None and not isinstance(w, widgets.Card):
+        w = w.parentWidget()
+    return w
+from render_studio import widgets
+_pages = [c for i in range(3) for c in panel.tabs.widget(i).findChildren(widgets.Card)]
+_with = {c.title() for c in _pages if getattr(c, "more_button", None) is not None}
+_without = {c.title() for c in _pages} - _with
+ok({"Light", "Camera", "Quality", "Surface", "Outline", "Finish", "Corrections", "Sun and sky", "Shadows", "Background", "Ground", "Horizon", "Fog"} <= _with
+   and _without <= {"Presets"}, f"every group with settings has its «+» (without: {sorted(_without)})")
+ok({c.title() for c in panel.section_tab.findChildren(widgets.Card) if getattr(c, "more_button", None)} == {"Cap", "Cap outline", "Light"}
+   and not any(getattr(c, "more_button", None) for c in panel.output_tab.findChildren(widgets.Card)),
+   "Section's cap, outline and light have theirs; Output, which the Expert page does not hold, has none")
+panel.set_expert_mode(False); panel.expert_mode.setChecked(False); panel.tabs.setCurrentIndex(2)
+ground = _card_of(panel.ground)
+folded_expert = next(h for h, keys in e.headers if "ground.on" in keys); folded_expert.set_open(False)
+e.search.setText("zzz")
+ground.set_open(True)
+ground.more_button.click()
+for _ in range(10):
+    qa.processEvents()
+ok(panel.tabs.currentWidget() is panel.expert_page and not folded_expert.body.isHidden() and not folded_expert.isHidden() and e.search.text() == "",
+   "«+» opens the Expert page at its group, unfolded, with no search in the way")
+ok(not panel.expert_mode.isChecked() and ground.is_open(), "…without switching Expert mode on, or folding the card pressed")
+panel.tabs.setCurrentIndex(1)
+for _ in range(10):
+    qa.processEvents()
+ok(panel.tabs.indexOf(panel.expert_page) < 0 and panel.tabs.currentIndex() == 1, "…and the Expert page goes when it is left")
+panel.expert_mode.setChecked(True); ground.more_button.click(); panel.tabs.setCurrentIndex(0)
+for _ in range(10):
+    qa.processEvents()
+ok(panel.tabs.indexOf(panel.expert_page) >= 0, "with Expert mode on, it stays")
+panel.expert_mode.setChecked(False)
+ground.more_button.click()
+for _ in range(10):
+    qa.processEvents()
+panel.expert_mode.setChecked(True)
+panel.tabs.setCurrentIndex(0)
+for _ in range(10):
+    qa.processEvents()
+ok(panel.tabs.indexOf(panel.expert_page) >= 0, "switched on while looking, it stays too")
+panel.expert_mode.setChecked(False); folded_expert.set_open(True); panel.tabs.setCurrentIndex(0)
+
+# -- the Section page: the grid of materials or the picture of the hatching, the two buttons of the light, all in Expert
+c = panel.section_tab
+cut_keys = {k for k in params.BY_KEY if params.BY_KEY[k].tab == "section"}
+ok(len(cut_keys) == 17 and cut_keys <= set(e.rows) and cut_keys <= set(e.filter.rows), "every setting of the cap has its row in Expert and in its page")
+def shown_row(key):
+    form, row = e.filter.rows[key]
+    return form.isRowVisible(row)
+c.style.setCurrentIndex(c.style.findData("material")); qa.processEvents()
+ok(shown_row("section.material") and c.preview.isHidden() is True or not c.form.isRowVisible(c.preview), "a material cap: the grid, no picture of a hatch")
+ok(c.grid.count() == c.material.count() and c.grid.currentRow() == c.material.currentIndex(), "the grid has the materials of the list")
+from PySide6.QtWidgets import QStyleOptionViewItem
+ok(len({c.grid.itemDelegate().sizeHint(QStyleOptionViewItem(), c.grid.model().index(i, 0)).width() for i in range(c.grid.count())}) <= 1,
+   "…every square the same size")
+if c.grid.count() > 1:
+    c.grid.picked.emit(1)
+    ok(c.material.currentIndex() == 1 and c.settings()["material"] == c.material.currentData(), "a picture clicked is the cap's material")
+c.style.setCurrentIndex(c.style.findData("hatch")); qa.processEvents()
+ok(c.form.isRowVisible(c.preview) and not shown_row("section.material") and shown_row("section.line_width") and shown_row("section.line_hand"),
+   "a hatched cap: its picture and its lines")
+order = [e.filter.rows[k][1] for k in ("section.line_width", "section.line_colour", "section.line_hand", "section.line_ink")]
+ok(order == sorted(order), f"the lines in their order: thickness, colour, hand, ink ({order})")
+order = [e.filter.rows[k][1] for k in ("rim.width", "rim.colour", "rim.hand", "rim.ink")]
+ok(order == sorted(order), f"…and the cap's outline the same ({order})")
+c.line_width.setValue(30.0); c.line_hand.setValue(0.6); c.line_opacity.setValue(0.5); c.outline_hand.setValue(0.4); c.outline_opacity.setValue(0.7)
+got = c.settings()
+ok((got["line_width"], got["line_hand"], got["line_opacity"], got["outline_hand"], got["outline_opacity"]) == (0.3, 0.6, 0.5, 0.4, 0.7)
+   and c.preview.settings["line_hand"] == 0.6, "they are kept, and the picture follows")
+from render_studio import section as _section
+ok(all(_section.clean(got)[k] == got[k] for k in got) and _section.clean({"line_width": 9})["line_width"] == 0.6, "…made safe")
+cut = panel.style_with_cut({"mode": "none"}) if False else None
+ok(len(c.light_buttons._buttons) == 2 and all(not b.icon().isNull() and b.minimumHeight() >= 60 for b in c.light_buttons._buttons), "the light is two large buttons with icons")
+c.light_buttons._buttons[1].click()
+ok(c.settings()["light"] == "blocked", "…the second blocks it")
+c.apply({"light": "open", "style": "hatch"})
+ok(c.light_buttons.currentIndex() == 0 and c.settings()["light"] == "open", "…and the drawing's choice presses its button")
+e.set_eye("section.line_hand", False)
+c.style.setCurrentIndex(c.style.findData("flat")); c.style.setCurrentIndex(c.style.findData("hatch")); qa.processEvents()
+ok(not shown_row("section.line_hand") and shown_row("section.line_width"), "an eye closed stays closed when the page changes its rows")
+e.set_eye("section.line_hand", True)
+c.apply({}); qa.processEvents()
+
 # -- nothing is folded away in the pages, and every setting they have is in Expert too
 from PySide6.QtWidgets import QAbstractSlider, QAbstractSpinBox, QCheckBox, QComboBox, QFormLayout, QScrollBar
 from render_studio import widgets

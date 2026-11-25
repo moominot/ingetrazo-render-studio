@@ -451,6 +451,13 @@ class RefreshCombo(QComboBox):
 
 QWIDGETSIZE_MAX = (1 << 24) - 1                  # Qt's «no maximum»
 
+#: A card's «+»: flat, with a ground only under the pointer (the header has its own colour).
+MORE_STYLE = """
+QToolButton { border: none; background: transparent; padding: 1px; }
+QToolButton:hover { background: rgba(128,128,128,60); border-radius: 4px; }
+QToolButton:pressed { background: rgba(128,128,128,100); border-radius: 4px; }
+"""
+
 
 class Card(QGroupBox):
     """A group of the panel: a card whose header, in a colour of its own, has the group's icon and name and folds it away
@@ -489,6 +496,34 @@ class Card(QGroupBox):
 
     def _title_height(self) -> int:
         return max(28, self.fontMetrics().height() + 12)
+
+    #: What the header keeps at the right for its «+», when it has one.
+    MORE_ROOM = 24
+
+    def add_more_button(self, tip: str, slot) -> QToolButton:
+        """A «+» in the header, beside the fold's arrow: ``slot()`` when it is pressed (the click does not fold the card)."""
+        from . import icons
+        button = QToolButton(self)
+        button.setIcon(icons.icon("plus"))
+        button.setIconSize(QSize(16, 16))
+        button.setFixedSize(22, 22)
+        button.setToolTip(tip)
+        button.setCursor(Qt.PointingHandCursor)
+        button.setStyleSheet(MORE_STYLE)
+        button.clicked.connect(lambda _checked=False: slot())
+        self.more_button = button
+        self._place_more()
+        self.update()
+        return button
+
+    def _place_more(self) -> None:
+        button = getattr(self, "more_button", None)
+        if button is not None:
+            button.move(self.width() - 24 - button.width(), (self._title_height() - button.height()) // 2)
+
+    def resizeEvent(self, ev) -> None:          # noqa: N802 (Qt)
+        super().resizeEvent(ev)
+        self._place_more()
 
     def minimumSizeHint(self) -> QSize:         # noqa: N802 (Qt)
         """As narrow as what is inside: Qt would keep room for the whole title, which is cut short when it does not fit."""
@@ -577,8 +612,9 @@ class Card(QGroupBox):
         p.setFont(font)
         ink = palette.color(QPalette.WindowText)
         p.setPen(ink)
-        title = p.fontMetrics().elidedText(self.title(), Qt.ElideRight, max(10, self.width() - x - 28))
-        p.drawText(QRectF(x, 0, self.width() - x - 24, head), Qt.AlignVCenter | Qt.AlignLeft, title)
+        right = 28 + (self.MORE_ROOM if getattr(self, "more_button", None) is not None else 0)
+        title = p.fontMetrics().elidedText(self.title(), Qt.ElideRight, max(10, self.width() - x - right))
+        p.drawText(QRectF(x, 0, max(10, self.width() - x - right + 4), head), Qt.AlignVCenter | Qt.AlignLeft, title)
         ink.setAlpha(170)
         pen = QPen(ink, 1.6)
         pen.setCapStyle(Qt.RoundCap)
