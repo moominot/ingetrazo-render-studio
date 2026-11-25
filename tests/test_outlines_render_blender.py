@@ -71,7 +71,7 @@ panel = P.StudioPanel(app)
 found = rb.BlenderFound([BLENDER], BLENDER)
 panel.blender = lambda: found
 panel.width.setValue(480); panel.quality.setCurrentIndex(0)
-panel.style_width.setValue(3.0)
+panel.style_groups.outline.setChecked(True); panel.style_groups.width.setValue(3.0)
 finished = []
 panel.finished.connect(lambda p: finished.append(p))
 win = panel.open_preview()

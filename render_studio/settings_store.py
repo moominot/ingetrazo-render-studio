@@ -75,6 +75,25 @@ def _colour(v, default):
         return list(default)
 
 
+#: The surfaces and finishes the settings' new model knows (look_model.py).
+SURFACES = ("real", "mono", "paper", "lux")
+FINISHES = ("none", "watercolour")
+
+
+def style_parts(raw) -> dict | None:
+    """A style's ``parts``, cleaned: what a combination no old mode can say is made of — the ``surface``, whether one colour
+    keeps the glass (``keep_glass``) and is the plain white (``plain``), ``paper_sky`` (paper instead of the sky), the
+    ``finish`` and whether there are ``outline``s (their hand and extension are the style's ``noise`` and ``extend``). None for a
+    style that its ``mode`` says whole."""
+    if not isinstance(raw, dict):
+        return None
+    return {"surface": raw.get("surface") if raw.get("surface") in SURFACES else "real",
+            "keep_glass": bool(raw.get("keep_glass", True)), "plain": bool(raw.get("plain", False)),
+            "paper_sky": bool(raw.get("paper_sky", False)),
+            "finish": raw.get("finish") if raw.get("finish") in FINISHES else "none",
+            "outline": bool(raw.get("outline", False))}
+
+
 def flat(raw) -> dict | None:
     """The plain-colour background, cleaned: ``color`` (sRGB 0..1); None: none."""
     if not isinstance(raw, dict):
@@ -118,6 +137,9 @@ def style(raw) -> dict:
     for key in ("noise", "extend", "wetness", "paper", "edges"):
         d[key] = _num(raw.get(key), 0.0, 1.0, presets.STYLE_DEFAULT[key])
     d["base"] = bool(raw.get("base", True))
+    parts = style_parts(raw.get("parts"))
+    if parts:
+        d["parts"] = parts
     return d
 
 

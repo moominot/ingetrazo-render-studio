@@ -46,7 +46,7 @@ def group_of(w):
 doc = Doc(); panel = P.StudioPanel(doc); doc.panels.append(panel)
 panel.show()
 TAB = {panel.tabs.tabText(i): i for i in range(panel.tabs.count())}
-ok(list(TAB) == ['Main', 'Image', 'Environment', 'Section', 'Output'], f"the tabs: {list(TAB)}")
+ok(list(TAB) == ['Main', 'Style', 'Environment', 'Section', 'Output'], f"the tabs: {list(TAB)}")
 panel.tabs.setCurrentIndex(TAB['Environment'])
 ok(panel.bg_mode.currentData() == "sky" and panel.hdri_settings() is None and panel.backdrop_settings() is None, "starts on the look's own sky")
 ok(not panel.backdrop.isVisible() and not panel.hdri.isVisible(), "no background controls shown for the sky of the look")
@@ -74,7 +74,7 @@ panel.output_tab.transparent.setChecked(False)
 ok(not panel.bg_note.isVisible(), "…and goes when it does not")
 
 # reset to the look, and the folded adjustments
-panel.tabs.setCurrentIndex(TAB["Image"])
+panel.tabs.setCurrentIndex(TAB["Style"])
 panel.sliders["vignette"].setValue(panel.sliders["vignette"].maximum())
 panel.sliders["exposure_bias"].setValue(panel.sliders["exposure_bias"].maximum())
 panel.reset_btn.click()
@@ -85,7 +85,7 @@ ok(all(panel.slider_rows[k].isVisible() for k in ("exposure_bias", "saturation",
 panel.tabs.setCurrentIndex(TAB["Environment"])
 ok(all(panel.slider_rows[k].isVisible() for k in ("fog", "fog_start")) and group_of(panel.slider_rows["fog"]).title() == "Fog",
    "Environment: the fog is a group of its own, with the place's other settings")
-panel.tabs.setCurrentIndex(TAB["Image"])
+panel.tabs.setCurrentIndex(TAB["Style"])
 # the camera group: three projections (big icons) and the angle of view, the 3D view's own
 cam = doc.viewport.camera
 panel.show(); P.QApplication.processEvents()
@@ -269,33 +269,41 @@ ok(not panel.skyline_type.isEnabled() and panel.skyline_note.text(), "with no ge
 panel.ground.setChecked(True)
 ok(SS.skyline({"type": "volcano", "height": 99, "seed": -4, "color": "red"}) == {"type": "", "height": 20.0, "distance": 0.0, "seed": 0, "color": None}, "junk in the skyline is cleaned")
 
-# ---- the style: none, white, model, light, sketch, watercolour -----------------------------------------------------------------------------
-ok([panel.style_mode.itemData(i) for i in range(panel.style_mode.count())] == ["none", "white", "model", "light", "sketch", "watercolour"], "the styles: none, white, model, light, sketch, watercolour")
-TABW = panel.tabs.widget(0).widget()
+# ---- the style: the surface, the outline and the finish, each on its own -------------------------------------------------------------------
+g = panel.style_groups
+def pick(combo, key):
+    combo.setCurrentIndex(combo.findData(key)); qa.processEvents()
+TABW = panel.tabs.widget(1).widget()
 def shown(w):
     return w.isVisibleTo(TABW)
-panel.style_mode.setCurrentIndex(panel.style_mode.findData("none")); qa.processEvents()
-ok(shown(panel.style_width) and not shown(panel.style_lux) and not shown(panel.style_noise) and not shown(panel.style_wet) and not shown(panel.style_material), "None: only the outlines' thickness")
-ok(not shown(panel.style_colour_box), "…and the outlines' colour only when there are outlines")
-panel.style_width.setValue(2.0); qa.processEvents()
-ok(shown(panel.style_colour_box), "…it appears with a line")
-panel.style_mode.setCurrentIndex(panel.style_mode.findData("model")); qa.processEvents()
-ok(shown(panel.style_material) and shown(panel.style_model_colour) and not shown(panel.style_lux), "Model: the material and the colour")
-panel.style_mode.setCurrentIndex(panel.style_mode.findData("light")); qa.processEvents()
-ok(shown(panel.style_lux) and not shown(panel.style_material), "Light: the scale")
-panel.style_mode.setCurrentIndex(panel.style_mode.findData("sketch")); qa.processEvents()
-ok(shown(panel.style_noise) and shown(panel.style_extend) and shown(panel.style_colour_box), "Sketch: irregular stroke, line extension and the colour")
-panel.style_mode.setCurrentIndex(panel.style_mode.findData("watercolour")); qa.processEvents()
-ok(shown(panel.style_wet) and shown(panel.style_edges) and shown(panel.style_paper) and not shown(panel.style_noise), "Watercolour: wetness, edges and paper")
-panel.style_mode.setCurrentIndex(panel.style_mode.findData("white")); qa.processEvents()
-ok(panel.style_width.value() > 0.0 and not shown(panel.style_noise), "White: a thin outline by default")
-panel.style_mode.setCurrentIndex(panel.style_mode.findData("none")); qa.processEvents()
-ok(panel.style_width.value() == 0.0, "None goes back to no outlines")
-panel.style_mode.setCurrentIndex(panel.style_mode.findData("sketch")); panel.style_noise.setValue(0.8); panel.style_extend.setValue(15.0)          # 15 cm of the 50 the slider goes to: 0.3 is kept
+ok([g.surface.itemData(i) for i in range(g.surface.count())] == ["real", "mono", "paper", "lux"]
+   and [g.finish.itemData(i) for i in range(g.finish.count())] == ["none", "watercolour"], "the surfaces and the finishes")
+panel.reset_all(); qa.processEvents()
+ok(shown(g.surface) and not shown(g.material) and not shown(g.lux) and shown(g.outline) and not shown(g.width) and not shown(g.wetness),
+   "to start: real materials, no outlines, no finish, and only those choices")
+ok((g.wetness.value(), g.edges.value(), g.paper.value()) == (0.5, 0.4, 0.5), "the watercolour starts at its own values, not at 0")
+g.outline.setChecked(True); qa.processEvents()
+ok(g.width.value() == 0.8 and shown(g.width) and shown(g.line_colour) and shown(g.hand) and shown(g.extend), "outlines on: a thin line, its colour, hand and extension")
+pick(g.surface, "mono")
+ok(shown(g.material) and shown(g.colour) and shown(g.keep_glass) and not shown(g.lux), "one colour: the material, the colour, the glass")
+pick(g.surface, "lux")
+ok(shown(g.lux) and not shown(g.material) and not g.finish.isEnabled(), "lux: its scale, and no finish")
+pick(g.surface, "paper")
+stl = panel.style_settings()
+ok(stl["mode"] == "sketch" and stl["base"] is False and panel.shadow_settings()["draw"] == "render", "no surface: lines on paper")
+pick(g.surface, "mono"); pick(panel.bg_mode, "paper"); g.hand.setValue(0.8); g.extend.setValue(15.0)
 stl = panel.settings_dict()["style"]
-ok(stl["mode"] == "sketch" and stl["noise"] == 0.8 and stl["extend"] == 0.3 and SS.clean(panel.settings_dict())["style"] == SS.style(stl), "the style is in the document's settings")
+ok(stl["mode"] == "sketch" and stl["noise"] == 0.8 and stl["extend"] == 0.3 and "parts" not in stl and SS.clean(panel.settings_dict())["style"] == SS.style(stl),
+   "white, hand-drawn, on paper: the old sketch, in the document as before")
 blk = P.apply_style_block({}, doc.scene, stl)["style"]
 ok(blk["mode"] == "sketch" and blk["noise"] == 0.8 and "wetness" not in blk and "lux_max" not in blk, "the job carries only what the style uses")
+pick(panel.bg_mode, "sky"); pick(g.surface, "mono"); pick(g.finish, "watercolour")
+stl = panel.style_settings()
+ok(stl["parts"] == {"surface": "mono", "keep_glass": True, "plain": True, "paper_sky": False, "finish": "watercolour", "outline": True},
+   "a new combination (a watercolour of the white model, hand lines on the sky) is said by its parts")
+panel.apply_settings(dict(panel.settings_dict(), style=stl))
+ok(g.surface.currentData() == "mono" and g.finish.currentData() == "watercolour" and g.hand.value() == 0.8 and panel.style_settings() == stl
+   and panel.bg_mode.currentData() == "sky", "...and comes back from the document")
 ok(P.apply_style_block({}, doc.scene, {"mode": "none", "width": 0}) == {}, "no style, no outlines: nothing in the job")
 ok(P.apply_style_block({}, doc.scene, {"mode": "none", "width": 3})["style"]["width"] == 3.0, "outlines alone are a style of the job")
 doc.scene.materials["Cardboard"] = Material("Cardboard", color=(0.7, 0.6, 0.4))
@@ -303,12 +311,13 @@ mm2 = Mesh(); mm2.add_face([QVector3D(0, 0, 0), QVector3D(1, 0, 0), QVector3D(1,
 doc.scene.groups.append(Group(mm2, name="card")); doc.scene.version += 1
 mb = P.apply_style_block({}, doc.scene, {"mode": "model", "material": "Cardboard", "width": 1})["style"]
 ok(mb["material"] == "Cardboard" and mb["model_color"] == [0.7, 0.6, 0.4], "a model of a drawing's material carries its name and colour")
-panel._fill_style_materials()
-ok(panel.style_material.findData("Cardboard") >= 0 and panel.style_material.itemData(0) == "", "the Model's list: «A colour» and the drawing's materials")
-panel.apply_settings(dict(panel.settings_dict(), style={"mode": "watercolour", "width": 0.0, "wetness": 0.9, "paper": 0.2, "edges": 0.1}))
-ok(panel.style_mode.currentData() == "watercolour" and panel.style_wet.value() == 0.9, "applying settings puts the style back")
+g.fill_materials()
+ok(g.material.findData("Cardboard") >= 0 and g.material.itemData(0) == "", "the material list: «A colour» and the drawing's materials")
+panel.apply_settings({"look": "clear", "style": {"mode": "sketch", "width": 1.0, "noise": 0.6}})
+ok(panel.bg_mode.currentData() == "paper" and g.surface.currentData() == "mono" and g.outline.isChecked() and abs(g.hand.value() - 0.6) < 1e-6,
+   "an old sketch opens as white, hand-drawn, on paper")
 ok(SS.style({"mode": "oil", "width": 99, "noise": -3, "color": "x"})["mode"] == "none" and SS.style({"width": 99})["width"] == 4.0, "junk in the style is cleaned")
 if len(sys.argv) > 3:
-    for name in ("Main", "Image", "Environment"):
+    for name in ("Main", "Style", "Environment"):
         panel.tabs.setCurrentIndex(TAB[name]); panel.resize(320, 700); panel.grab().save(sys.argv[3].replace(".png", f"_{name}.png"))
 print("FAILED" if fails else "ALL OK"); sys.exit(1 if fails else 0)

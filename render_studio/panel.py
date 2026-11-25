@@ -28,7 +28,8 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDoubleSpinBo
                                QToolButton, QVBoxLayout, QWidget)
 
 from . import drawing_fog, user_presets, lights as studio_lights, materials as mats, fast_export, output, pbr, presets, proxies, section, settings_store, studio_data, visibility, widgets
-from . import view_camera
+from . import look_model, view_camera
+from .style_groups import StyleGroups
 from .live import LiveSession
 from .preview import ImageWindow  # noqa: F401 - re-exported: panel.ImageWindow
 from .widgets import SliderRow
@@ -134,10 +135,18 @@ def apply_style_block(block: dict, scene, style: dict | None, lines: str | None 
     (outlines.write_layer) the script lays over the picture. A model made of one
     material of the drawing carries that material's colour and picture for when the file has no such material."""
     st = settings_store.style(style)
-    if st["mode"] == "none" and st["width"] <= 0.0:
+    parts = st.get("parts")
+    if st["mode"] == "none" and st["width"] <= 0.0 and not parts:
         return block
     out = {"mode": st["mode"], "width": st["width"], "color": st["color"]}
-    if st["mode"] == "model":
+    if parts:
+        out["parts"] = parts
+        if parts["outline"] and st["width"] <= 0.0:
+            from .outlines import AUTO_WIDTH
+            out["width"] = AUTO_WIDTH
+        for key in ("noise", "extend", "lux_max", "wetness", "paper", "edges", "base"):
+            out[key] = st[key]
+    if st["mode"] == "model" or (parts and parts["surface"] == "mono"):
         out["model_color"] = st["model_color"]
         if st["material"]:
             from .materials import export_name
@@ -147,6 +156,8 @@ def apply_style_block(block: dict, scene, style: dict | None, lines: str | None 
             out["texture"] = str(tex["path"]) if tex.get("path") else None
             if getattr(mat, "color", None) is not None:
                 out["model_color"] = [float(c) for c in mat.color[:3]]
+    if parts:
+        pass
     elif st["mode"] == "light":
         out["lux_max"] = st["lux_max"]
     elif st["mode"] == "sketch":
@@ -474,8 +485,8 @@ class StudioPanel(QWidget):
         outer.setContentsMargins(6, 6, 6, 6)
         self.need_box = self._need_blender_box()
         outer.addWidget(self.need_box)
-        # Settings are in pages, as a person looks for them: Main (presets, look, quality), Image (the picture's
-        # own corrections), Sky (background, clouds, sun, ground). The simple controls show; the rest folds.
+        # Settings are in pages, as a person looks for them: Main (presets, camera, quality), Style (surface, outline,
+        # finish and the picture's own corrections), Environment (sun and sky, shadows, background, ground).
         def page():
             host = QWidget()
             lay = QVBoxLayout(host)
@@ -560,75 +571,13 @@ class StudioPanel(QWidget):
         box_look.setVisible(False)       # no longer a group of the Main tab: the look stays as the panel's base setting
         col_main.addWidget(box_look)
 
-        # The style of the render: how it is drawn (plain, white, a model of one material, lux, a sketch, a watercolour); every
-        # style can have outlines, and each has settings of its own.
-        from .section_panel import ColourButton
-        box_style = QGroupBox("Style")
-        form_s = QFormLayout(box_style)
-        form_s.setRowWrapPolicy(QFormLayout.WrapLongRows)
-        self._form_style = form_s
-        self.style_mode = QComboBox()
-        for key, label in presets.STYLES.items():
-            self.style_mode.addItem(tr(label), key)
-        self.style_mode.setToolTip("How the picture is drawn. None: as it is. White: every material white. Model: one material "
-                                   "for everything. Light: the lux each surface receives, in false colour. Sketch: pencil lines "
-                                   "on paper. Watercolour: washes of colour. All can have outlines.")
-        form_s.addRow("Style", self.style_mode)
-        self.style_width = widgets.NumberSlider(0.0, 4.0, 0.1, "{:.1f} px", special="No outlines")
-        self.style_width.setToolTip("The thickness of the outlines, in pixels (0 = none).")
-        form_s.addRow("Outlines", self.style_width)
-        scol = QHBoxLayout()
-        self.style_colour = ColourButton(presets.STYLE_DEFAULT["color"], "Outline colour", linear=True)
-        self.style_colour.setToolTip("The colour of the outlines.")
-        scol.addWidget(self.style_colour, 1)
-        self.style_colour_box = QWidget()
-        self.style_colour_box.setLayout(scol)
-        scol.setContentsMargins(0, 0, 0, 0)
-        form_s.addRow("Outline colour", self.style_colour_box)
-        # Model: one material for everything
-        self.style_material = widgets.RefreshCombo(self._fill_style_materials)
-        self.style_material.setToolTip("The material every object wears: a plain colour, or a material of the drawing "
-                                       "(with its picture and settings).")
-        form_s.addRow("Material", self.style_material)
-        self.style_model_colour = ColourButton(presets.STYLE_DEFAULT["model_color"], "Model colour", linear=True)
-        self.style_model_colour.setToolTip("The colour of the model (when the material is «A colour»).")
-        form_s.addRow("Model colour", self.style_model_colour)
-        # Light
-        self.style_lux = widgets.NumberSlider(0.0, 200000.0, 1000.0, "{:,.0f} lx", special="Automatic")
-        self.style_lux.setToolTip("The top of the colour scale, in lux. Automatic: round numbers chosen from the picture. The light "
-                                  "is a clear day's sun (about 100 000 lx) and the lamps in lumens; a white matte surface is assumed.")
-        form_s.addRow("Scale up to", self.style_lux)
-        # Sketch
-        self.style_noise = widgets.NumberSlider(0.0, 1.0, 0.05, "{:.0%}")
-        self.style_noise.setToolTip("How irregular the stroke is: straight, or wobbling and gone over twice like a pencil.")
-        form_s.addRow("Irregular stroke", self.style_noise)
-        self.style_extend = widgets.NumberSlider(0.0, 50.0, 1.0, "{:.0f} cm")
-        self.style_extend.setToolTip("How far the lines run past their corners, as a draughtsman's do: in centimetres of the model "
-                                     "(estimated at the model's own distance from the camera).")
-        form_s.addRow("Line extension", self.style_extend)
-        self.style_base = QCheckBox("Render under the lines")
-        self.style_base.setToolTip("On: the white model, lit, under the lines. Off: only the lines (and the shadows' hatching) on paper.")
-        self.style_base.setChecked(True)
-        form_s.addRow(self.style_base)
-        # Watercolour
-        self.style_wet = widgets.NumberSlider(0.0, 1.0, 0.05, "{:.0%}")
-        self.style_wet.setToolTip("How far the colour spreads: dry and detailed ← → wet washes.")
-        form_s.addRow("Wetness", self.style_wet)
-        self.style_edges = widgets.NumberSlider(0.0, 1.0, 0.05, "{:.0%}")
-        self.style_edges.setToolTip("How dark the pigment pools along the edges.")
-        form_s.addRow("Edges", self.style_edges)
-        self.style_paper = widgets.NumberSlider(0.0, 1.0, 0.05, "{:.0%}")
-        self.style_paper.setToolTip("How rough the paper is: its grain shows in the colour.")
-        form_s.addRow("Paper", self.style_paper)
-        self.style_note = self._caption("")
-        form_s.addRow(self.style_note)
-        self._style_rows = {
-            "white": (), "model": (self.style_material, self.style_model_colour), "light": (self.style_lux,),
-            "sketch": (self.style_noise, self.style_extend, self.style_base), "watercolour": (self.style_wet, self.style_edges, self.style_paper),
-            "none": ()}
-        col_main.addWidget(box_style)
-        col_main.addWidget(self._build_shadows_box())
-        col_main.addWidget(self._build_camera_box())          # the camera, under the style
+        # The style: the surface, the outline and the finish, each on its own (style_groups.py), above the picture's corrections.
+        self.style_groups = StyleGroups(self.app, self)
+        for i, group_box in enumerate(self.style_groups.boxes):
+            col_image.insertWidget(i, group_box)
+        col_image.addStretch(1)
+        self.shadows_box = self._build_shadows_box()          # (it goes under the sun, in the Environment page)
+        col_main.addWidget(self._build_camera_box())
 
         # The background: the look's own sky, a 360° panorama, or one fixed picture.
         box_bg = widgets.FoldBox("Background", "background")
@@ -638,6 +587,9 @@ class StudioPanel(QWidget):
         self.bg_mode.addItem(tr("360° panorama"), "pano")
         self.bg_mode.addItem(tr("Fixed picture"), "picture")
         self.bg_mode.addItem(tr("Plain colour"), "flat")
+        self.bg_mode.addItem(tr("Paper"), "paper")
+        self._paper_under = False          # a document's paper behind a plain colour or a picture (an old sketch's)
+        self.bg_mode.activated.connect(self._background_chosen)
         saved_pano = str(st.value(_SETTINGS + "hdri", "") or "")
         saved_pic = str(st.value(_SETTINGS + "backdrop", "") or "")
         mode0 = str(st.value(_SETTINGS + "bg_mode", "pano" if saved_pano else ("picture" if saved_pic else "sky")))
@@ -645,7 +597,8 @@ class StudioPanel(QWidget):
         self.bg_mode.setToolTip("What is seen behind the model. Sky of the look: the sky the look makes. "
                                 "360° panorama: a photo all round you, which also lights the model. "
                                 "Fixed picture: one flat picture behind it, which stays put when the view turns. "
-                                "Plain colour: exactly that colour behind the model (white, for instance).")
+                                "Plain colour: exactly that colour behind the model (white, for instance). "
+                                "Paper: the sky is left out and drawing paper is behind.")
         form2.addRow("Show", self.bg_mode)
         self.bg_note = self._caption("")
         self.bg_note.setStyleSheet("color: #b36b00; font-size: 11px")
@@ -752,7 +705,7 @@ class StudioPanel(QWidget):
         self.ground_shadow.setChecked(str(st.value(_SETTINGS + "ground_shadow", "true")).lower() != "false")
         self.ground_shadow.toggled.connect(lambda on: QSettings().setValue(_SETTINGS + "ground_shadow", "true" if on else "false"))
         self.ground.toggled.connect(self._floor_enable)
-        form_g.addRow("", self.ground_shadow)
+        self._form_shadows.addRow(self.ground_shadow)
         self._floor_enable()
         self.ground_type = QComboBox()
         self.ground_type.addItem(tr("Look's own"), "")
@@ -896,6 +849,7 @@ class StudioPanel(QWidget):
         self._fog_timer.timeout.connect(self._update_fog_note)
         self._fog_timer.start()
         col_sky.insertWidget(0, box_skyadj)          # first: the light decides the rest
+        col_sky.insertWidget(1, self.shadows_box)    # and the shadows it casts
 
         # What only the final render uses.
         box_final = QGroupBox("Quality")
@@ -955,7 +909,7 @@ class StudioPanel(QWidget):
             sc.setWidget(widget)
             return sc
         self.tabs.addTab(scrolled(host_main), "Main")
-        self.tabs.addTab(scrolled(host_image), "Image")
+        self.tabs.addTab(scrolled(host_image), "Style")
         self.tabs.addTab(scrolled(host_sky), "Environment")
         # The lights have a window of their own, like the materials (see open_lights).
         from .lights_panel import LightEditor
@@ -1690,19 +1644,10 @@ class StudioPanel(QWidget):
             sig.connect(self._schedule_save)
         self.ground.toggled.connect(lambda _on: self._skyline_enable())
         self._skyline_enable()
-        self.style_mode.currentIndexChanged.connect(self._style_mode_chosen)
-        for sig in (self.style_mode.currentIndexChanged, self.style_width.valueChanged, self.style_lux.valueChanged,
-                    self.style_noise.valueChanged, self.style_extend.valueChanged, self.style_wet.valueChanged,
-                    self.style_edges.valueChanged, self.style_paper.valueChanged, self.style_material.currentIndexChanged,
-                    self.style_base.toggled, self.shadow_draw.currentIndexChanged, self.shadow_opacity.valueChanged,
-                    self.shadow_spacing.valueChanged, self.shadow_angle.valueChanged, self.shadow_colour.changed):
+        self.style_groups.changed.connect(self._schedule_save)
+        for sig in (self.shadow_draw.currentIndexChanged, self.shadow_opacity.valueChanged, self.shadow_spacing.valueChanged,
+                    self.shadow_angle.valueChanged, self.shadow_colour.changed):
             sig.connect(self._schedule_save)
-        for b in (self.style_colour, self.style_model_colour):
-            b.changed.connect(self._schedule_save)
-        self.style_material.currentIndexChanged.connect(self._style_enable)
-        self.style_width.valueChanged.connect(self._style_enable)
-        self._fill_style_materials()
-        self._style_enable()
         self.ground_tile.valueChanged.connect(self._schedule_save)
         for sig in (self.ground_material.currentIndexChanged, self.ground_tile.valueChanged):
             sig.connect(lambda *_a: self._live is not None and self._live.update_now())   # shows at once, also when the live view keeps its model
@@ -1770,9 +1715,8 @@ class StudioPanel(QWidget):
         widgets = [self.preset, self.engine, self.quality, self.width, self.hdri, self.ground, self.ground_shadow,
                    self.ground_material, self.ground_tile, self.ground_type, self.ground_rough, self.ground_haze,
                    self.ground_offset, self.ground_grass, self.ground_radius, self.skyline_type, self.skyline_height,
-                   self.skyline_distance, self.skyline_seed, self.style_mode, self.style_width, self.style_lux, self.style_noise,
-                   self.style_extend, self.style_wet, self.style_edges, self.style_paper, self.style_material,
-                   self.style_base, self.shadow_draw, self.shadow_colour, self.shadow_opacity, self.shadow_spacing, self.shadow_angle,
+                   self.skyline_distance, self.skyline_seed,
+                   self.shadow_draw, self.shadow_colour, self.shadow_opacity, self.shadow_spacing, self.shadow_angle,
                    self.hdri_rotation, self.hdri_strength, self.hdri_height, self.hdri_light,
                    self.bg_mode, self.backdrop, self.backdrop_fit, self.backdrop_strength, self.flat_colour,
                    *self.sliders.values()]
@@ -1795,18 +1739,8 @@ class StudioPanel(QWidget):
             self.ground_offset.setValue(gl["offset"])
             self.ground_grass.setValue(gl["grass_radius"])
             self.ground_radius.setValue(gl["ground_radius"])
-            sy = data["style"]
-            self.style_mode.setCurrentIndex(max(0, self.style_mode.findData(sy["mode"])))
-            self.style_width.setValue(sy["width"])
-            self.style_colour.set_rgb(sy["color"])
-            self.style_model_colour.set_rgb(sy["model_color"])
-            self.style_lux.setValue(sy["lux_max"])
-            self.style_noise.setValue(sy["noise"])
-            self.style_extend.setValue(sy["extend"] * 50.0)
-            self.style_wet.setValue(sy["wetness"])
-            self.style_edges.setValue(sy["edges"])
-            self.style_paper.setValue(sy["paper"])
-            self.style_base.setChecked(sy["base"])
+            model = look_model.from_v1(data)
+            self.style_groups.set_values(model)
             sh = settings_store.shadows(data.get("shadows"))
             self.shadow_draw.setCurrentIndex(max(0, self.shadow_draw.findData(sh["draw"])))
             self.shadow_colour.set_rgb(sh["color"])
@@ -1814,9 +1748,6 @@ class StudioPanel(QWidget):
             self.shadow_spacing.setValue(sh["spacing"])
             self.shadow_angle.setValue(sh["angle"])
 
-            if sy["material"] and self.style_material.findData(sy["material"]) < 0:
-                self.style_material.addItem(sy["material"], sy["material"])
-            self.style_material.setCurrentIndex(max(0, self.style_material.findData(sy["material"])))
             sk = data["skyline"]
             self.skyline_type.setCurrentIndex(max(0, self.skyline_type.findData(sk["type"])))
             self.skyline_height.setValue(sk["height"])
@@ -1865,6 +1796,10 @@ class StudioPanel(QWidget):
                 self.flat_colour.set_rgb(plain["color"])
             self.bg_mode.setCurrentIndex(self.bg_mode.findData(
                 "flat" if plain else "pano" if self.hdri.currentData() else ("picture" if self.backdrop.currentData() else "sky")))
+            paper = model["background.paper_sky"]
+            if paper and self.bg_mode.currentData() == "sky" and model["surface.kind"] != "paper":
+                self.bg_mode.setCurrentIndex(self.bg_mode.findData("paper"))
+            self._paper_under = paper and self.bg_mode.currentData() in ("flat", "pano", "picture")
         finally:
             for w in widgets:
                 w.blockSignals(False)
@@ -1878,7 +1813,6 @@ class StudioPanel(QWidget):
         self._hdri_enable()
         self._bg_enable()
         self._skyline_enable()
-        self._style_enable()
         self._update_summary()
 
     def _schedule_save(self, *_a):
@@ -2059,7 +1993,7 @@ class StudioPanel(QWidget):
                 self._form_bg.setRowVisible(w, mode == key)
         self._form_bg.setRowVisible(self.bg_more, mode == "pano")
         self._hdri_enable()
-        sky_only = mode == "sky"
+        sky_only = mode in ("sky", "paper")
         if "clouds" in self.slider_rows and getattr(self, "sky_note", None) is not None:
             self.slider_rows["clouds"].setEnabled(sky_only)
             self.sky_note.setText("" if sky_only else tr("Clouds are the look's sky: the panorama or the picture has its own."))
@@ -2123,24 +2057,6 @@ class StudioPanel(QWidget):
             combo.addItem(name, name)
         combo.setCurrentIndex(max(0, combo.findData(name)))
 
-    def _fill_style_materials(self):
-        """«A colour» and the drawing's materials in the Model style's list (the one chosen stays)."""
-        combo = self.style_material
-        keep = combo.currentData() if combo.count() else ""
-        combo.blockSignals(True)
-        combo.clear()
-        combo.addItem(tr("A colour"), "")
-        try:
-            names = sorted(mats.used_materials(self.app.scene), key=str.lower)
-        except Exception:  # noqa: BLE001
-            names = []
-        for n in names:
-            combo.addItem(n, n)
-        if keep and combo.findData(keep) < 0:
-            combo.addItem(keep, keep)
-        combo.setCurrentIndex(max(0, combo.findData(keep)))
-        combo.blockSignals(False)
-
     def _build_shadows_box(self):
         """«Shadows»: how the sun's shadows are drawn, whatever the style. One choice; its settings only when it needs them."""
         from .section_panel import ColourButton
@@ -2186,43 +2102,18 @@ class StudioPanel(QWidget):
                 "opacity": round(self.shadow_opacity.value() / 100.0, 3), "spacing": round(self.shadow_spacing.value(), 1),
                 "angle": round(self.shadow_angle.value(), 1)}
 
+    def _paper_behind(self, surface: str) -> bool:
+        """Whether paper takes the sky's place: chosen as the background, asked for by a paper surface, or brought by the document."""
+        return self.bg_mode.currentData() == "paper" or surface == "paper" or self._paper_under
+
+    def _background_chosen(self, _i) -> None:
+        self._paper_under = False                # what a person chooses is what there is
+
     def style_settings(self) -> dict:
-        return {"mode": self.style_mode.currentData() or "none", "width": round(self.style_width.value(), 2),
-                "color": self.style_colour.rgb(), "material": self.style_material.currentData() or "",
-                "model_color": self.style_model_colour.rgb(), "lux_max": round(self.style_lux.value(), 0),
-                "noise": round(self.style_noise.value(), 3), "extend": round(self.style_extend.value() / 50.0, 3),
-                "wetness": round(self.style_wet.value(), 3), "paper": round(self.style_paper.value(), 3),
-                "edges": round(self.style_edges.value(), 3),
-                "base": self.style_base.isChecked()}
-
-    def _style_enable(self, *_a) -> None:
-        """Only the rows the chosen style uses; the outlines' colour only when there are outlines."""
-        mode = self.style_mode.currentData() or "none"
-        form = self._form_style
-        for m, rows in self._style_rows.items():
-            for w in rows:
-                form.setRowVisible(w, m == mode)
-        lines = self.style_width.value() > 0.0 or mode == "sketch"
-        form.setRowVisible(self.style_colour_box, lines)
-        if mode == "model":
-            self.style_model_colour.setEnabled(not self.style_material.currentData())
-        self.style_note.setText({
-            "sketch": tr("Pencil lines on paper: the sky is left out."),
-            "light": tr("The picture shows lux, not colour. Approximate: white matte surfaces, a clear day's sun, the lamps' lumens."),
-            "watercolour": tr("Washes of colour on paper; the outlines are painted first."),
-        }.get(mode, ""))
-        self.style_note.setVisible(bool(self.style_note.text()))
-
-    def _style_mode_chosen(self, _i) -> None:
-        """A style with outlines starts with a thin line; None goes back to no outlines."""
-        if self._applying if hasattr(self, "_applying") else False:
-            return
-        mode = self.style_mode.currentData() or "none"
-        if mode in ("white", "model", "light", "sketch") and self.style_width.value() <= 0.0:
-            self.style_width.setValue(0.8)
-        if mode == "none":
-            self.style_width.setValue(0.0)
-        self._style_enable()
+        """The surface, outline, finish and paper as the document and the render job keep them (format 1's style)."""
+        values = self.style_groups.values()
+        values["background.paper_sky"] = self._paper_behind(values["surface.kind"])
+        return look_model.style_of(values)
 
     def skyline_settings(self) -> dict:
         return {"type": self.skyline_type.currentData() or "", "height": round(self.skyline_height.value(), 2),

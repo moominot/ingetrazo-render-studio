@@ -46,10 +46,28 @@ def ink_colour(style: dict, srgb: bool = False) -> tuple:
 EXTEND_MAX_CM = 50.0
 
 
+#: The thickness of an outline left «automatic» (as the old sketch's was).
+AUTO_WIDTH = 1.5
+
+
+def plain(style: dict) -> dict:
+    """A style with ``parts`` as one that says its outline itself: its thickness (automatic worked out), its hand and its
+    extension, whatever its mode. Any other style as it is."""
+    parts = (style or {}).get("parts")
+    if not parts:
+        return style
+    out = {k: v for k, v in style.items() if k != "parts"}
+    on = bool(parts.get("outline"))
+    out.update(mode="none", model_on=on, width=(float(style.get("width") or 0.0) or AUTO_WIDTH) if on else 0.0,
+               hand=float(style.get("noise", 0.0) or 0.0), extend=float(style.get("extend", 0.0) or 0.0))
+    return out
+
+
 def line_style(style: dict, height: int, px_per_m: float | None = None) -> st.LineStyle:
     """The hand of the style: ``width`` is in pixels of the picture (as Freestyle's was), ``noise`` 0..1 how loose the stroke is (0 a
     ruler), ``extend`` 0..1 how far lines run past their corners, both only in a sketch. A style that carries ``hand`` (the render
     window's controls) takes ``hand``, ``extend`` and ``opacity`` whatever its mode."""
+    style = plain(style)
     if "hand" in style:
         noise = max(0.0, min(1.0, float(style.get("hand") or 0.0)))
         extend = max(0.0, min(1.0, float(style.get("extend") or 0.0)))
@@ -78,6 +96,15 @@ def line_style(style: dict, height: int, px_per_m: float | None = None) -> st.Li
 def window_style(style: dict) -> dict:
     """The panel's style as the render window's outline controls start: ``width``, ``color``, ``hand``, ``extend`` and ``opacity``
     (a sketch keeps its irregular stroke; any other style starts as a ruler)."""
+    if (style or {}).get("parts"):
+        own = plain(style)
+        out = {"mode": style.get("mode", "none"), "width": own["width"], "model_on": own["model_on"],
+               "extend_cm": own["extend"] * EXTEND_MAX_CM, "color": list(style.get("color") or (0.05, 0.05, 0.05))[:3],
+               "hand": own["hand"], "extend": own["extend"], "opacity": 1.0}
+        cut = cut_of(style)
+        if cut is not None:
+            out["cut"] = dict(cut)
+        return out
     sketch = style.get("mode") == "sketch"
     width = float(style.get("width", 0.0) or 0.0)
     out = {"mode": style.get("mode", "none"), "width": width if width > 0.0 else (1.5 if sketch else 0.0),
@@ -110,6 +137,7 @@ def cut_line_style(style: dict, height: int) -> st.LineStyle:
 
 
 def _wants_model(style: dict) -> bool:
+    style = plain(style)
     if not style.get("model_on", True):
         return False
     return float(style.get("width", 0.0) or 0.0) > 0.0 or style.get("mode") == "sketch"

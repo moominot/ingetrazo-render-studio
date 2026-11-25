@@ -2464,7 +2464,7 @@ def apply_texture_sets(matched, specs):
 
 # ---- the white model -----------------------------------------------------------------
 
-def white_model(skip_ground=True):
+def white_model(skip_ground=True, colour=None):
     """Every material white and matte; glass and water stay see-through
     (Enscape's white mode)."""
     n = 0
@@ -2478,7 +2478,9 @@ def white_model(skip_ground=True):
             continue
         if mat.get("ingetrazo_finish") in ("glass", "water") or mat.get("rs_section_cap"):
             continue
-        core["_set"](bsdf, ("Base Color",), (0.82, 0.82, 0.80, 1.0))
+        for link in list(bsdf.inputs["Base Color"].links) if colour is not None else ():
+            mat.node_tree.links.remove(link)             # one chosen colour: the picture it wore goes
+        core["_set"](bsdf, ("Base Color",), (*colour, 1.0) if colour is not None else (0.82, 0.82, 0.80, 1.0))
         core["_set"](bsdf, ("Roughness",), 0.75)
         core["_set"](bsdf, ("Metallic",), 0.0)
         core["_set"](bsdf, ("Specular IOR Level", "Specular"), 0.3)
@@ -3402,7 +3404,8 @@ def _patch_names(job):
     st = job.get("studio") or {}
     if _STATE["sig"] is None or not _STATE["pristine"] or st.get("section") or st.get("white_model"):
         return None
-    if (st.get("style") or {}).get("mode") in ("white", "model", "light", "sketch"):
+    parts = style_parts(st.get("style"))
+    if parts["surface"] != "real" or parts["paper_sky"]:
         return None                                    # a style that changes the materials: the scene is built again
     if _STATE["sig"] != _rest_signature(job):
         return None
@@ -3642,7 +3645,8 @@ def build(job):
         core["add_lights"](scene, job.get("lights") or [])
     if ground:
         make_ground(scene, ground, st)
-    if (st.get("style") or {}).get("mode") not in (None, "none") or float((st.get("style") or {}).get("width") or 0.0) > 0.0:
+    if ((st.get("style") or {}).get("mode") not in (None, "none") or float((st.get("style") or {}).get("width") or 0.0) > 0.0
+            or (st.get("style") or {}).get("parts")):
         try:
             apply_style(scene, st["style"], st)         # white, one material, calibrated light
         except Exception as exc:                       # never lose the render over it
@@ -3845,7 +3849,7 @@ def serve(scene, figures):
 STYLE_PAPER = (0.97, 0.96, 0.93)
 
 
-def _one_material(scene, style, st):
+def _one_material(scene, style, st, keep_glass=False):
     """A model (maquette) of one material: every mesh of the model wears the chosen material (a colour, or a material of the
     model or of the document made as the render would make it)."""
     name = style.get("material") or ""
@@ -3875,6 +3879,9 @@ def _one_material(scene, style, st):
             ob.data.materials.append(mat)
         else:
             for i in range(len(ob.data.materials)):
+                own = ob.data.materials[i]
+                if keep_glass and own is not None and own.get("ingetrazo_finish") in ("glass", "water"):
+                    continue
                 ob.data.materials[i] = mat
         n += 1
     say("model", name or "a colour", n, "objects")
@@ -3922,19 +3929,42 @@ def _calibrate_lux(scene):
     say("lux", f"sun {sun_w:.0f} W/m2 = {LUX_SUN:.0f} lx")
 
 
+def style_parts(style):
+    """What the style is made of: the ``surface`` (real, white, mono, paper, lux), ``keep_glass``, whether paper takes the sky's
+    place (``paper_sky``) and the ``finish`` (none, watercolour). Said by the style's ``parts`` (a combination of the new model)
+    or, without them, by its old ``mode``."""
+    style = style or {}
+    mode = style.get("mode") or "none"
+    parts = style.get("parts")
+    if parts:
+        surface = parts.get("surface", "real")
+        keep = bool(parts.get("keep_glass", True))
+        if surface == "mono" and keep and parts.get("plain") and not style.get("material"):
+            surface = "white"
+        return {"surface": surface, "keep_glass": keep, "paper_sky": bool(parts.get("paper_sky")),
+                "finish": parts.get("finish", "none")}
+    surface = {"white": "white", "model": "mono", "light": "lux", "sketch": "white" if style.get("base", True) else "paper"}
+    return {"surface": surface.get(mode, "real"), "keep_glass": mode != "model", "paper_sky": mode == "sketch",
+            "finish": "watercolour" if mode == "watercolour" else "none"}
+
+
 def apply_style(scene, style, st):
     """The scene's part of the style: white or one material, calibrated light. (The outlines are not Blender's: they are a layer of ink
 lines laid over the picture, see overlay_lines.)"""
-    mode = (style or {}).get("mode") or "none"
-    if mode in ("white", "light", "sketch"):
+    p = style_parts(style)
+    if p["surface"] in ("white", "paper", "lux"):         # (a paper surface renders nothing, but its lines and shadows are white's)
         white_model(skip_ground=False)
         _whiten_ground()
-    elif mode == "model":
-        _one_material(scene, style, st)
+    elif p["surface"] == "mono":
+        if p["keep_glass"] and not style.get("material"):
+            colour = [_srgb_to_linear(float(c)) for c in (style.get("model_color") or (0.85, 0.80, 0.70))[:3]]
+            white_model(skip_ground=False, colour=colour)
+        else:
+            _one_material(scene, style, st, keep_glass=p["keep_glass"])
         _whiten_ground()
-    if mode == "light":
+    if p["surface"] == "lux":
         _calibrate_lux(scene)
-    if mode == "sketch":
+    if p["paper_sky"]:
         scene.render.film_transparent = True             # the paper is put behind it when the picture is made
 
 
@@ -4425,7 +4455,7 @@ def _bare_picture(render):
 def render_flat(scene, style, path, flat, lines=None):
     """The picture over the plain colour, written to ``path``: with the shadows painted, the watercolour, the sketch or the
     lines when asked."""
-    mode = (style or {}).get("mode") or "none"
+    parts = style_parts(style)
     sh = shadows_of(scene)
     floor = bool(flat.get("floor", True))
     r = scene.render
@@ -4434,9 +4464,10 @@ def render_flat(scene, style, path, flat, lines=None):
         r.filepath = path
         r.image_settings.file_format = "PNG"
         r.image_settings.color_mode = "RGBA"
-        sketch = mode == "sketch"
+        sketch = parts["paper_sky"]                       # (the colour is its paper)
+        water = parts["finish"] == "watercolour"
         with _OverColour(scene) as over:
-            if sketch and not style.get("base", True):
+            if parts["surface"] == "paper":
                 arr = _bare_picture(r)
             else:
                 bpy.ops.render.render(write_still=True)
@@ -4444,6 +4475,8 @@ def render_flat(scene, style, path, flat, lines=None):
             mask = over.shadows(path, floor) if sh or (floor and not sketch) else None
         if sketch:
             # (the sketch's paper is the colour: its shadows, when painted, go over the model and the floor alike)
+            if water:
+                arr = watercolour(arr, style)
             if sh:
                 arr = paint_shadows(arr, mask, sh)
             out = paper_behind(overlay_lines(arr, lines), tuple(flat["color"][:3]))
@@ -4452,7 +4485,7 @@ def render_flat(scene, style, path, flat, lines=None):
                 out = paint_shadows(over_colour(arr, flat), mask, sh)
             else:
                 out = over_colour(arr, flat, None if mask is None else mask * (1.0 - arr[..., 3]))
-            if mode == "watercolour":
+            if water:
                 out = watercolour(out, style)
             out = overlay_lines(out, lines)
         r.filepath, r.image_settings.file_format, r.image_settings.color_depth, r.image_settings.color_mode = keep
@@ -4463,38 +4496,27 @@ def render_flat(scene, style, path, flat, lines=None):
 
 
 def render_styled(scene, style, path, lines=None):
-    """Render the scene to ``path`` (a PNG) and make the style's picture of it: the lux colours, the sketch on its paper or the
-    watercolour. ``lines``: the line layer to lay over it (see overlay_lines). Without a style or lines it is the plain render."""
-    mode = (style or {}).get("mode") or "none"
+    """Render the scene to ``path`` (a PNG) and make the style's picture of it: the lux colours, the paper behind, the
+    watercolour, the shadows painted. ``lines``: the line layer to lay over it (see overlay_lines). With none of these it is the
+    plain render."""
+    parts = style_parts(style)
+    lux = parts["surface"] == "lux"
+    paper = parts["paper_sky"] and not lux
+    water = parts["finish"] == "watercolour" and not lux
+    bare = parts["surface"] == "paper"
     flat = flat_of(scene)
-    if flat and mode != "light":                          # (the lux picture has no sky to replace)
+    if flat and not lux:                                  # (the lux picture has no sky to replace)
         render_flat(scene, style, path, flat, lines)
         return None
-    sh = shadows_of(scene) if mode != "light" else None
-    if mode not in ("light", "sketch", "watercolour"):
+    sh = shadows_of(scene) if not lux else None
+    r = scene.render
+    if not (lux or paper or water or bare):
         if not lines and not sh:
             bpy.ops.render.render(write_still=True)
             return None
-        r = scene.render
-        keep = (r.filepath, r.image_settings.file_format, r.image_settings.color_depth, r.image_settings.color_mode)
-        try:
-            mask = shadow_mask(scene, path) if sh else None
-            r.filepath = path
-            r.image_settings.color_mode = "RGBA"
-            bpy.ops.render.render(write_still=True)
-            arr = _read_pixels(path)
-            if sh:
-                arr = paint_shadows(arr, mask, sh)
-            arr = overlay_lines(arr, lines)
-            r.filepath, r.image_settings.file_format, r.image_settings.color_depth, r.image_settings.color_mode = keep
-            _write_png(path, arr)
-        finally:
-            r.filepath, r.image_settings.file_format, r.image_settings.color_depth, r.image_settings.color_mode = keep
-        return None
-    r = scene.render
     keep = (r.filepath, r.image_settings.file_format, r.image_settings.color_depth, r.image_settings.color_mode)
     try:
-        if mode == "light":
+        if lux:
             tmp = path + ".linear.exr"
             r.filepath = tmp
             r.image_settings.file_format = "OPEN_EXR"
@@ -4512,27 +4534,24 @@ def render_styled(scene, style, path, lines=None):
             _write_png(path, res)
             say("lux scale", f"{lo:g} to {hi:g} lx")
             return (lo, hi)
-        sketch = mode == "sketch"
         mask = shadow_mask(scene, path) if sh else None
         r.filepath = path
         r.image_settings.color_mode = "RGBA"
-        if sketch and not style.get("base", True):
+        if bare:
             arr = _bare_picture(r)                             # only the lines: nothing under them to render
         else:
             bpy.ops.render.render(write_still=True)
             arr = _read_pixels(path)
-        if sketch:
-            if sh:
-                arr = paint_shadows(arr, mask, sh)
-            arr = paper_behind(overlay_lines(arr, lines))      # the lines are the sketch: on the white model, then on the paper
-        else:
+        if water:
             arr = watercolour(arr, style)
-            if sh:
-                arr = paint_shadows(arr, mask, sh)
-            arr = overlay_lines(arr, lines)                    # ink over the wash
+        if sh:
+            arr = paint_shadows(arr, mask, sh)
+        arr = overlay_lines(arr, lines)                        # ink over the picture, wash and all
+        if paper or bare:
+            arr = paper_behind(arr)                            # …and the paper behind it all
         r.filepath, r.image_settings.file_format, r.image_settings.color_depth, r.image_settings.color_mode = keep
         _write_png(path, arr)
-        say("style picture", mode)
+        say("style picture", style_parts(style)["surface"], "paper" if paper else "", "watercolour" if water else "")
         return None
     finally:
         r.filepath, r.image_settings.file_format, r.image_settings.color_depth, r.image_settings.color_mode = keep
@@ -4541,10 +4560,10 @@ def render_styled(scene, style, path, lines=None):
 
 def finish_style(scene, style):
     """After the exposure and the look were set: the lux picture needs the light as it is, not toned."""
-    mode = (style or {}).get("mode")
-    if mode == "light":
+    parts = style_parts(style)
+    if parts["surface"] == "lux":
         _calibrate_lux(scene)
-    elif mode == "sketch":
+    elif parts["paper_sky"]:
         scene.render.film_transparent = True             # the sky is left out: the paper is put behind the lines
 
 
@@ -4692,7 +4711,9 @@ def main():
         scene["rs_flat"] = "null"                      # a transparent sky was asked for: no colour behind it
     say("rendering", w, "x", h)
     lines = (st_main.get("style") or {}).get("lines")
-    styled = (st_main.get("style") or {}).get("mode") in ("light", "sketch", "watercolour") or bool(lines) or bool(flat_of(scene)) or bool(shadows_of(scene))
+    made = style_parts(st_main.get("style"))
+    styled = (made["surface"] in ("lux", "paper") or made["paper_sky"] or made["finish"] != "none" or bool(lines)
+              or bool(flat_of(scene)) or bool(shadows_of(scene)))
     render_styled(scene, st_main.get("style"), job["output"], lines)
     if out.get("path"):
         if styled:
