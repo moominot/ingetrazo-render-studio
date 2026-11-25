@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDoubleSpinBo
                                QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMenu, QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QTabWidget,
                                QToolButton, QVBoxLayout, QWidget)
 
-from . import user_presets, lights as studio_lights, materials as mats, fast_export, output, pbr, presets, proxies, section, settings_store, studio_data, visibility, widgets
+from . import bento, user_presets, lights as studio_lights, materials as mats, fast_export, output, pbr, presets, proxies, section, settings_store, studio_data, visibility, widgets
 from .live import LiveSession
 from .preview import ImageWindow  # noqa: F401 - re-exported: panel.ImageWindow
 from .widgets import SliderRow
@@ -542,7 +542,11 @@ class StudioPanel(QWidget):
         self.style_mode.setToolTip("How the picture is drawn. None: as it is. White: every material white. Model: one material "
                                    "for everything. Light: the lux each surface receives, in false colour. Sketch: pencil lines "
                                    "on paper. Watercolour: washes of colour. All can have outlines.")
-        form_s.addRow("Style", self.style_mode)
+        # The combo stays the value (everything else reads it); the choice is made on big icon buttons.
+        self.style_mode.setParent(box_style)
+        self.style_mode.hide()
+        self.style_choices = bento.ChoiceGrid(self.style_mode, bento.STYLE_ICONS, columns=3)
+        form_s.addRow(self.style_choices)
         self.style_width = widgets.NumberSlider(0.0, 4.0, 0.1, "{:.1f} px", special="No outlines")
         self.style_width.setToolTip("The thickness of the outlines, in pixels (0 = none).")
         form_s.addRow("Outlines", self.style_width)
