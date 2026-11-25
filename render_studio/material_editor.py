@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QF
                                QFormLayout, QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
                                QPushButton, QRadioButton, QScrollArea, QSlider, QToolButton, QVBoxLayout, QWidget)
 
+from . import wheel_guard
 from . import cube_preview
 from . import opacity as opacity_mod
 from . import materials as M
@@ -647,6 +648,7 @@ class MaterialEditor(QDialog):
         self.refresh()
 
     # -- data ----------------------------------------------------------------------
+        wheel_guard.watch(self)          # (the wheel scrolls; it changes only a picked field)
     def specs(self) -> dict:
         data = self.app.document_data({}) or {}
         return dict(data.get("materials") or {})

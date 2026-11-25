@@ -51,9 +51,10 @@ def from_v1(settings) -> dict:
         b = v1["backdrop"]
         out.update({"picture.path": b["path"], "picture.fit": b["fit"], "picture.brightness": b["brightness"]})
     if v1["flat"]:
-        kind = "flat"
+        kind = "transparent" if v1["flat"].get("transparent") else "flat"
         out["flat.colour"] = list(v1["flat"]["color"])
     out["background.kind"] = kind
+    out.update(v1.get("fine") or {})
     return out
 
 
@@ -178,8 +179,10 @@ def to_v1(values: dict, pass_through: dict | None = None) -> dict:
                 "height": v["pano.height"], "light": v["pano.light"]}
     elif kind == "picture" and v["picture.path"]:
         backdrop = {"path": v["picture.path"], "fit": v["picture.fit"], "brightness": v["picture.brightness"]}
-    elif kind == "flat":
+    elif kind in ("flat", "transparent"):
         flat = {"color": list(v["flat.colour"])}
+        if kind == "transparent":
+            flat["transparent"] = True
     material = {"name": v["ground.material"], "tile": v["ground.material_tile"]} if v["ground.material"] else None
     out = {
         "version": settings_store.VERSION,
@@ -199,6 +202,9 @@ def to_v1(values: dict, pass_through: dict | None = None) -> dict:
         "backdrop": backdrop,
         "flat": flat,
     }
+    fine = params.fine_clean(v)
+    if fine:
+        out["fine"] = fine
     for key in PASS_THROUGH:
         if pass_through and key in pass_through:
             out[key] = pass_through[key]

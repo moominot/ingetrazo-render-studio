@@ -3,8 +3,9 @@
 
 It is the one place to look at the scene and to make the final picture, in three states:
 
-* **preview** (the live view): a quick draft that follows the 3D view and the model, that you can
-  zoom and move. Buttons: **Render** (makes the final picture, then shows the retouch tools) and
+* **preview** (the live view): a quick draft that follows the 3D view and the model, in which the
+  mouse moves the camera (preview_nav.py). Buttons: **Save this picture…** (what is on screen, as it
+  is), **Render** (makes the final picture, then shows the retouch tools) and, under its arrow,
   **Render and save…** (makes it and saves it straight away, with no retouching).
 * **rendering**: the progress, and Cancel.
 * **final**: the finished picture with the retouch sliders (instant, no new render), **Save image…**
@@ -18,21 +19,46 @@ from .i18n import tr, translate_on_show  # noqa: F401
 
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, Qt
-from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtWidgets import (QCheckBox, QFileDialog, QFormLayout, QFrame, QGroupBox, QHBoxLayout, QLabel, QScrollArea,
-                               QProgressBar, QPushButton, QToolButton, QVBoxLayout, QWidget)
+from PySide6.QtCore import QSettings, QSize, Qt, QTimer
+from PySide6.QtGui import QAction, QImage, QPainter, QPixmap
+from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel,
+                               QMenu, QScrollArea, QProgressBar, QPushButton, QSizePolicy, QToolButton, QVBoxLayout,
+                               QWidget)
 
+from . import icons, wheel_guard
 from . import post
-from .widgets import SliderRow, ZoomView, slider, value, set_value
+from .preview_nav import Navigator, PreviewView
+from .widgets import Card, SliderRow, flat_style, slider, split_button, value, set_value
 
 _SETTINGS = "render_studio/"
+#: Every control of the window's bar is this tall, with icons of BAR_ICON (pixels).
+BAR_HEIGHT, BAR_ICON = 32, 20
+#: The bar: one faint rounded strip; its buttons have no ground of their own until the pointer is on them. The one that
+#: matters most in each state (``primary``) is tinted with the accent.
+BAR_STYLE = """
+QFrame#rs_window_bar {{ background: rgba(128,128,128,26); border-radius: 8px; }}
+QFrame#rs_window_bar QPushButton, QFrame#rs_window_bar QToolButton {{
+    border: none; border-radius: 5px; padding: 0px 10px; background: transparent; color: palette(button-text); }}
+QFrame#rs_window_bar QPushButton:hover, QFrame#rs_window_bar QToolButton:hover {{ background: rgba(128,128,128,60); }}
+QFrame#rs_window_bar QPushButton:pressed, QFrame#rs_window_bar QToolButton:pressed {{ background: rgba(128,128,128,95); }}
+QFrame#rs_window_bar QPushButton:disabled, QFrame#rs_window_bar QToolButton:disabled {{ color: palette(mid); }}
+QFrame#rs_window_bar QToolButton[popupMode="1"] {{ padding: 0px 24px 0px 10px; }}
+QFrame#rs_window_bar QToolButton::menu-button {{ border: none; border-left: 1px solid rgba(128,128,128,70); width: 18px;
+    border-top-right-radius: 5px; border-bottom-right-radius: 5px; }}
+QFrame#rs_window_bar QToolButton::menu-button:hover {{ background: rgba(128,128,128,60); }}
+QFrame#rs_window_bar QToolButton::menu-arrow {{ width: 8px; height: 8px; }}
+QFrame#rs_window_bar QToolButton[primary="true"], QFrame#rs_window_bar QPushButton[primary="true"] {{
+    background: rgba({r},{g},{b},70); }}
+QFrame#rs_window_bar QToolButton[primary="true"]:hover, QFrame#rs_window_bar QPushButton[primary="true"]:hover {{
+    background: rgba({r},{g},{b},120); }}
+QFrame#rs_window_bar QToolButton[primary="true"]:disabled {{ background: rgba(128,128,128,20); }}
+"""
 #: The side bar's width: the sliders and their words fit, the picture keeps the rest.
 SIDE_WIDTH = 360
 
 NOTES = {
-    "preview": "Live preview: a quick draft that follows your 3D view. Render makes the final picture; "
-               "Render and save… also saves it, with no retouching.",
+    "preview": "Live preview: a quick draft that follows your 3D view. Drag: orbit · Shift+drag: pan · wheel: zoom · "
+               "Ctrl+wheel or Ctrl+drag: look closely at the picture · right click: save or copy it.",
     "rendering": "Rendering the final picture…",
     "final": "Final picture. The sliders retouch it instantly (the scene is not rendered again); "
              "Save image… saves what you see.",
@@ -60,34 +86,9 @@ class ImageWindow(QWidget):
         self._saved_to = None
         lay = QVBoxLayout(self)
 
-        # -- top: what this is, zoom, help
-        top = QHBoxLayout()
-        self.note = QLabel("")
-        self.note.setWordWrap(True)
-        self.note.setStyleSheet("color: gray")
-        top.addWidget(self.note, 1)
-        self.fit_btn = QToolButton()
-        self.fit_btn.setText("Fit")
-        self.fit_btn.setToolTip("The whole picture in the window (key 0, or double click)")
-        self.actual_btn = QToolButton()
-        self.actual_btn.setText("100 %")
-        self.actual_btn.setToolTip("One picture pixel per screen pixel (key 1, or double click)")
-        self.zoom_label = QLabel("")
-        self.zoom_label.setMinimumWidth(44)
-        self.zoom_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        help_btn = QToolButton()
-        help_btn.setText("?")
-        help_btn.setToolTip("How the preview, Render and the retouch sliders work")
-        help_btn.clicked.connect(self._help)
-        for w in (self.fit_btn, self.actual_btn, self.zoom_label, help_btn):
-            top.addWidget(w)
-        lay.addLayout(top)
-
-        # -- the picture
-        self.view = ZoomView()
-        self.view.zoomed.connect(lambda p: self.zoom_label.setText(f"{p:.0f} %"))
-        self.fit_btn.clicked.connect(self.view.fit)
-        self.actual_btn.clicked.connect(lambda: self.view.actual_size())
+        # -- the picture: the whole top of the window
+        self.view = PreviewView(navigator=Navigator(panel) if panel is not None else None)
+        self.view.menu_asked.connect(self._picture_menu)
         mid = QHBoxLayout()
         mid.setContentsMargins(0, 0, 0, 0)
         mid.addWidget(self.view, 1)
@@ -114,42 +115,71 @@ class ImageWindow(QWidget):
         mid.addWidget(self.side)
         lay.addLayout(mid, 1)
 
-        # -- progress and what is happening
-        prow = QHBoxLayout()
-        self.status = QLabel("")
-        self.status.setWordWrap(True)
-        self.bar = QProgressBar()
-        self.bar.setRange(0, 100)
-        self.bar.setVisible(False)
-        self.cancel_btn = QPushButton("Cancel")
-        self.cancel_btn.setVisible(False)
-        self.cancel_btn.clicked.connect(lambda: self.panel and self.panel.cancel_render())
-        from .widgets import ClockLabel
-        self.clock = ClockLabel()
-        prow.addWidget(self.status, 1)
-        prow.addWidget(self.clock)
-        prow.addWidget(self.bar)
-        prow.addWidget(self.cancel_btn)
-        lay.addLayout(prow)
+        # -- the bar: the way back to the panel and help, then what the state needs
+        self.tool_bar = QFrame()
+        self.tool_bar.setObjectName("rs_window_bar")
+        controls = QHBoxLayout(self.tool_bar)
+        controls.setContentsMargins(4, 4, 4, 4)
+        controls.setSpacing(4)
+        self.panel_btn = QPushButton("Panel")
+        self.panel_btn.setIcon(icons.icon("side_panel"))
+        self.panel_btn.setToolTip("Brings Render Studio's panel into view (this window moves aside if it covers it)")
+        self.panel_btn.clicked.connect(lambda: self.show_panel())
+        self.panel_btn.setVisible(panel is not None)
+        controls.addWidget(self.panel_btn)
+        self.help_btn = QToolButton()
+        self.help_btn.setText("?")
+        self.help_btn.setFixedWidth(BAR_HEIGHT)
+        self.help_btn.clicked.connect(self._help)
+        controls.addWidget(self.help_btn)
+        controls.addWidget(self._separator())
+        lay.addWidget(self.tool_bar)
 
-        # -- preview: what Render will use, a new scene and Render (the live view's switches are on the toolbar)
+        # -- preview: what is on screen and what Render will make; the quality, a new scene, save this picture, Render
         self.bar_preview = QWidget()
-        pv = QVBoxLayout(self.bar_preview)
-        pv.setContentsMargins(0, 0, 0, 0)
+        main = QHBoxLayout(self.bar_preview)
+        main.setContentsMargins(0, 0, 0, 0)
+        main.setSpacing(4)
+        self.info_row = QWidget()
+        info = QHBoxLayout(self.info_row)
+        info.setContentsMargins(0, 0, 0, 0)
+        info.setSpacing(12)
+        self.preview_info = QLabel("")
         self.summary = QLabel("")
-        self.summary.setStyleSheet("color: gray")
-        self.summary.setToolTip("The engine, quality and width set in the panel: Render uses them "
-                                "(the preview is always a quick draft).")
-        self.scene_btn = QPushButton("New scene from this view…")
+        for label in (self.preview_info, self.summary):
+            label.setStyleSheet("color: gray")
+            label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)      # (never widens the window)
+        self.summary.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        info.addWidget(self.preview_info, 2)
+        info.addWidget(self.summary, 3)
+        lay.insertWidget(lay.count() - 1, self.info_row)       # above the bar
+        self.preview_info.setToolTip("The picture on screen: «Save picture…» saves exactly this one. With High "
+                                     "preview quality it is as big as the window shows it.")
+        self.summary.setToolTip("The final picture, made anew with the engine, quality and size set in the panel: more "
+                                "samples and every effect. The preview is a draft of it.")
+        main.addStretch(1)
+        self.quality_combo = QComboBox()
+        self._link_quality()
+        main.addWidget(self.quality_combo)
+        main.addWidget(self._separator())
+        self.scene_btn = QPushButton("New scene…")
+        self.scene_btn.setIcon(icons.icon("grp_camera"))
         self.scene_btn.setToolTip("Saves the view this preview shows (the camera it keeps while Follow the camera is off, "
                                   "else the 3D view's) as a scene of the drawing, to come back to it or render it later.")
         self.scene_btn.clicked.connect(lambda: self.panel and self.panel.scene_from_preview())
-        from PySide6.QtGui import QAction
+        main.addWidget(self.scene_btn)               # always in view
+        self.copy_action = QAction("Copy picture", self)
+        self.copy_action.triggered.connect(lambda: self.copy_picture())
+        self.snapshot_btn = split_button(
+            "Save picture…", lambda: self.save_snapshot(),
+            "Saves the picture on screen, as it is, without rendering anything. The arrow: Copy picture. "
+            "Also with a right click on the picture.", [self.copy_action])
+        self._in_bar(self.snapshot_btn, "save")
+        main.addWidget(self.snapshot_btn)
         self.expert_btn = QAction("Open in Blender…", self)
         self.expert_btn.setToolTip("Expert mode: opens this scene, as Render would make it, in a Blender with its own "
                                    "window to work in it. Nothing is rendered; the file is saved first.")
         self.expert_btn.triggered.connect(lambda: self.panel and self.panel.open_in_blender())
-        from .widgets import split_button
         self.render_save_btn = QAction("Render and save…", self)
         self.render_save_btn.setToolTip("Asks where to save, makes the final picture and saves it straight away, "
                                         "without retouching.")
@@ -158,16 +188,14 @@ class ImageWindow(QWidget):
             "Render", lambda: self.panel and self.panel.render_main(),
             "Makes the final picture with the panel's engine, quality and width, then shows the retouch tools and "
             "Save image…. The arrow: Render and save…, Open in Blender….", [self.render_save_btn, self.expert_btn])
-        main = QHBoxLayout()
-        main.addWidget(self.summary, 1)
-        main.addWidget(self.scene_btn)               # always in view
+        self._in_bar(self.render_btn, "capture", primary=True)
+        main.addWidget(self._separator())
         main.addWidget(self.render_btn)
-        pv.addLayout(main)
-        lay.addWidget(self.bar_preview)
+        controls.addWidget(self.bar_preview, 1)
 
         # -- final: the retouch sliders, the outlines and Save, all in the side panel (everything in view: there is room)
-        box = QGroupBox(tr("Retouch: instant, nothing is rendered again"))
-        form = QVBoxLayout(box)
+        box = Card(tr("Retouch"), "window_retouch", icon="grp_corrections", kind="column")
+        form = box.body_layout
         self.adj, self.adj_rows = {}, {}
         for key, label, lo, hi, fmt, hint in post.ADJUSTMENTS:
             s_ = slider(lo, hi, post.NEUTRAL[key])
@@ -185,30 +213,86 @@ class ImageWindow(QWidget):
         self._build_lines_box(self.side_lay)
         self.side_lay.addStretch(1)
         self.reset_btn = QPushButton("Reset retouch")
+        self.reset_btn.setIcon(icons.icon("undo"))
+        self.reset_btn.setMinimumHeight(28)
         self.reset_btn.setToolTip("Puts every retouch slider back to neutral (the picture as rendered)")
         self.reset_btn.clicked.connect(self._reset)
         self.back_btn = QPushButton("Back to preview")
+        self.back_btn.setIcon(icons.icon("preview"))
         self.back_btn.setToolTip("Closes the final picture and returns to the live preview, to change the scene "
                                  "and render again")
         self.back_btn.clicked.connect(lambda: self.panel and self.panel.back_to_preview())
         self.save_btn = QPushButton("Save image…")
+        self.save_btn.setIcon(icons.icon("save"))
         self.save_btn.setToolTip("Saves the picture as you see it (with the retouching) as PNG or JPEG")
         self.save_btn.setDefault(True)
         self.save_btn.clicked.connect(self._save)
+        self.save_btn.setProperty("primary", True)
+        self.save_btn.setAutoDefault(False)
         self.side_footer.addWidget(self.reset_btn)      # only what belongs to the panel's own sliders: the way out is below, always in view
         # Back to preview and Save image… are NOT in the panel: they stay at the bottom, whether the panel is shown or folded.
         self.bar_final = QWidget()
         frow = QHBoxLayout(self.bar_final)
         frow.setContentsMargins(0, 0, 0, 0)
-        frow.addWidget(self.back_btn)
+        frow.setSpacing(4)
+        self.fit_btn = QToolButton()                    # the final picture's zoom
+        self.fit_btn.setText("Fit")
+        self.fit_btn.setToolTip("The whole picture in the window (key 0, or double click)")
+        self.actual_btn = QToolButton()
+        self.actual_btn.setText("100 %")
+        self.actual_btn.setToolTip("One picture pixel per screen pixel (key 1, or double click)")
+        self.zoom_label = QLabel("")
+        self.zoom_label.setMinimumWidth(44)
+        self.zoom_label.setStyleSheet("color: gray")
+        self.view.zoomed.connect(lambda p: self.zoom_label.setText(f"{p:.0f} %"))
+        self.fit_btn.clicked.connect(self.view.fit)
+        self.actual_btn.clicked.connect(lambda: self.view.actual_size())
+        for w in (self.fit_btn, self.actual_btn):
+            frow.addWidget(w)
+        frow.addWidget(self.zoom_label)
         frow.addStretch(1)
+        frow.addWidget(self.back_btn)
         frow.addWidget(self.save_btn)
-        lay.addWidget(self.bar_final)
+        controls.addWidget(self.bar_final, 1)
+
+        # -- the last line: only what is going on (and a render's progress, time and Cancel)
+        prow = QHBoxLayout()
+        self.status = QLabel("")
+        self.status.setWordWrap(True)
+        self.bar = QProgressBar()
+        self.bar.setRange(0, 100)
+        self.bar.setVisible(False)
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.setVisible(False)
+        self.cancel_btn.clicked.connect(lambda: self.panel and self.panel.cancel_render())
+        from .widgets import ClockLabel
+        self.clock = ClockLabel()
+        prow.addWidget(self.status, 1)
+        prow.addWidget(self.clock)
+        prow.addWidget(self.bar)
+        prow.addWidget(self.cancel_btn)
+        lay.addLayout(prow)
+        flat = flat_style()
+        for w in (self.side, self.cancel_btn):
+            w.setStyleSheet(flat)
+        accent = icons._accent()
+        self.tool_bar.setStyleSheet(BAR_STYLE.format(r=accent.red(), g=accent.green(), b=accent.blue()))
+        for w in (self.panel_btn, self.help_btn, self.quality_combo, self.scene_btn, self.snapshot_btn, self.render_btn,
+                  self.fit_btn, self.actual_btn, self.back_btn, self.save_btn):      # one height for all
+            w.setFixedHeight(BAR_HEIGHT)
+            if hasattr(w, "setIconSize"):
+                w.setIconSize(QSize(BAR_ICON, BAR_ICON))
+        self._resharpen = QTimer(self)                # High quality follows the window's size, once it rests
+        self._resharpen.setSingleShot(True)
+        self._resharpen.setInterval(600)
+        self._resharpen.timeout.connect(self._sharpen)
         self._side_open = str(QSettings().value(_SETTINGS + "side_open", "true")).lower() != "false"
         self._build_side_handle()
         self.set_mode("final" if panel is None else "preview")
+        wheel_guard.watch(self)          # (the wheel scrolls; it changes only a picked field)
 
     # -- the side panel's handle: IngeTrazo's own (a chevron on the line between the picture and the panel) --------------------
+
     def _build_side_handle(self) -> None:
         from PySide6.QtCore import QSize
         h = QToolButton(self)
@@ -279,6 +363,8 @@ class ImageWindow(QWidget):
     def resizeEvent(self, ev) -> None:           # noqa: N802 (Qt)
         super().resizeEvent(ev)
         self._place_side_handle()
+        if hasattr(self, "_resharpen"):
+            self._resharpen.start()
 
     def showEvent(self, ev) -> None:             # noqa: N802 (Qt)
         super().showEvent(ev)
@@ -290,8 +376,8 @@ class ImageWindow(QWidget):
         from PySide6.QtCore import QTimer
         from .section_panel import ColourButton
         from .widgets import NumberSlider
-        self.lines_box = QGroupBox(tr("Outlines: still lines until you save"))
-        form = QFormLayout(self.lines_box)
+        self.lines_box = Card(tr("Outlines"), "window_outlines", icon="grp_outline")
+        form = self.lines_box.form
 
         def heading(text):
             lab = QLabel(text)
@@ -447,9 +533,12 @@ class ImageWindow(QWidget):
         """«preview», «rendering» or «final»: which controls show."""
         self.mode = mode
         has_panel = self.panel is not None
+        self.view.set_live_state(mode == "preview" and has_panel)
+        self.info_row.setVisible(mode in ("preview", "rendering") and has_panel)
         self.bar_preview.setVisible(mode in ("preview", "rendering") and has_panel)
         for w in (self.render_btn, self.render_save_btn, self.expert_btn):
             w.setEnabled(mode == "preview")
+        self._sync_snapshot()
         self.bar_final.setVisible(mode == "final")
         if hasattr(self, "side_handle"):
             self._apply_side()
@@ -458,7 +547,7 @@ class ImageWindow(QWidget):
         self.cancel_btn.setVisible(mode == "rendering" and has_panel)
         if mode == "rendering":
             self.bar.setValue(0)
-        self.note.setText(tr(NOTES[mode]) if has_panel or mode == "final" else "")
+        self.help_btn.setToolTip(tr(NOTES[mode]) if has_panel or mode == "final" else "")
         if mode == "final":
             self.status.setText("")
 
@@ -488,6 +577,174 @@ class ImageWindow(QWidget):
         from . import ui_help
         ui_help.show(self, "image")
 
+    # -- the picture on screen, saved or copied -----------------------------------------------
+    @staticmethod
+    def _in_bar(button, icon_key: str, primary: bool = False) -> None:
+        """A split button as one of the bar's: its icon beside its words, as wide as they need, in the bar's style."""
+        button.setStyleSheet("")                 # (the bar's style, not the one a split button has on its own)
+        button.setIcon(icons.icon(icon_key))
+        button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        button.setProperty("primary", primary)
+        button.setMinimumWidth(150)
+
+    @staticmethod
+    def _separator() -> QFrame:
+        line = QFrame()
+        line.setFixedSize(1, BAR_HEIGHT - 10)
+        line.setStyleSheet("background: rgba(128,128,128,80)")
+        return line
+
+    # -- the way back to the panel ------------------------------------------------------------
+    def show_panel(self) -> None:
+        """Render Studio's panel in view, and IngeTrazo's window in front. This window belongs to that one, so it stays
+        above it: when it covers the panel it moves beside it (or, with no room beside it, is minimised)."""
+        if self.panel is None:
+            return
+        from .toolbar import show_dock
+        if not show_dock(self.panel, self.panel):
+            self.panel.show()
+        main = self.panel.window_of_the_program()
+        if main is not None:
+            if main.isMinimized():
+                main.showNormal()
+            main.raise_()
+            main.activateWindow()
+        self._uncover(self.panel)
+
+    def _uncover(self, widget) -> None:
+        from PySide6.QtCore import QPoint, QRect
+        if not (widget.isVisible() and self.isVisible()):
+            return
+        shown = QRect(widget.mapToGlobal(QPoint(0, 0)), widget.size())
+        mine = self.frameGeometry()
+        if not mine.intersects(shown):
+            return
+        screen = widget.screen().availableGeometry()
+        left = QRect(screen.left(), screen.top(), shown.left() - screen.left(), screen.height())
+        right = QRect(shown.right() + 1, screen.top(), screen.right() - shown.right(), screen.height())
+        room = max((left, right), key=lambda r: r.width())
+        frame_w = mine.width() - self.width()
+        frame_h = mine.height() - self.height()
+        if room.width() - frame_w < max(self.minimumSizeHint().width(), 640):
+            self.showMinimized()
+            return
+        if self.isMaximized() or self.isFullScreen():
+            self.showNormal()
+        width = min(self.width(), room.width() - frame_w)
+        height = min(self.height(), room.height() - frame_h)
+        x = room.right() + 1 - width - frame_w if room is left else room.left()
+        y = max(room.top(), min(mine.top(), room.bottom() + 1 - height - frame_h))
+        self.resize(width, height)
+        self.move(x, y)
+
+    def _link_quality(self) -> None:
+        """The preview's quality, here too: the same choice as the panel's."""
+        own = getattr(self.panel, "preview_quality", None)
+        self.quality_combo.setVisible(own is not None)
+        if own is None:
+            return
+        for i in range(own.count()):
+            self.quality_combo.addItem(own.itemText(i), own.itemData(i))
+        self.quality_combo.setCurrentIndex(own.currentIndex())
+        self.quality_combo.setToolTip("Preview quality. High: as sharp as the window shows it, so a picture saved from "
+                                      "the preview is bigger too. Render has its own quality.")
+        self.quality_combo.currentIndexChanged.connect(own.setCurrentIndex)
+        own.currentIndexChanged.connect(self.quality_combo.setCurrentIndex)
+
+    def _sync_snapshot(self) -> None:
+        if hasattr(self, "snapshot_btn"):
+            on = self.mode == "preview" and self.view.has_picture()
+            self.snapshot_btn.setEnabled(on)
+            self.copy_action.setEnabled(on)
+
+    def set_preview_info(self, text: str) -> None:
+        self.preview_info.setText(text)
+
+    def picture_pixels(self, aspect: float) -> int:
+        """How many screen pixels wide a picture of ``aspect`` is when it fits the view."""
+        vp = self.view.viewport()
+        return int(min(vp.width(), vp.height() * aspect) * self.devicePixelRatioF())
+
+    def _sharpen(self) -> None:
+        live = getattr(self.panel, "_live", None)
+        if live is not None and self.mode == "preview" and self.quality_combo.currentData() == "high":
+            live.sharpen()
+
+    def picture(self) -> QImage:
+        """What the window shows, as a picture of its own size: the live frame, or the final picture as retouched (with
+        its transparency). Null when there is nothing."""
+        if self.mode == "final" and self.shown is not None:
+            h, w = self.shown.shape[:2]
+            if self.alpha is not None and self.alpha.shape == (h, w):
+                import numpy as np
+                rgba = np.ascontiguousarray(np.dstack([self.shown, self.alpha]))
+                return QImage(rgba.data, w, h, 4 * w, QImage.Format_RGBA8888).copy()
+            return QImage(self.shown.data, w, h, 3 * w, QImage.Format_RGB888).copy()
+        return self.view.pixmap().toImage()
+
+    def copy_picture(self) -> bool:
+        img = self.picture()
+        if img.isNull():
+            return False
+        QApplication.clipboard().setImage(img)
+        self.status.setText(tr("Picture copied ({w} × {h} px).", w=img.width(), h=img.height()))
+        return True
+
+    def save_picture(self, path: str, img: QImage | None = None) -> bool:
+        """``img`` (default: what the window shows) as PNG or JPEG; what is see-through goes over white in a JPEG."""
+        img = self.picture() if img is None else img
+        if img.isNull():
+            return False
+        if Path(path).suffix.lower() in (".jpg", ".jpeg"):
+            if img.hasAlphaChannel():
+                flat = QImage(img.size(), QImage.Format_RGB32)
+                flat.fill(Qt.white)
+                painter = QPainter(flat)
+                painter.drawImage(0, 0, img)
+                painter.end()
+                img = flat
+            return img.save(path, None, 95)
+        return img.save(path)
+
+    def save_snapshot(self) -> None:
+        """Asks where, then saves the preview's picture. It is taken when the file has been chosen: the live view goes
+        on meanwhile, so a picture that was still being refined is saved refined."""
+        if self.picture().isNull():
+            return
+        from time import strftime
+        start = Path(QSettings().value(_SETTINGS + "save_dir", str(Path.home()))) / f"view-{strftime('%Y%m%d-%H%M%S')}.png"
+        path, chosen = QFileDialog.getSaveFileName(self, tr("Save this picture"), str(start), "PNG (*.png);;JPEG (*.jpg)")
+        if not path:
+            return
+        if not Path(path).suffix:
+            path += ".jpg" if "jpg" in chosen else ".png"
+        img = self.picture()
+        if self.save_picture(path, img):
+            QSettings().setValue(_SETTINGS + "save_dir", str(Path(path).parent))
+            self.status.setText(tr("Saved ({w} × {h} px): {path}", w=img.width(), h=img.height(), path=path))
+        else:
+            self.status.setText(tr("Could not write {path}", path=path))
+
+    def picture_menu(self) -> QMenu:
+        """The right click's menu."""
+        menu = QMenu(self)
+        final = self.mode == "final"
+        save_it = menu.addAction(icons.icon("save"), tr("Save image…") if final else tr("Save picture…"))
+        save_it.triggered.connect(lambda _c=False: self._save() if final else self.save_snapshot())
+        menu.addAction(tr("Copy picture")).triggered.connect(lambda _c=False: self.copy_picture())
+        if self.view.navigating():
+            menu.addSeparator()
+            scene = menu.addAction(icons.icon("grp_camera"), tr("New scene from this view…"))
+            scene.triggered.connect(lambda _c=False: self.panel.scene_from_preview())
+            if not self.view.is_fitted():
+                menu.addAction(tr("Fit")).triggered.connect(lambda _c=False: self.view.fit())
+        return menu
+
+    def _picture_menu(self, where) -> None:
+        if self.mode != "rendering":
+            self.picture_menu().exec(where.toPoint())
+
     # -- the picture --------------------------------------------------------------------------
     def show_draft(self, path) -> None:
         """A frame of the live view (not retouched; keeps the zoom and place)."""
@@ -495,6 +752,7 @@ class ImageWindow(QWidget):
         if not pm.isNull():
             self.path = Path(path)
             self.view.set_pixmap(pm)
+            self._sync_snapshot()
 
     def set_image(self, path, final: bool = True) -> None:
         """The finished picture, to retouch (``final``), or a live frame."""
@@ -541,15 +799,12 @@ class ImageWindow(QWidget):
         self.shown = out
         h, w = out.shape[:2]
         if self.alpha is not None and self.alpha.shape == (h, w):
-            # Over a checkerboard, so the transparent sky shows as such.
+            # With its transparency: the view puts its checkerboard behind (widgets.ZoomView.drawBackground).
             import numpy as np
-            yy, xx = np.mgrid[0:h, 0:w]
-            board = np.where(((yy // 12 + xx // 12) % 2)[..., None] == 0, 236, 204).astype(np.float32)
-            a = self.alpha[..., None].astype(np.float32) / 255.0
-            disp = np.ascontiguousarray((out * a + board * (1.0 - a)).astype(np.uint8))
+            disp = np.ascontiguousarray(np.dstack([out, self.alpha]))
+            qimg = QImage(disp.data, w, h, 4 * w, QImage.Format_RGBA8888).copy()
         else:
-            disp = out
-        qimg = QImage(disp.data, w, h, 3 * w, QImage.Format_RGB888).copy()
+            qimg = QImage(out.data, w, h, 3 * w, QImage.Format_RGB888).copy()
         self.view.set_pixmap(QPixmap.fromImage(qimg), refit=refit is True)
 
     def save_to(self, path: str) -> bool:

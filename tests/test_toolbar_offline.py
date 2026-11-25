@@ -4,6 +4,7 @@ import os, sys
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 SRC, REPO = [os.path.abspath(a) for a in sys.argv[1:3]]
 sys.path[:0] = [SRC, REPO, os.path.join(REPO, "tests")]
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QDockWidget, QLineEdit, QMainWindow, QTabWidget, QToolBar, QWidget
 qa = QApplication.instance() or QApplication([])
 import reference_cases as R
@@ -42,7 +43,14 @@ shown = []
 panel.app.show_panel = shown.append
 bar = c.build(panel.app)
 names = ["|" if a.isSeparator() else a.text() for a in bar.actions()]
-ok(names == ["Render Studio", "Open preview", "Sync changes", "Update preview", "Sync camera", "|", "Materials", "Lights", "Library"], f"the toolbar, in order ({names})")
+ok(names == ["Render Studio", "|", "Open preview", "Sync camera", "Sync changes", "Update preview", "|", "Materials", "Lights", "Library"], f"the toolbar, in order ({names})")
+c.follow_changes.setChecked(True)
+ok(c.update.isVisible() and not c.update.isEnabled(), "«Update preview» is always there, greyed while changes arrive by themselves")
+c.follow_changes.setChecked(False)
+ok(c.update.isVisible() and c.update.isEnabled(), "…and usable with «Sync changes» off")
+c.need_blender(False); c.follow_changes.setChecked(True); c.follow_changes.setChecked(False)
+ok(not c.update.isEnabled(), "…but not without Blender")
+c.need_blender(True); c.follow_changes.setChecked(True)
 ok(bar.objectName() == "render_studio_toolbar" and bar in win.findChildren(QToolBar), "it is in the window, under a stable name")
 ok(all(not a.icon().isNull() and a.toolTip() for a in bar.actions() if not a.isSeparator()), "every button has an icon and says what it does")
 pix = [a.icon().pixmap(32, 32).toImage() for a in bar.actions() if not a.isSeparator()]
@@ -67,6 +75,40 @@ ok(shown == [home], "the first button shows the Render Studio panel's tab")
 shown.clear()
 c.need_blender(False)
 ok(c.studio.isEnabled(), "…also without Blender")
+c.need_blender(True)
+
+# the panel's own buttons: the same commands, their icon before their name
+buttons = [panel.materials_btn, panel.lights_btn, panel.preview_btn]
+ok([b.defaultAction() for b in buttons] == [c.materials, c.lights, c.preview] and [b.text() for b in buttons] == ["Materials", "Lights", "Preview"],
+   "the panel has Materials, Lights and Preview")
+ok(c.preview.text() == "Open preview" and c.preview.toolTip().startswith("Open preview"), "…and the toolbar's command keeps its whole name")
+ok(all(not b.icon().isNull() and b.toolButtonStyle() == Qt.ToolButtonTextBesideIcon for b in buttons), "…with the toolbar's icon before the text")
+ok(all(panel.isAncestorOf(b) for b in buttons), "…inside the panel")
+ok(panel.preview_btn.minimumHeight() == panel.render_btn.minimumHeight() > panel.materials_btn.minimumHeight(),
+   "…both taller than the others")
+def drawn(button):
+    """Where in a button, 300 wide, the pixels with colour (its icon's accent) are, left to right."""
+    button.setFixedSize(300, 30)
+    picture = button.grab().toImage()
+    return [x for x in range(8, 270) for y in range(4, 26) if picture.pixelColor(x, y).hsvSaturation() > 40]
+for b in (*buttons, panel.render_btn):
+    was = b.isEnabled()
+    b.setEnabled(True)
+    xs = drawn(b)
+    ok(bool(xs) and 40 < min(xs) and max(xs) < 170, f"{b.text()}: its icon is drawn, left of the words, in the middle of the button ({(min(xs), max(xs)) if xs else None})")
+    b.setEnabled(was)
+column = panel.layout()
+row = next(column.itemAt(i).layout() for i in range(column.count()) if column.itemAt(i).layout() is not None
+           and column.itemAt(i).layout().indexOf(panel.render_btn) >= 0)
+ok(row.indexOf(panel.preview_btn) == 0 and row.indexOf(panel.render_btn) == 1, "Preview and Render share a row, in that order")
+ok(not panel.render_btn.icon().isNull() and panel.render_btn.toolButtonStyle() == Qt.ToolButtonTextBesideIcon and panel.render_btn.menu() is not None,
+   "…with its own icon, and still with the arrow's menu")
+opened.clear()
+for b in buttons:
+    b.click()
+ok(opened == ["materials", "lights", "preview"], f"…and each does its job ({opened})")
+c.need_blender(False)
+ok(not panel.preview_btn.isEnabled() and panel.materials_btn.isEnabled(), "…greyed as the toolbar's are")
 c.need_blender(True)
 
 # the Library: not installed, then installed
@@ -105,9 +147,14 @@ def cut():
 ok(bar2.isFloating() and not cut(), f"floating, every button is whole ({cut()})")
 narrow = bar2.width()
 c.follow_changes.setChecked(False); pump()
-ok(not cut() and bar2.width() > narrow, f"…also when «Update preview» appears: the bar widens ({cut()})")
+ok(not cut() and bar2.width() == narrow, f"…and the same width with «Sync changes» off: «Update preview» was already there ({cut()})")
 c.follow_changes.setChecked(True); pump()
-ok(not cut() and bar2.width() == narrow, "…and narrows again when it goes")
+ok(not cut() and bar2.width() == narrow, "…and on again")
+extra = next(a for a in bar2.actions() if a.text() == "Lights")
+extra.setVisible(False); pump()
+less = bar2.width()
+extra.setVisible(True); pump()
+ok(less < narrow and bar2.width() == narrow and not cut(), f"a button that goes or comes: the bar follows ({less} → {bar2.width()}, {cut()})")
 bar2.resize(narrow - 60, bar2.height()); pump()
 ok(not cut() and bar2.width() == narrow, f"a size too small, as an old saved layout may give, is put right ({cut()})")
 print("FAILED" if fails else "ALL OK"); sys.exit(1 if fails else 0)

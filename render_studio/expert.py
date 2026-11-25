@@ -12,12 +12,19 @@ from PySide6.QtCore import QSettings, QSize, Qt, QTimer
 from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMenu, QMessageBox, QToolButton, QVBoxLayout,
                                QWidget)
 
-from . import bindings, icons, layouts, look_model, params, presets, user_presets
+from . import bindings, icons, layouts, look_model, params, presets, user_presets, widgets
 from .i18n import tr
 
 _log = logging.getLogger(__name__)
 _SETTINGS = "render_studio/"
 _DEFAULT = ""                                   # the default layout's data in the box
+#: The eye: flat, with a faint ground only under the pointer.
+EYE_STYLE = """
+QToolButton, QToolButton:checked, QToolButton:pressed { border: none; background: transparent; padding: 2px; }
+QToolButton:hover { background: rgba(128,128,128,50); border-radius: 4px; }
+"""
+#: The groups whose icon is not called after them.
+GROUP_ICONS = {"ambient": "grp_light", "image": "grp_corrections"}
 
 
 def _plain(text: str) -> str:
@@ -57,6 +64,8 @@ class _Row(QWidget):
         self.eye.setCheckable(True)
         self.eye.setAutoRaise(True)
         self.eye.setIconSize(QSize(18, 18))
+        self.eye.setStyleSheet(EYE_STYLE)                   # no ground of its own, chosen or not: the drawing says which it is
+        self.eye.setCursor(Qt.PointingHandCursor)
         self.eye.clicked.connect(lambda on: tab.set_eye(param.key, on))
         self.name = QLabel(tr(param.label))
         self.name.setWordWrap(True)
@@ -64,13 +73,12 @@ class _Row(QWidget):
         self.mark.setStyleSheet("color: #e8742a")
         self.mark.setToolTip(tr("Not at its default"))
         self.reset = QToolButton()
-        self.reset.setText("↺")
+        self.reset.setIcon(icons.icon("undo"))
         self.reset.setAutoRaise(True)
         self.reset.setToolTip(tr("Back to the default"))
         self.reset.clicked.connect(lambda _c=False: tab.reset_value(param.key))
-        for w in (self.eye, self.name, self.mark):
+        for w in (self.name, self.mark, self.reset, self.eye):          # the eye at the right edge, all in one column
             top.addWidget(w, 1 if w is self.name else 0)
-        top.addWidget(self.reset)
         v.addLayout(top)
         self.mirror = bindings.Mirror(tab.panel, param.key, control)
         if param.hint:
@@ -92,7 +100,7 @@ class ExpertTab(QWidget):
         self.layout_name, shown = self._stored()
         self._pending = False
         v = QVBoxLayout(self)
-        v.setContentsMargins(2, 4, 2, 2)
+        v.setContentsMargins(0, 8, 4, 2)                    # (as the other pages: room above, under the tabs)
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search a setting…")
         self.search.setClearButtonEnabled(True)
@@ -102,7 +110,7 @@ class ExpertTab(QWidget):
         self.layout_box.setToolTip("The layout: which settings each page shows. It changes no value of the render.")
         self.layout_box.activated.connect(lambda _i: self.load_layout(self.layout_box.currentData()))
         self.menu_btn = QToolButton()
-        self.menu_btn.setText("⋯")
+        self.menu_btn.setIcon(icons.icon("more"))
         self.menu_btn.setPopupMode(QToolButton.InstantPopup)
         self.menu_btn.setToolTip("Save the layout, delete it, or go back to the default one")
         menu = QMenu(self.menu_btn)
@@ -125,9 +133,8 @@ class ExpertTab(QWidget):
                 keys = [p.key for p in params.PARAMS if p.tab == tab_key and p.group == group and p.key in self.controls]
                 if not keys:
                     continue
-                header = QLabel(f"{tr(tab_name)} ▸ {tr(params.GROUPS[group])}")
-                header.setWordWrap(True)
-                header.setStyleSheet("font-weight: bold; margin-top: 6px")
+                header = widgets.Card(f"{tr(tab_name)} ▸ {tr(params.GROUPS[group])}", f"expert_{tab_key}_{group}",
+                                      icon=GROUP_ICONS.get(group, "grp_" + group), kind="column")
                 v.addWidget(header)
                 self.headers.append((header, keys))
                 for key in keys:
@@ -136,7 +143,7 @@ class ExpertTab(QWidget):
                     except Exception:  # noqa: BLE001 - one control without a mirror must not take the page with it
                         _log.exception("no expert row for %s", key)
                         continue
-                    v.addWidget(self.rows[key])
+                    header.body_layout.addWidget(self.rows[key])
         v.addStretch(1)
         self.filter.set_shown(shown)
         for key, control in self.controls.items():
@@ -150,8 +157,11 @@ class ExpertTab(QWidget):
         """The layout in use, as the program's settings keep it."""
         raw = QSettings().value(_SETTINGS + "layout", "")
         try:
-            got = layouts.from_data(json.loads(raw)) if raw else None
-        except (TypeError, ValueError):
+            data = json.loads(raw) if raw else None
+            got = layouts.from_data(data) if data else None
+            if got is not None and not got[0] and data.get("basic") != layouts.BASIC:
+                got = None                          # the default of before: the new basic view
+        except (TypeError, ValueError, AttributeError):
             got = None
         return got if got is not None else ("", layouts.default())
 
@@ -226,6 +236,11 @@ class ExpertTab(QWidget):
     # -- the values ------------------------------------------------------------------------
     def reset_value(self, key: str) -> None:
         """``key`` back to its default."""
+        if params.BY_KEY[key].local:                      # not of the drawing: its control alone holds it
+            control = self.controls[key]
+            control.setCurrentIndex(control.findData(params.BY_KEY[key].default))
+            self.refresh()
+            return
         now = self.panel.settings_dict()
         model = look_model.from_v1(now)
         if key == "ambient.look":
@@ -253,13 +268,16 @@ class ExpertTab(QWidget):
             model = look_model.from_v1(self.panel.settings_dict())
         except Exception:  # noqa: BLE001 - while the panel is being built
             return
+        model.update({key: self.controls[key].currentData() for key in self.rows
+                      if params.BY_KEY[key].local and params.BY_KEY[key].kind == "choice"})
         for key, row in self.rows.items():
             row.mirror.pull()
             row.show_eye(key in self.filter.shown)
             applies = params.applies(row.param, model)
             row.mirror.widget.setEnabled(applies)
             row.name.setEnabled(applies)
-            differs = applies and not same(model[key], default_value(key, model["ambient.look"]))
+            differs = applies and row.param.kind != "program" and \
+                not same(model[key], default_value(key, model["ambient.look"]))
             row.mark.setVisible(differs)
             row.reset.setVisible(differs)
         self._filter_rows()
@@ -272,11 +290,12 @@ class ExpertTab(QWidget):
                 row = self.rows.get(key)
                 if row is None:
                     continue
-                text = _plain(f"{header.text()} {row.name.text()} {row.param.label}")
+                text = _plain(f"{header.title()} {row.name.text()} {row.param.label}")
                 match = all(w in text for w in words)
                 row.setVisible(match)
                 any_left = any_left or match
             header.setVisible(any_left)
+            header.force_open(bool(words))              # (a search shows what it finds, folded or not)
 
     def showEvent(self, ev):  # noqa: N802 (Qt)
         super().showEvent(ev)

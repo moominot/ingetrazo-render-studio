@@ -15,6 +15,8 @@ from pathlib import Path
 from . import params, user_presets
 
 FILE_KEY = "render_studio_layout"
+#: Goes up when the simple view changes: a stored copy of the old default gives way to the new one.
+BASIC = 2
 
 
 def default() -> set:
@@ -33,7 +35,7 @@ def from_data(data) -> tuple | None:
 
 
 def to_data(name: str, shown) -> dict:
-    return {FILE_KEY: 1, "name": user_presets.clean_name(name), "shown": sorted(k for k in shown if k in params.BY_KEY),
+    return {FILE_KEY: 1, "basic": BASIC, "name": user_presets.clean_name(name), "shown": sorted(k for k in shown if k in params.BY_KEY),
             "known": sorted(params.BY_KEY)}
 
 

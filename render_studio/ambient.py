@@ -6,7 +6,7 @@ from __future__ import annotations
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import QButtonGroup, QGroupBox, QHBoxLayout, QLabel, QSizePolicy, QToolButton, QVBoxLayout
 
-from . import icons
+from . import icons, widgets
 from .i18n import tr
 
 #: (look, icon, name, what it is)
@@ -19,12 +19,12 @@ AMBIENTS = (
 )
 
 
-class AmbientBox(QGroupBox):
+class AmbientBox(widgets.Card):
     chosen = Signal(str)                    # the look a person pressed
 
     def __init__(self, parent=None):
-        super().__init__("Light", parent)
-        lay = QVBoxLayout(self)                   # margins and gaps as the camera's buttons have them
+        super().__init__("Light", "light", parent, icon="grp_light", kind="column")
+        lay = self.body_layout
         row = QHBoxLayout()
         lay.addLayout(row)
         self.group = QButtonGroup(self)

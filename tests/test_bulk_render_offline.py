@@ -121,8 +121,10 @@ tab.autosave.setChecked(True)
 ok(tab.autosave_target() == (Path(out), "{scene}"), "…the same folder and name as the scenes")
 
 # the Output tab: projection first, then size, file, what to render, where to save; no help button of its own
-from PySide6.QtWidgets import QLabel, QToolButton
-heads = [l.text() for l in tab.findChildren(QLabel) if l.font().bold()]
+from PySide6.QtWidgets import QToolButton
+from render_studio.widgets import Card
+heads = [tab.layout().itemAt(i).widget().title() for i in range(tab.layout().count())
+         if isinstance(tab.layout().itemAt(i).widget(), Card)]                      # as they are laid out, top to bottom
 ok(heads == ["Projection", "Size", "File", "What to render", "Save"], f"the Output tab's order ({heads})")
 ok(not any(b.text() == "?" for b in tab.findChildren(QToolButton)), "the Output tab has no help button (the panel's is beside the tabs)")
 # the ground: the radius sliders

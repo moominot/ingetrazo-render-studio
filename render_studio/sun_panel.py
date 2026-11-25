@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDateEdit, QDoubleSpinBox, 
                                QHBoxLayout, QLabel, QPushButton, QSizePolicy, QSlider, QTimeEdit, QToolButton,
                                QVBoxLayout, QWidget)
 
-from . import sun_site as S
+from . import icons, sun_site as S, widgets
 
 
 def _bold(text: str) -> QLabel:
@@ -237,13 +237,26 @@ class SunTab(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
 
-        self.head_place = _bold("Place")
-        lay.addWidget(self.head_place)
+        # One row for each thing, so that each can be shown or kept in the Expert page only.
         form = QFormLayout()
         form.setContentsMargins(0, 0, 0, 0)        # (the group has its margins: a narrow tray has no room for more)
         form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        self.form = form
+        self.map_btn = widgets.CentredButton()
+        self.map_btn.setText("Location…")
+        self.map_btn.setIcon(icons.icon("pin"))
+        self.map_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.map_btn.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)       # the coordinates must not widen the tray
+        self.map_btn.setMinimumHeight(28)
+        self.map_btn.clicked.connect(self._pick_on_map)
         self.where = _note()
-        form.addRow(self.where)
+        self.where.setVisible(False)               # (said as the button's tip; shown only when there is no map)
+        self.location_box = QWidget()
+        place = QVBoxLayout(self.location_box)
+        place.setContentsMargins(0, 0, 0, 0)
+        place.addWidget(self.map_btn)
+        place.addWidget(self.where)
+        form.addRow(self.location_box)
         self.lat = QDoubleSpinBox()
         self.lat.setRange(-89.9, 89.9)
         self.lat.setDecimals(4)
@@ -260,18 +273,12 @@ class SunTab(QWidget):
             w.setSizePolicy(QSizePolicy.Ignored, w.sizePolicy().verticalPolicy())
             w.setKeyboardTracking(False)
             w.valueChanged.connect(self._location_edited)
-        lrow = QHBoxLayout()
+        self.coords = QWidget()
+        lrow = QHBoxLayout(self.coords)
         lrow.setContentsMargins(0, 0, 0, 0)
         lrow.addWidget(self.lat)
         lrow.addWidget(self.lon)
-        self.map_btn = QToolButton()
-        self.map_btn.setText("Map…")
-        self.map_btn.setToolTip("Choose the place on a map")
-        self.map_btn.clicked.connect(self._pick_on_map)
-        lrow.addWidget(self.map_btn)
-        box = QWidget()
-        box.setLayout(lrow)
-        form.addRow("Latitude, longitude", box)
+        form.addRow("Latitude, longitude", self.coords)
         self.north = QDoubleSpinBox()
         self.north.setRange(-180.0, 180.0)
         self.north.setDecimals(1)
@@ -279,18 +286,17 @@ class SunTab(QWidget):
         self.north.setSuffix("°")
         self.north.setWrapping(True)
         self.north.setKeyboardTracking(False)
-        self.north.setToolTip("Where true north lies, clockwise from the green (Y) axis. The shadows turn; "
-                              "the model does not move.")
+        self.north.setToolTip("The drawing's own north (IngeTrazo's): where true north lies, clockwise from the green (Y) axis. "
+                              "The shadows turn; the model does not move.")
         self.north.valueChanged.connect(lambda v: self._edit(north=v))
         form.addRow("North", self.north)
-        lay.addLayout(form)
 
-        self.head_clock = _bold("Date and hour")
-        lay.addWidget(self.head_clock)
-        form2 = QFormLayout()
-        form2.setContentsMargins(0, 0, 0, 0)        # (the group has its margins: a narrow tray has no room for more)
-        self.form_clock = form2
+        # the exact date and hour: the two sliders of the group say them (see embed), these hold the values
+        self.clock_box = QWidget()
+        form2 = QFormLayout(self.clock_box)
+        form2.setContentsMargins(0, 0, 0, 0)
         form2.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        self.form_clock = form2
         self.date = QDateEdit()
         self.date.setDisplayFormat("d MMMM")
         self.date.setCalendarPopup(True)
@@ -314,8 +320,7 @@ class SunTab(QWidget):
         tbox.setLayout(trow)
         self.hour_row_box = tbox
         form2.addRow("Hour", tbox)
-        self.daylight = _note()
-        form2.addRow("", self.daylight)
+
         self.zone = QComboBox()
         self.zone.addItem(tr("From the longitude"), None)
         for h in range(-12, 15):
@@ -325,29 +330,36 @@ class SunTab(QWidget):
         self.zone.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.zone.setMinimumContentsLength(8)
         self.zone.currentIndexChanged.connect(lambda _i: self._edit(utc_offset=self.zone.currentData()))
-        form2.addRow("Time zone", self.zone)
+        self.daylight = _note()
+        self.zone_box = QWidget()
+        zone_lay = QVBoxLayout(self.zone_box)
+        zone_lay.setContentsMargins(0, 0, 0, 0)
+        zone_lay.addWidget(self.zone)
+        zone_lay.addWidget(self.daylight)
+        form.addRow("Time zone", self.zone_box)
         self.shadows = QCheckBox("Shadows in the 3D view")
         self.shadows.setToolTip("IngeTrazo's own sun shadows in the model, with this date and hour")
         self.shadows.toggled.connect(lambda on: self._edit(enabled=bool(on)))
-        form2.addRow("", self.shadows)
-        lay.addLayout(form2)
+        form.addRow(self.shadows)
 
-        lay.addWidget(_bold("The sun then"))
         self.sun_now = QLabel("")
         self.sun_now.setWordWrap(True)
-        lay.addWidget(self.sun_now)
         self.look = _note()
-        lay.addWidget(self.look)
+        self.info_box = QWidget()
+        info = QVBoxLayout(self.info_box)
+        info.setContentsMargins(0, 0, 0, 0)
+        info.addWidget(self.sun_now)
+        info.addWidget(self.look)
+        form.addRow("The sun then", self.info_box)
+        lay.addLayout(form)
+        lay.addWidget(self.clock_box)
         lay.addStretch(1)
         self.refresh()
 
     def embed(self) -> None:
-        """Used inside the Sun and sky group, under its own date and hour sliders: this tab's calendar and hour are the same two values, so
-        they are not shown again (what is left is the place, the north, the time zone, the shadows and what the sun does then)."""
-        self.form_clock.setRowVisible(self.date, False)
-        self.form_clock.setRowVisible(self.hour_row_box, False)
-        self.head_clock.setText(tr("Clock"))
-        self.head_place.setText(tr("Place"))
+        """Used inside the Sun and sky group, under its own date and hour sliders: this tab's calendar and hour are the same two
+        values, so they are not shown again."""
+        self.clock_box.setVisible(False)
 
     # ---- showing ----------------------------------------------------------------------
     def _help(self):
@@ -380,10 +392,21 @@ class SunTab(QWidget):
         self.where.setText(tr("The model's location (the map and the terrain follow it too).") if s["located"] else
                            tr("The model has no location yet: the sun stands at IngeTrazo's default place. Type the "
                               "real one, or choose it on the map; it becomes the model's location."))
+        self.map_btn.setToolTip(f"{self.where.text()}\n{s['lat']:.4f}°, {s['lon']:.4f}°")
         self._show_sun(s)
+
+    def place_text(self, s: dict) -> str:
+        """What the location button says: the model's place, or «Location…» while it has none (IngeTrazo's default place
+        would read as the project's own)."""
+        if not (s.get("located") or "location" in self._pending):
+            return tr("Location…")
+        number = self.lat.locale()                     # decimals as the coordinate boxes write them
+        parts = ((s["lat"], "N", "S"), (s["lon"], "E", "W"))
+        return ", ".join(f"{number.toString(abs(float(v)), 'f', 4)}° {tr(plus if v >= 0 else minus)}" for v, plus, minus in parts)
 
     def _show_sun(self, s=None) -> None:
         s = s or S.site(self.app.scene)
+        self.map_btn.setText(self.place_text(s))
         if self.quick is not None:
             self.quick.sync()
         if self.panel is not None and hasattr(self.panel, "update_night_rows"):
@@ -491,6 +514,7 @@ class SunTab(QWidget):
             from views.location_dialog import pick_location
         except Exception:  # noqa: BLE001 - an IngeTrazo without the map
             self.where.setText("This IngeTrazo has no map: type the latitude and longitude.")
+            self.where.setVisible(True)
             return
         s = self._preview_site()
         result = pick_location(PRESETS[DEFAULT_SOURCE_ID], s["lat"], s["lon"], self.window())

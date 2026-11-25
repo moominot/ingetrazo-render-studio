@@ -28,6 +28,7 @@ CAMERA_SLIDERS = ("dof", "focus")
 MAX_ASSET = 400 * 1024 * 1024
 MAX_THUMB = 8 * 1024 * 1024
 _ASSET_KEYS = ("hdri", "backdrop")
+_FINE_ASSETS = ("finish.texture_path",)             # pictures among the finer settings
 
 
 def look_of(settings: dict) -> dict | None:
@@ -46,6 +47,7 @@ def apply_to(current: dict, preset: dict) -> dict:
     the preset does not name goes back to its look's own value."""
     look = look_of(preset) or {}
     out = dict(current)
+    out.pop("fine", None)                                  # the finer settings are of the look: none unless the preset has them
     out.update({k: v for k, v in look.items() if k != "sliders"})
     block, _ambience = presets.studio(look.get("look", "clear"))
     sliders = {}
@@ -97,6 +99,12 @@ def write(path: Path, name: str, settings: dict, thumb: bytes | None = None) -> 
             member = f"assets/{key}_{source.name}"
             assets[member] = source
             look[key] = dict(block, path=member)
+    for key in _FINE_ASSETS:
+        source = Path((look.get("fine") or {}).get(key) or "")
+        if source.is_file() and source.stat().st_size <= MAX_ASSET:
+            member = f"assets/{key}_{source.name}"
+            assets[member] = source
+            look["fine"] = dict(look["fine"], **{key: member})
     data = {FILE_KEY: 2, "name": user_presets.clean_name(name), "settings": look}
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -108,6 +116,19 @@ def write(path: Path, name: str, settings: dict, thumb: bytes | None = None) -> 
         for member, source in assets.items():
             z.write(source, member)
     tmp.replace(path)
+
+
+def _take_out(z, member: str, names: set, assets_to) -> str | None:
+    """The picture ``member`` of the open preset ``z`` written into ``assets_to`` by its plain name: where, or None."""
+    plain = member.rsplit("/", 1)[-1].replace("\\", "_")
+    if member not in names or plain in ("", ".", "..") or assets_to is None or z.getinfo(member).file_size > MAX_ASSET:
+        return None
+    target = Path(assets_to) / plain
+    if not target.is_file() or target.stat().st_size != z.getinfo(member).file_size:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with z.open(member) as src, open(target, "wb") as dst:
+            shutil.copyfileobj(src, dst)
+    return str(target)
 
 
 def read(path: Path, assets_to: Path | None = None):
@@ -135,17 +156,13 @@ def read(path: Path, assets_to: Path | None = None):
                 member = str(block.get("path") or "")
                 if not member.startswith("assets/"):
                     continue                                   # a picture kept by its place on this computer
-                plain = member.rsplit("/", 1)[-1].replace("\\", "_")
-                if member in names and plain not in ("", ".", "..") and assets_to is not None \
-                        and z.getinfo(member).file_size <= MAX_ASSET:
-                    target = Path(assets_to) / plain
-                    if not target.is_file() or target.stat().st_size != z.getinfo(member).file_size:
-                        target.parent.mkdir(parents=True, exist_ok=True)
-                        with z.open(member) as src, open(target, "wb") as dst:
-                            shutil.copyfileobj(src, dst)
-                    raw[key] = dict(block, path=str(target))
-                else:
-                    raw[key] = None
+                target = _take_out(z, member, names, assets_to)
+                raw[key] = dict(block, path=target) if target else None
+            for key in _FINE_ASSETS:
+                fine = raw.get("fine")
+                member = str(fine.get(key) or "") if isinstance(fine, dict) else ""
+                if member.startswith("assets/"):
+                    raw["fine"] = dict(fine, **{key: _take_out(z, member, names, assets_to)})
             thumb = z.read("thumb.png") if "thumb.png" in names and z.getinfo("thumb.png").file_size <= MAX_THUMB else None
     except (OSError, KeyError, ValueError, zipfile.BadZipFile, RuntimeError):
         return None

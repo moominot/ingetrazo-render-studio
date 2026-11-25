@@ -7,7 +7,8 @@ control, which then acts as if it had been used itself."""
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox, QSlider, QSpinBox, QWidget)
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QSizePolicy,
+                               QSlider, QSpinBox, QToolButton, QVBoxLayout, QWidget)
 
 from . import params, widgets
 from .i18n import tr
@@ -20,7 +21,8 @@ def controls(panel) -> dict:
     g, s = panel.style_groups, panel.sliders
     out = {
         "ambient.look": panel.ambient, "camera.dof": s["dof"], "camera.focus": s["focus"], "quality.level": panel.quality,
-        "quality.engine": panel.engine,
+        "quality.engine": panel.engine, "quality.preview_engine": panel.preview_engine,
+        "quality.preview_quality": panel.preview_quality,
         "surface.kind": g.surface, "surface.material": g.material, "surface.colour": g.colour, "surface.keep_glass": g.keep_glass,
         "surface.lux_max": g.lux, "outline.on": g.outline, "outline.width": g.width, "outline.colour": g.line_colour,
         "outline.hand": g.hand, "outline.extend": g.extend, "finish.kind": g.finish, "finish.wetness": g.wetness,
@@ -42,6 +44,11 @@ def controls(panel) -> dict:
         "skyline.seed": panel.skyline_seed, "skyline.colour": panel.skyline_colour,
         "fog.amount": s["fog"], "fog.start": s["fog_start"], "fog.ground_haze": panel.ground_haze,
     }
+    sun, quick = panel.sun_tab, panel.sun_quick
+    out.update({"sun.date": quick.date_slider, "sun.hour": quick.hour_slider, "site.location": sun.map_btn,
+                "site.coords": sun.coords, "site.north": sun.north, "site.zone": sun.zone, "site.shadows": sun.shadows,
+                "site.info": sun.sun_now})
+    out.update({key: control for key, (control, _form) in panel.fine.rows.items()})
     return {p.key: out[p.key] for p in params.PARAMS if p.key in out}
 
 
@@ -74,6 +81,15 @@ def _box_of(widget):
     while node is not None and not isinstance(node, QGroupBox):
         node = node.parentWidget()
     return node
+
+
+def _counts(form, row) -> bool:
+    """Whether a row left in view keeps its group in view: a note, or a block whose own rows are counted apart, does not."""
+    for role in (QFormLayout.FieldRole, QFormLayout.SpanningRole):
+        item = form.itemAt(row, role)
+        if item is not None and isinstance(item.widget(), (QLabel, widgets.Section)):
+            return False
+    return True
 
 
 class LayoutFilter:
@@ -123,7 +139,7 @@ class LayoutFilter:
                 boxes.setdefault(box, []).append((key, form))
         for box, rows in boxes.items():
             forms = {form for _k, form in rows}
-            left = any(form.isRowVisible(r) for form in forms for r in range(form.rowCount()))
+            left = any(form.isRowVisible(r) and _counts(form, r) for form in forms for r in range(form.rowCount()))
             none_wanted = not any(key in self.shown for key, _f in rows)
             if none_wanted and not left:
                 if not box.isHidden():
@@ -145,14 +161,30 @@ class Mirror:
         self.panel, self.key, self.control = panel, key, control
         self.widget: QWidget
         self.label = None
-        if key == "ambient.look":
+        if key in ("sun.date", "sun.hour"):
+            self._marked(panel.sun_quick, control, panel.sun_quick.date_label if key == "sun.date" else panel.sun_quick.hour_label)
+        elif key == "site.location":
+            self.widget = widgets.CentredButton()
+            self.widget.setText(control.text())
+            self.widget.setIcon(control.icon())
+            self.widget.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+            self.widget.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+            self.widget.clicked.connect(lambda _c=False: control.click())
+            self.pull = lambda: self.widget.setText(control.text())
+        elif key == "site.coords":
+            self._coords(panel.sun_tab)
+        elif key == "site.info":
+            self.widget = QLabel("")
+            self.widget.setWordWrap(True)
+            self.pull = lambda: self.widget.setText(control.text())
+        elif key == "ambient.look":
             self._combo(panel.preset, after=lambda i: panel.set_ambient(panel.preset.itemData(i)), set_real=False)
         elif isinstance(control, widgets.ChoiceButtons):
-            self.widget = widgets.ChoiceButtons([button.text() for button in control._buttons])
+            self.widget = widgets.ChoiceButtons([button.text() for button in control._buttons], icons=control.icon_keys)
             self.widget.currentIndexChanged.connect(control.setCurrentIndex)
             self.pull = lambda: self._quietly(lambda: self.widget.setCurrentIndex(control.currentIndex()))
         elif isinstance(control, QComboBox):
-            self._combo(control)
+            self._combo(control)                                    # (a file box too: choosing in the copy opens its dialog)
         elif isinstance(control, QCheckBox):
             self.widget = QCheckBox(tr("Enabled"))                  # (the row above already says what)
             self.widget.clicked.connect(lambda on: control.setChecked(on))
@@ -189,6 +221,62 @@ class Mirror:
             self.pull = lambda: self._quietly(lambda: self.widget.setValue(control.value()))
         else:
             raise TypeError(f"no mirror for {key}: {type(control).__name__}")
+
+    def _marked(self, quick, control, label) -> None:
+        """The date's or the hour's slider with its marks and the words under it."""
+        from .sun_panel import MarkedSlider
+        self.widget = QWidget()
+        lay = QVBoxLayout(self.widget)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        copy = MarkedSlider(snap=control.snap)
+        copy.setRange(control.minimum(), control.maximum())
+        copy.setMinimumWidth(40)
+        words = QLabel("")
+        words.setWordWrap(True)
+        words.setStyleSheet(label.styleSheet())
+        lay.addWidget(copy)
+        lay.addWidget(words)
+
+        def pull():
+            was = copy.blockSignals(True)
+            try:
+                copy.set_marks(control.marks)
+                copy.setValue(control.value())
+            finally:
+                copy.blockSignals(was)
+            words.setText(label.text())
+
+        def moved(v):
+            control.setValue(v)
+            pull()
+        copy.valueChanged.connect(moved)
+        copy.sliderReleased.connect(copy._snap_to_mark)
+        self.pull = pull
+
+    def _coords(self, sun) -> None:
+        self.widget = QWidget()
+        lay = QHBoxLayout(self.widget)
+        lay.setContentsMargins(0, 0, 0, 0)
+        pairs = []
+        for real in (sun.lat, sun.lon):
+            box = QDoubleSpinBox()
+            box.setRange(real.minimum(), real.maximum())
+            box.setDecimals(real.decimals())
+            box.setSuffix(real.suffix())
+            box.setButtonSymbols(QDoubleSpinBox.NoButtons)
+            box.setKeyboardTracking(False)
+            box.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+            box.valueChanged.connect(real.setValue)
+            lay.addWidget(box)
+            pairs.append((box, real))
+
+        def pull():
+            for box, real in pairs:
+                was = box.blockSignals(True)
+                box.setValue(real.value())
+                box.blockSignals(was)
+        self.pull = pull
 
     def _quietly(self, fn) -> None:
         was = self.widget.blockSignals(True)

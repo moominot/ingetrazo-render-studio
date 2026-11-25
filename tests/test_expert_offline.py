@@ -7,7 +7,8 @@ os.environ["RENDER_STUDIO_HOME"] = tempfile.mkdtemp()
 SRC, REPO = [os.path.abspath(a) for a in sys.argv[1:3]]
 sys.path[:0] = [SRC, REPO, os.path.join(REPO, "tests")]
 from pathlib import Path
-from PySide6.QtWidgets import QApplication, QInputDialog, QMessageBox
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication, QInputDialog, QMessageBox, QWidget
 qa = QApplication.instance() or QApplication([])
 import reference_cases as R
 from render_studio import bindings, expert, layouts, params, settings_store as S
@@ -40,6 +41,181 @@ def apply(**changes):
 ok(set(e.controls) == set(params.BY_KEY) - {"quality.width", "background.paper_sky"} and set(e.rows) == set(e.controls),
    f"every setting has its control and its row in Expert ({len(e.rows)}); the width stays in Output")
 ok(set(e.filter.rows) == set(e.controls) - {"ambient.look"}, "…and its row in its page")
+
+# -- the eye: flat, at the right edge of its row
+row = e.rows["surface.kind"]
+line = row.layout().itemAt(0).layout()
+ok(line.itemAt(line.count() - 1).widget() is row.eye and "transparent" in row.eye.styleSheet(), "the eye is the last thing of its row, and flat")
+
+# -- at the narrowest width nothing of the pages is cut off at the right, where the eyes are
+panel.setAttribute(Qt.WA_DontShowOnScreen, True); panel.set_expert_mode(True); panel.need_box.setVisible(False)
+panel.resize(300, 900); panel.show()          # (offscreen's stand-in fonts are some 20 % wider than the real ones: 240 px)
+_card = e.headers[0][0]; _title, _min = _card.title(), _card.minimumSizeHint().width()
+_card.setTitle(_title * 6)
+ok(_card.minimumSizeHint().width() == _min, f"a longer title does not widen a card ({_min} → {_card.minimumSizeHint().width()})")
+_card.setTitle(_title)
+from PySide6.QtWidgets import QWidget as _W
+over = {}
+for index in (0, panel.tabs.count() - 1):               # Main and Expert
+    panel.tabs.setCurrentIndex(index)
+    for _ in range(8):
+        qa.processEvents()
+    area = panel.tabs.currentWidget()
+    over[panel.tabs.tabText(index)] = _W.width(area.widget()) - area.viewport().width()
+ok(all(v <= 0 for v in over.values()), f"Main and Expert fit a narrow tray ({over})")
+panel.hide(); panel.set_expert_mode(False); panel.tabs.setCurrentIndex(0)
+
+# -- Expert mode and Help: in the tray's header, beside its name; else in a row at the top of the panel
+from PySide6.QtWidgets import QDockWidget, QHBoxLayout, QLabel, QMainWindow, QToolButton
+from shiboken6 import isValid
+ok(isinstance(panel.expert_mode, QToolButton) and panel.expert_mode.isCheckable() and panel.expert_mode.text() == "Expert mode"
+   and not panel.expert_mode.icon().isNull(), "Expert mode is a button with a tools icon and its words")
+ok(panel.foot_row.indexOf(panel.expert_mode) < 0 and panel.foot_row.indexOf(panel.status) == 0, "…and out of the messages' line")
+tools = panel.header_tools
+def pump():
+    for _ in range(10):
+        qa.processEvents()
+tools.place()
+ok(tools.box.parentWidget() is tools.own_row and panel.layout().indexOf(tools.own_row) == 0 and not tools.own_row.isHidden(),
+   "with no tray they are in a row at the top of the panel")
+try:
+    from views.main_window import _DockHeader                  # IngeTrazo's own header, where it can be made
+except Exception:  # noqa: BLE001
+    _DockHeader = None
+class Header(QWidget):
+    def __init__(self, window, dock, alone):
+        super().__init__(dock)
+        row = QHBoxLayout(self)
+        name = QLabel(dock.windowTitle(), self); name.setObjectName("dock_header_name")
+        row.addWidget(name, 1)
+kinds = [Header] + ([_DockHeader] if _DockHeader else [])
+for kind in kinds:
+    window = QMainWindow()
+    dock = QDockWidget("Render Studio", window)
+    dock.setWidget(panel)
+    first = kind(window, dock, False); dock.setTitleBarWidget(first)
+    tools.place(); pump()
+    ok(tools.box.parentWidget() is first and tools.own_row.isHidden(), f"{kind.__name__}: the buttons are in the tray's header")
+    row = first.layout()
+    ok(row.indexOf(tools.box) == row.indexOf(first.findChild(QLabel, "dock_header_name")) + 1, "…after its name")
+    second = kind(window, dock, False)                           # the trays rearranged: the program makes a new header
+    dock.setTitleBarWidget(second); first.deleteLater(); pump()
+    ok(isValid(tools.box) and isValid(panel.expert_mode) and tools.box.parentWidget() is second,
+       "a new header: the buttons move to it, and are not lost with the old one")
+    dock.setTitleBarWidget(QWidget(dock)); second.deleteLater(); pump()
+    ok(isValid(tools.box) and tools.box.parentWidget() is tools.own_row and not tools.own_row.isHidden(),
+       "a header that is not the one known: back to the panel's own row")
+    panel.setParent(None); tools.place(); pump()
+
+# -- every page's groups are cards, Section and Output too
+from render_studio import widgets as _widgets
+for _tab, _titles in ((panel.section_tab, {"Sections in the drawing", "Cap", "Cap outline", "Light"}),
+                      (panel.output_tab, {"Projection", "Size", "File", "What to render", "Save"})):
+    _cards = _tab.findChildren(_widgets.Card)
+    ok({c.title() for c in _cards} == _titles and all(c.icon_key for c in _cards), f"{type(_tab).__name__}: its groups are cards with icons ({sorted(c.title() for c in _cards)})")
+    _buttons = [b for b in _tab.findChildren(QWidget) if type(b).__name__ in ("QPushButton", "QToolButton") and b.objectName() != "colourSwatch" and not type(b).__name__ == "ColourButton"]
+    ok(all(not b.icon().isNull() for b in _buttons), f"…and every button has an icon ({[b.text() for b in _buttons if b.icon().isNull()]})")
+
+# at the narrowest tray, every button of Section and Output has its place and the two sizes are not squeezed
+panel.setAttribute(Qt.WA_DontShowOnScreen, True); panel.need_box.setVisible(False); panel.resize(300, 900); panel.show()
+for _tab in (panel.section_tab, panel.output_tab):
+    panel.tabs.setCurrentIndex(next(i for i in range(panel.tabs.count()) if panel.tabs.widget(i).isAncestorOf(_tab)))
+    for _ in range(8):
+        qa.processEvents()
+_o = panel.output_tab
+def _inside(w):
+    box = w.parentWidget()
+    return w.isVisible() and QWidget.width(w) >= 20 and w.geometry().right() <= QWidget.width(box) and w.geometry().left() >= 0
+ok(_inside(_o.browse_btn) and _inside(_o.swap), f"Output: the folder's and the turn's buttons are in view ({QWidget.width(_o.browse_btn)}, {QWidget.width(_o.swap)} px)")
+for _w in (_o.width, _o.height):
+    ok(_inside(_w) and QWidget.width(_w) >= _w.sizeHint().width() - 4, f"…and each size box has room for its number ({QWidget.width(_w)} px, wants {_w.sizeHint().width()})")
+panel.hide(); panel.tabs.setCurrentIndex(0)
+
+# -- nothing is folded away in the pages, and every setting they have is in Expert too
+from PySide6.QtWidgets import QAbstractSlider, QAbstractSpinBox, QCheckBox, QComboBox, QFormLayout, QScrollBar
+from render_studio import widgets
+from render_studio.section_panel import ColourButton
+ok(not panel.tabs.findChildren(widgets.Collapsible), "the panel's pages have no «Advanced» to unfold (the lights window keeps its own)")
+kinds = (QAbstractSlider, QAbstractSpinBox, QCheckBox, QComboBox, ColourButton, widgets.ChoiceButtons, widgets.NumberSlider, widgets.RadiusSlider)
+known = {id(form) and (form, row) for form, row in e.filter.rows.values()}
+# not settings of the register: the sun's date, hour and place (IngeTrazo's own, the drawing's shadows) and the camera's
+# (Main's camera is still to be gone through; the preset list is never shown; the sun's own date and hour are the two sliders)
+elsewhere = [panel.sun_tab.clock_box, panel.fov, panel.preset]
+def inside(widget, boxes):
+    return any(box is widget or box.isAncestorOf(widget) for box in boxes)
+left_out = []
+for index in range(3):                                   # Main, Style, Environment
+    for w in panel.tabs.widget(index).findChildren(QWidget):
+        if not isinstance(w, kinds) or isinstance(w, QScrollBar) or inside(w, elsewhere):
+            continue
+        row = bindings.row_of(w)
+        if row is not None and row not in known and not any(inside(w, [c]) for c in e.controls.values()):
+            label = row[0].itemAt(row[1], QFormLayout.LabelRole)
+            left_out.append((index, type(w).__name__, label.widget().text() if label and label.widget() else ""))
+ok(not left_out, f"every setting in a form of the pages is in Expert ({left_out})")
+ok({"quality.engine", "quality.preview_engine", "quality.preview_quality"} <= set(e.rows) and not ({"quality.engine", "quality.preview_engine", "quality.preview_quality"} & e.shown),
+   "the engines and the preview's quality are in Expert, out of the simple view")
+panel.preview_quality.setCurrentIndex(panel.preview_quality.findData("high")); qa.processEvents()
+e.refresh()
+before = panel.settings_dict()
+ok(not e.rows["quality.preview_quality"].mark.isHidden(), "a preference changed is marked")
+e.reset_value("quality.preview_quality"); qa.processEvents()
+ok(panel.preview_quality.currentData() == "normal" and panel.settings_dict() == before, "…and put back, without touching the drawing")
+e.set_eye("quality.preview_engine", True)
+ok(e.filter.rows["quality.preview_engine"][0].isRowVisible(e.filter.rows["quality.preview_engine"][1]), "with its eye open it shows in Quality")
+e.set_eye("quality.preview_engine", False)
+
+# -- the Environment page: everything in it has an eye, so all of it can be put away
+sun_keys = {"sun.date", "sun.hour", "site.location", "site.coords", "site.north", "site.zone", "site.shadows", "site.info"}
+ok(sun_keys <= set(e.rows) and sun_keys <= set(e.filter.rows), "the sun's controls have their rows in Expert and in their page")
+ok({"sun.date", "sun.hour", "site.location"} <= e.shown and not ((sun_keys - {"sun.date", "sun.hour", "site.location"}) & e.shown),
+   "the simple view keeps the date, the hour and the location")
+def box_hidden(key):
+    node = e.controls[key].parentWidget()
+    while not isinstance(node, widgets.Card):
+        node = node.parentWidget()
+    return node.isHidden()
+env = {p.key for p in params.PARAMS if p.tab == "environment" and p.key in e.controls}
+for key in env:
+    e.filter.shown.discard(key)
+e.filter.set_shown(set(e.filter.shown))
+ok(all(box_hidden(k) for k in env), f"with every eye closed, no group of the page is left ({sorted(k for k in env if not box_hidden(k))[:4]})")
+e.load_layout("")
+ok(not box_hidden("sun.date") and not box_hidden("ground.on"), "…and the default layout brings them back")
+# the copies act on the real controls
+from render_studio import sun_site
+written = []
+real_apply, sun_site.apply = sun_site.apply, lambda app, **changes: written.append(changes)    # (no undo history here)
+e.rows["site.north"].mirror.pull(); e.rows["site.north"].mirror.widget.setValue(30.0); panel.sun_tab.flush()
+ok(written and written[-1].get("north") == 30.0, "the north changed in Expert is written to the drawing")
+e.rows["sun.hour"].mirror.pull(); slider = e.rows["sun.hour"].mirror.widget.findChild(type(panel.sun_quick.hour_slider))
+slider.setValue(17 * 60 + 30); qa.processEvents(); panel.sun_tab.flush()
+ok(written[-1]["shadows"]["hour"] == 17 and written[-1]["shadows"]["minute"] == 30 and e.rows["sun.hour"].mark.isHidden(),
+   "…and the hour, which has no default to be marked against")
+sun_site.apply = real_apply
+clicked = []
+panel.sun_tab.map_btn.clicked.disconnect(); panel.sun_tab.map_btn.clicked.connect(lambda *_a: clicked.append(1))
+e.rows["site.location"].mirror.widget.click()
+ok(clicked == [1], "…and the location button opens the map")
+# the groups fold, and a search shows what it finds
+card = next(h for h, keys in e.headers if "ground.on" in keys)
+card.set_open(False)
+ok(card.body.isHidden(), "a group of Expert folds")
+ok(card.maximumHeight() == card._title_height(), "…down to its header, with nothing under it")
+e.search.setText("terra" if False else "ground"); qa.processEvents()
+ok(not card.body.isHidden() and not card.isHidden(), "…a search opens what it finds")
+e.search.setText(""); qa.processEvents()
+ok(card.body.isHidden(), "…and it stays folded after")
+card.set_open(True)
+# a stored copy of the default view of before gives way to the new one; a person's own layout does not
+from PySide6.QtCore import QSettings
+old_default = layouts.to_data("", {"surface.kind"}); del old_default["basic"]
+QSettings().setValue("render_studio/layout", json.dumps(old_default))
+ok(e._stored()[1] == layouts.default(), "the default of before gives way to the new simple view")
+mine = layouts.to_data("Mine", {"surface.kind"}); del mine["basic"]
+QSettings().setValue("render_studio/layout", json.dumps(mine))
+ok(e._stored() == ("Mine", {"surface.kind"} | {k for k in layouts.default() if k not in mine["known"]}), "…a named layout is kept")
+e.load_layout("")
 
 # -- the default layout
 hidden = set(e.controls) - e.shown

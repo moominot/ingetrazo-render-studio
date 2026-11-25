@@ -9,8 +9,8 @@ ready``, and renders one image per JSON line it reads on its input, saying
 the same Blender, ``{"update": job}`` does too but changes only the materials that
 changed when that is all that did (the model is not imported again). The studio script serves the same way after it has applied
 the look, so the live image has the look, the sky, the 360° background and
-the material settings of the final render, as a light EEVEE draft (the
-panel's Engine and Quality are for Render).
+the material settings of the final render, as a light draft in the preview's
+engine (the panel's Engine and Quality are for Render).
 
 Two switches, as in other real-time viewers:
 
@@ -55,6 +55,8 @@ DRAFT_SAMPLES = 8
 CYCLES_SAMPLES = {"motion": 2, "quick": 4, "draft": 32}
 
 
+#: The widest draft «High» makes, however big the window and the final picture (pixels).
+MAX_SHARP_WIDTH = 2560
 #: The preview's quality: how big the frames are (a factor of the draft's width) and how many samples they take (a factor too,
 #: at least one). «normal» is the numbers above.
 QUALITY = {"fast": (0.6, 0.5), "normal": (1.0, 1.0), "high": (1.0, 2.0)}
@@ -203,6 +205,18 @@ class LiveSession(QObject):
         """The preview's quality was changed: the picture of the camera as it is is made again."""
         self._motion_key = self._quick_key = self._done_key = None
 
+    def camera_moved(self) -> None:
+        """The camera the preview keeps (Follow the camera off) was moved from the preview window."""
+        if not self.follow_camera and self.frozen_camera is not None:
+            try:
+                self._frozen = view_camera.camera_dict(self.frozen_camera)
+            except Exception:  # noqa: BLE001 - the frame stays as it was
+                _log.exception("kept camera not read")
+
+    def sharpen(self) -> None:
+        """The draft of the camera as it is is made again (the window grew: High follows its size)."""
+        self._done_key = None
+
     def update_now(self) -> None:
         """With Follow changes off: take the model and the materials as they are now, once (the scene
         is rebuilt as soon as the camera rests; the model is exported again only if it changed)."""
@@ -350,6 +364,8 @@ class LiveSession(QObject):
             samples = CYCLES_SAMPLES[kind]
         wf, samples = quality_numbers(self.panel.preview_quality.currentData(), kind, samples)
         k = min(1.0, k * wf)
+        if kind == "draft":
+            k = max(k, self._sharp_width() / rb.SYNC_WIDTH)
         if kind == "motion":
             self._motion_key = cam_key
             self.frames += 1
@@ -383,6 +399,17 @@ class LiveSession(QObject):
             if made:
                 req["lines"] = made
         self._proc.write((json.dumps(req) + "\n").encode())
+
+    def _sharp_width(self) -> int:
+        """«High»: the draft is as wide as the preview window shows it, up to the final picture's width (so a picture saved
+        from the preview is as big as it looks); 0 at the other qualities (their widths are fixed)."""
+        if self.panel.preview_quality.currentData() != "high":
+            return 0
+        try:
+            shown = int(self.panel.window.picture_pixels(self.panel._aspect()))
+            return max(0, min(shown, int(self.panel.output_tab.frame()[0]), MAX_SHARP_WIDTH))
+        except Exception:  # noqa: BLE001 - no window: the ordinary width
+            return 0
 
     def _read(self) -> None:
         if self._proc is None:

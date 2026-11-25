@@ -10,10 +10,10 @@ from pathlib import Path
 
 from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QProcess, QSettings, QSize, QStandardPaths, Qt
 from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPixmap
-from PySide6.QtWidgets import (QAbstractItemView, QFileDialog, QGroupBox, QHBoxLayout, QInputDialog, QListWidget,
+from PySide6.QtWidgets import (QAbstractItemView, QFileDialog, QGroupBox, QHBoxLayout, QInputDialog, QListWidget, QSizePolicy,
                                QListWidgetItem, QMenu, QMessageBox, QPushButton, QToolButton, QVBoxLayout)
 
-from . import preset_files, user_presets
+from . import icons, preset_files, user_presets, widgets
 from .i18n import tr
 
 _log = logging.getLogger(__name__)
@@ -51,15 +51,14 @@ def thumbnail_of(image: QImage) -> bytes:
     return png_bytes(scaled.copy((scaled.width() - w) // 2, (scaled.height() - h) // 2, w, h))
 
 
-class PresetGallery(QGroupBox):
+class PresetGallery(widgets.Card):
     def __init__(self, panel, folder: Path | None = None):
-        super().__init__("Presets", panel)
+        super().__init__("Presets", "presets", panel, icon="grp_presets", kind="column")
         self.panel = panel
         self.folder = preset_files.Folder(folder or presets_folder())
         self._jobs: list = []
         self._migrate()
-        v = QVBoxLayout(self)
-        v.setContentsMargins(6, 6, 6, 6)
+        v = self.body_layout
         self.list = QListWidget()
         self.list.setViewMode(QListWidget.IconMode)
         self.list.setResizeMode(QListWidget.Adjust)
@@ -82,8 +81,10 @@ class PresetGallery(QGroupBox):
         self.save_btn = QPushButton("Save as preset…")
         self.save_btn.setToolTip("Keeps the look as it is now under a name, with a thumbnail, to use it again in any drawing.")
         self.save_btn.clicked.connect(lambda: self.save_current())
+        self.save_btn.setIcon(icons.icon("save"))
+        self.save_btn.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)      # its words must not widen a narrow tray
         self.menu_btn = QToolButton()
-        self.menu_btn.setText("⋯")
+        self.menu_btn.setIcon(icons.icon("more"))
         self.menu_btn.setPopupMode(QToolButton.InstantPopup)
         self.menu_btn.setToolTip("Import a preset, or reset every setting")
         menu = QMenu(self.menu_btn)

@@ -107,7 +107,6 @@ ok(panel.slider_rows["focus"].value_label.text() == "Auto", "the focal point rea
 panel.sliders["focus"].setValue(panel.sliders["focus"].maximum() // 10); ok(panel.slider_values()["focus"] > 0 and "m" in panel.slider_rows["focus"].value_label.text(), "…and metres otherwise")
 ok([b.text() for b in panel.quality._buttons] == ["Draft", "Medium", "High"] and all(b.isVisibleTo(panel) for b in panel.quality._buttons), "Quality is three buttons in a row")
 panel.quality.setCurrentIndex(2); ok(panel.quality.currentIndex() == 2 and panel.quality._buttons[2].isChecked(), "…one chosen")
-ok(not panel.engine.isVisibleTo(panel) or panel.final_more.isExpanded() if hasattr(panel.final_more, "isExpanded") else True, "the engine is inside Advanced")
 # the colour buttons show Blender's linear colours as the eye sees them, and what they hand back is linear again
 from render_studio.section_panel import ColourButton as CB
 cbn = CB([0.2, 0.2, 0.2], "t", linear=True)
@@ -126,7 +125,7 @@ ok(panel.sun_quick.date_box.isVisible() and panel.sun_quick.hour_box.isVisible()
    "…the date and the hour are said once (the two sliders), not again under the place")
 ok(panel.sun_tab.lat.isVisible() and panel.sun_tab.north.isVisible() and panel.sun_tab.zone.isVisible() and panel.sun_tab.shadows.isVisible(), "…with the place, the north, the time zone and the shadows")
 panel.tabs.setCurrentIndex(TAB["Main"])
-ok(not panel.preview_engine.isVisible(), "Main: the preview engine is under Advanced")
+ok(not hasattr(panel, "final_more"), "Main: Quality has no «Advanced» to unfold")
 
 # the person's presets: the whole look, in the gallery of the Main page (their files: test_presets_offline.py)
 panel.preset.setCurrentIndex(panel.preset.findData("golden_hour"))

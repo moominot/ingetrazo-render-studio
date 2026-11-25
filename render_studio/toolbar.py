@@ -21,7 +21,7 @@ OBJECT_NAME = "render_studio_toolbar"          # stable: the saved layout keys o
 LIBRARY_SEARCH = "asset_manager"
 _SETTINGS = "render_studio/"
 #: The toolbar's order; None is a separator.
-ORDER = ("studio", "preview", "follow_changes", "update", "follow_camera", None, "materials", "lights", "library")
+ORDER = ("studio", None, "preview", "follow_camera", "follow_changes", "update", None, "materials", "lights", "library")
 
 
 class _FitWhenFloating(QObject):
@@ -72,8 +72,9 @@ class Commands:
                                    lambda: panel.open_lights())
         self.library = self._action("comp_manager", "Library", "Models, materials and backgrounds (Render Studio Library).",
                                     lambda: open_library(panel))
-        self.update.setVisible(not self.follow_changes.isChecked())          # only when changes do not arrive by themselves
-        self.follow_changes.toggled.connect(lambda on: self.update.setVisible(not on))
+        self._blender = True
+        self._update_enable()                       # always there; usable when changes do not arrive by themselves
+        self.follow_changes.toggled.connect(self._update_enable)
 
     def _action(self, key: str, text: str, tip: str, slot) -> QAction:
         act = QAction(icons.icon(key), tr(text), self.panel)
@@ -91,8 +92,12 @@ class Commands:
 
     def need_blender(self, found: bool) -> None:
         """What needs Blender is greyed without it."""
-        self.preview.setEnabled(found)
-        self.update.setEnabled(found)
+        self._blender = bool(found)
+        self.preview.setEnabled(self._blender)
+        self._update_enable()
+
+    def _update_enable(self, *_a) -> None:
+        self.update.setEnabled(self._blender and not self.follow_changes.isChecked())
 
     def build(self, app):
         """The toolbar in IngeTrazo's window; None when the window cannot hold one."""

@@ -260,6 +260,269 @@ def _refresh(p, ink):
     _arrow_head(p, QPointF(24 + r * math.cos(end) + 10 * dx, 24 - r * math.sin(end) + 10 * dy), dx, dy, 14.0)
 
 
+def _capture(p, ink):
+    # A camera's diaphragm: six blades round its opening, which is in the accent. The picture is taken.
+    p.setBrush(Qt.NoBrush)
+    p.drawEllipse(QPointF(24, 24), 17, 17)
+    corners = [QPointF(24 + 8 * math.cos(math.radians(60 * i)), 24 - 8 * math.sin(math.radians(60 * i))) for i in range(6)]
+    _fill(p, QPolygonF(corners), 220)
+    for i, corner in enumerate(corners):                          # each side goes on to the ring: a blade's edge
+        before = corners[i - 1]
+        dx, dy = corner.x() - before.x(), corner.y() - before.y()
+        n = math.hypot(dx, dy)
+        dx, dy = dx / n, dy / n
+        rx, ry = corner.x() - 24, corner.y() - 24
+        along = rx * dx + ry * dy
+        reach = -along + math.sqrt(max(0.0, along * along - (rx * rx + ry * ry - 17 * 17)))
+        p.drawLine(before, QPointF(corner.x() + dx * reach, corner.y() + dy * reach))
+
+
+def _path(p, *points):
+    p.drawPolyline(QPolygonF([QPointF(x, y) for x, y in points]))
+
+
+def _grp_presets(p, ink):
+    # Four little pictures: the looks to choose from.
+    p.setBrush(Qt.NoBrush)
+    for x, y in ((8, 8), (27, 8), (8, 27), (27, 27)):
+        p.drawRoundedRect(QRectF(x, y, 13, 13), 2, 2)
+    _fill(p, QPolygonF([QPointF(27, 8), QPointF(40, 8), QPointF(40, 21), QPointF(27, 21)]), 200)
+
+
+def _grp_camera(p, ink):
+    p.setBrush(Qt.NoBrush)
+    p.drawRoundedRect(QRectF(6, 15, 36, 23), 4, 4)
+    _path(p, (16, 15), (19, 9), (29, 9), (32, 15))
+    _dot(p, 24, 26.5, 6.0)
+
+
+def _grp_quality(p, ink):
+    # Three rising bars: how fine.
+    p.setBrush(Qt.NoBrush)
+    for x, top, alpha in ((9, 28, 90), (20, 19, 150), (31, 9, 230)):
+        _fill(p, QPolygonF([QPointF(x, top), QPointF(x + 8, top), QPointF(x + 8, 40), QPointF(x, 40)]), alpha)
+        p.drawRect(QRectF(x, top, 8, 40 - top))
+
+
+def _grp_surface(p, ink):
+    _cube(p, ink, 24, 24, 16)
+
+
+def _grp_outline(p, ink):
+    # A square drawn by hand: its lines run past the corners.
+    for a, b in (((8, 12), (41, 12)), ((36, 7), (36, 41)), ((41, 36), (7, 36)), ((12, 41), (12, 7))):
+        _path(p, a, b)
+
+
+def _grp_finish(p, ink):
+    # A brush and the wash it leaves.
+    _path(p, (40, 8), (24, 24))
+    tip = QPainterPath(QPointF(24, 24))
+    tip.cubicTo(16, 22, 14, 34, 8, 40)
+    tip.cubicTo(20, 41, 28, 34, 24, 24)
+    _fill(p, tip, 210)
+    p.drawPath(tip)
+
+
+def _grp_corrections(p, ink):
+    for y, x in ((12, 30), (24, 16), (36, 27)):
+        _path(p, (8, y), (40, y))
+        _dot(p, x, y, 4.4)
+
+
+def _grp_effects(p, ink):
+    _fill(p, QPolygonF([QPointF(x, y) for x, y in ((24, 6), (28, 20), (42, 24), (28, 28), (24, 42), (20, 28), (6, 24), (20, 20))]), 200)
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(QPolygonF([QPointF(x, y) for x, y in ((24, 6), (28, 20), (42, 24), (28, 28), (24, 42), (20, 28), (6, 24), (20, 20))]))
+
+
+def _grp_sky(p, ink):
+    # The sun half behind a cloud.
+    _dot(p, 31, 17, 8.0)
+    cloud = QPainterPath(QPointF(13, 38))
+    cloud.cubicTo(4, 38, 5, 25, 14, 26)
+    cloud.cubicTo(15, 16, 29, 16, 30, 27)
+    cloud.cubicTo(40, 25, 41, 38, 32, 38)
+    cloud.closeSubpath()
+    p.setBrush(QApplication.palette().base().color() if QApplication.instance() else Qt.NoBrush)
+    p.drawPath(cloud)
+
+
+def _grp_shadows(p, ink):
+    _fill(p, QPolygonF([QPointF(22, 36), QPointF(42, 36), QPointF(34, 42), QPointF(12, 42)]), 190)
+    _cube(p, ink, 19, 22, 13)
+
+
+def _grp_background(p, ink):
+    p.setBrush(Qt.NoBrush)
+    p.drawRoundedRect(QRectF(7, 10, 34, 28), 3, 3)
+    _fill(p, QPolygonF([QPointF(9, 36), QPointF(19, 23), QPointF(26, 31), QPointF(31, 26), QPointF(39, 36)]), 210)
+    _dot(p, 31, 18, 3.5)
+
+
+def _grp_ground(p, ink):
+    # A floor running away to the horizon.
+    for a, b in (((5, 40), (43, 40)), ((13, 29), (35, 29)), ((18, 21), (30, 21))):
+        _path(p, a, b)
+    for a, b in (((18, 21), (5, 40)), ((30, 21), (43, 40)), ((24, 21), (24, 40))):
+        _path(p, a, b)
+
+
+def _grp_horizon(p, ink):
+    _fill(p, QPolygonF([QPointF(5, 36), QPointF(18, 16), QPointF(27, 28), QPointF(33, 21), QPointF(43, 36)]), 160)
+    _path(p, (5, 36), (18, 16), (27, 28), (33, 21), (43, 36))
+    _path(p, (4, 36), (44, 36))
+
+
+def _grp_fog(p, ink):
+    for y, a, b in ((13, 12, 40), (21, 7, 34), (29, 14, 42), (37, 8, 32)):
+        _path(p, (a, y), (b, y))
+
+
+def _pin(p, ink):
+    drop = QPainterPath(QPointF(24, 42))
+    drop.cubicTo(18, 33, 11, 27, 11, 19)
+    drop.cubicTo(11, 3, 37, 3, 37, 19)
+    drop.cubicTo(37, 27, 30, 33, 24, 42)
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(drop)
+    _dot(p, 24, 19, 5.0)
+
+
+def _save(p, ink):
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(QPolygonF([QPointF(9, 9), QPointF(33, 9), QPointF(39, 15), QPointF(39, 39), QPointF(9, 39)]))
+    _fill(p, QPolygonF([QPointF(15, 27), QPointF(33, 27), QPointF(33, 39), QPointF(15, 39)]), 200)
+    _path(p, (16, 10), (16, 18), (30, 18), (30, 10))
+
+
+def _more(p, ink):
+    for x in (12, 24, 36):
+        _dot(p, x, 24, 4.0)
+
+
+def _undo(p, ink):
+    # Back to what it was: an arrow turning back.
+    q = QPainterPath(QPointF(15, 18))
+    q.lineTo(29, 18)
+    q.cubicTo(43, 18, 43, 37, 29, 37)
+    q.lineTo(17, 37)
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(q)
+    _arrow_head(p, QPointF(8, 18), -1, 0, 11.0)
+
+
+def _bars(p, ink, filled):
+    for i, (x, top) in enumerate(((10, 28), (20, 20), (30, 12))):
+        if i < filled:
+            _fill(p, QPolygonF([QPointF(x, top), QPointF(x + 7, top), QPointF(x + 7, 38), QPointF(x, 38)]), 230)
+        p.setBrush(Qt.NoBrush)
+        p.drawRect(QRectF(x, top, 7, 38 - top))
+
+
+def _q_draft(p, ink):
+    _bars(p, ink, 1)
+
+
+def _q_medium(p, ink):
+    _bars(p, ink, 2)
+
+
+def _q_high(p, ink):
+    _bars(p, ink, 3)
+
+
+def _tools(p, ink):
+    # A wrench and a screwdriver, crossed.
+    p.setBrush(Qt.NoBrush)
+    p.setPen(_pen(ink, _WIDTH * 2.2))
+    p.drawLine(QPointF(13, 37), QPointF(28, 22))                 # the wrench's handle
+    p.setPen(_pen(ink))
+    jaw = QRectF(23, 7, 18, 18)
+    p.drawArc(jaw, 80 * 16, 290 * 16)                            # its open jaw, towards the upper right
+    p.drawLine(QPointF(33.6, 7.2), QPointF(32, 16))
+    p.drawLine(QPointF(40.8, 14.4), QPointF(32, 16))
+    p.drawLine(QPointF(10, 10), QPointF(31, 31))                 # the screwdriver's shaft
+    p.drawLine(QPointF(8, 13), QPointF(13, 8))
+    p.setPen(_pen(_accent(), _WIDTH * 3.0))
+    p.drawLine(QPointF(30, 30), QPointF(39, 39))                 # and its handle
+
+
+def _grp_section(p, ink):
+    # A box cut by a plane.
+    _cube(p, ink, 22, 26, 13)
+    p.setPen(_pen(_accent(), _WIDTH * 1.6))
+    p.drawLine(QPointF(6, 33), QPointF(42, 13))
+
+
+def _grp_cap(p, ink):
+    # The face of the cut, hatched.
+    p.setBrush(Qt.NoBrush)
+    p.drawRect(QRectF(9, 9, 30, 30))
+    p.save()
+    p.setPen(_pen(_accent(), _WIDTH))
+    for a, b in (((9, 21), (21, 9)), ((9, 33), (33, 9)), ((15, 39), (39, 15)), ((27, 39), (39, 27))):
+        p.drawLine(QPointF(*a), QPointF(*b))
+    p.restore()
+
+
+def _grp_size(p, ink):
+    # A frame and the two ways it is measured.
+    p.setBrush(Qt.NoBrush)
+    p.drawRect(QRectF(9, 9, 30, 30))
+    p.drawLine(QPointF(15, 33), QPointF(33, 15))
+    _arrow_head(p, QPointF(35, 13), 1, -1, 10.0)
+    _arrow_head(p, QPointF(13, 35), -1, 1, 10.0)
+
+
+def _grp_file(p, ink):
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(QPolygonF([QPointF(12, 7), QPointF(29, 7), QPointF(37, 15), QPointF(37, 41), QPointF(12, 41)]))
+    _fill(p, QPolygonF([QPointF(29, 7), QPointF(37, 15), QPointF(29, 15)]), 220)
+    for y in (24, 30, 36):
+        _path(p, (18, y), (31, y))
+
+
+def _pencil(p, ink):
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(QPolygonF([QPointF(9, 39), QPointF(12, 30), QPointF(31, 11), QPointF(37, 17), QPointF(18, 36)]))
+    _fill(p, QPolygonF([QPointF(31, 11), QPointF(35, 7), QPointF(41, 13), QPointF(37, 17)]), 220)
+
+
+def _trash(p, ink):
+    p.setBrush(Qt.NoBrush)
+    _path(p, (9, 13), (39, 13))
+    _path(p, (19, 13), (19, 8), (29, 8), (29, 13))
+    p.drawPolyline(QPolygonF([QPointF(13, 13), QPointF(15, 40), QPointF(33, 40), QPointF(35, 13)]))
+    for x in (20, 28):
+        _path(p, (x, 19), (x, 34))
+
+
+def _folder(p, ink):
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(QPolygonF([QPointF(6, 12), QPointF(19, 12), QPointF(23, 17), QPointF(42, 17), QPointF(42, 38), QPointF(6, 38)]))
+    _fill(p, QPolygonF([QPointF(6, 22), QPointF(42, 22), QPointF(42, 38), QPointF(6, 38)]), 110)
+
+
+def _swap(p, ink):
+    _path(p, (8, 17), (35, 17))
+    _arrow_head(p, QPointF(42, 17), 1, 0, 11.0)
+    _path(p, (13, 31), (40, 31))
+    _arrow_head(p, QPointF(6, 31), -1, 0, 11.0)
+
+
+def _check_all(p, ink):
+    p.setBrush(Qt.NoBrush)
+    p.drawRoundedRect(QRectF(9, 9, 30, 30), 4, 4)
+    p.setPen(_pen(_accent(), _WIDTH * 1.7))
+    _path(p, (15, 25), (22, 32), (34, 16))
+
+
+def _check_none(p, ink):
+    p.setBrush(Qt.NoBrush)
+    p.drawRoundedRect(QRectF(9, 9, 30, 30), 4, 4)
+
+
 def _preview(p, ink):
     # A screen with a play mark: the picture, live.
     p.setBrush(Qt.NoBrush)
@@ -394,12 +657,29 @@ def _eye_off(p, ink):
     p.drawLine(QPointF(10, 40), QPointF(38, 8))
 
 
+def _side_panel(p, ink):
+    # A window with its side tray in the accent: the panel.
+    _fill(p, QPolygonF([QPointF(28, 11), QPointF(40, 11), QPointF(40, 37), QPointF(28, 37)]), 200)
+    p.setBrush(Qt.NoBrush)
+    p.drawRoundedRect(QRectF(7, 10, 34, 28), 3, 3)
+    p.drawLine(QPointF(28, 10), QPointF(28, 38))
+
+
 _DRAW = {
+    "side_panel": _side_panel,
     "eye": _eye, "eye_off": _eye_off,
     "amb_sunny": _amb_sunny, "amb_cloudy": _amb_cloudy, "amb_golden": _amb_golden, "amb_night": _amb_night,
     "amb_interior": _amb_interior,
     "preview": _preview, "materials": _materials, "lights": _lights,
-    "follow_camera": _follow_camera, "follow_changes": _follow_changes, "refresh": _refresh,
+    "follow_camera": _follow_camera, "follow_changes": _follow_changes, "refresh": _refresh, "capture": _capture,
+    "grp_section": _grp_section, "grp_cap": _grp_cap, "grp_size": _grp_size, "grp_file": _grp_file, "pencil": _pencil,
+    "trash": _trash, "folder": _folder, "swap": _swap, "check_all": _check_all, "check_none": _check_none, "tools": _tools,
+    "grp_presets": _grp_presets, "grp_camera": _grp_camera, "grp_quality": _grp_quality, "grp_surface": _grp_surface,
+    "grp_outline": _grp_outline, "grp_finish": _grp_finish, "grp_corrections": _grp_corrections, "grp_effects": _grp_effects,
+    "grp_sky": _grp_sky, "grp_shadows": _grp_shadows, "grp_background": _grp_background, "grp_ground": _grp_ground,
+    "grp_horizon": _grp_horizon, "grp_fog": _grp_fog, "grp_light": _amb_sunny,
+    "pin": _pin, "save": _save, "more": _more, "undo": _undo, "q_draft": _q_draft, "q_medium": _q_medium,
+    "q_high": _q_high,
     "comp_import": _comp_import, "comp_export": _comp_export,
     "comp_settings": _comp_settings, "comp_help": _comp_help,
     "comp_options": _comp_options, "comp_attributes": _comp_attributes,
@@ -427,9 +707,9 @@ class _Engine(QIconEngine):
         if draw is None:
             return
         ink = _ink()
-        if mode == QIcon.Disabled:
-            ink.setAlpha(90)
         painter.save()
+        if mode == QIcon.Disabled:
+            painter.setOpacity(painter.opacity() * 0.35)      # all of it, the accent too: half of it lit looked usable
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.translate(rect.x(), rect.y())
         painter.scale(rect.width() / _PX, rect.height() / _PX)

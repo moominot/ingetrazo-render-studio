@@ -2,7 +2,7 @@
 <a name="panel"></a>
 <h3>Render Studio: com funciona</h3>
 <p>El Render Studio fa una imatge realista del teu model. Tries un <b>aspecte</b> (la llum i l'ambient), el mires en una
-<b>previsualització</b> en directe, prems <b>Renderitza</b>, i després afines la imatge acabada <i>sense tornar a renderitzar</i>. Fa servir
+<b>vista prèvia</b> en directe, prems <b>Renderitza</b>, i després afines la imatge acabada <i>sense tornar a renderitzar</i>. Fa servir
 Blender (gratuït, 4.2 o posterior) en segon pla. Quan IngeTrazo no en troba cap, el tauler ho diu a dalt de tot: tria
 allà el programa Blender (escriu-ne la ruta o <b>Explora…</b>; en un Mac, l'aplicació Blender mateixa), o segueix l'enllaç per
 baixar-lo de blender.org, instal·la'l i tria'l. La ruta es comprova (ha de ser Blender 4.2 o posterior) i es conserva
@@ -11,20 +11,20 @@ allà on la pestanya Render d'IngeTrazo la conserva, de manera que totes dues us
 <h4>En quatre passos</h4>
 <ol>
 <li>Tria un <b>Aspecte</b> i mou els controls lliscants (l'escena), i fixa el <b>Motor</b>, la <b>Qualitat</b> i l'<b>Amplada</b> del render final.</li>
-<li>Prem <b>Obre la previsualització…</b>: una finestra amb una <b>previsualització en directe</b> de la vista 3D que pots ampliar i moure.</li>
+<li>Prem <b>Obre la vista prèvia…</b>: una finestra amb una <b>vista prèvia en directe</b> de la vista 3D que pots ampliar i moure.</li>
 <li>Prem <b>Renderitza</b> per a la imatge final. Llavors apareixen els controls de retoc i <b>Desa la imatge…</b>. O prem
 <b>Renderitza i desa…</b> per triar un fitxer i que la imatge es desi de seguida, sense retoc.</li>
-<li>A les eines de retoc, ajusta la imatge a l'instant i <b>Desa la imatge…</b>; <b>Torna a la previsualització</b> torna a la vista en directe.</li>
+<li>A les eines de retoc, ajusta la imatge a l'instant i <b>Desa la imatge…</b>; <b>Torna a la vista prèvia</b> torna a la vista en directe.</li>
 </ol>
 
 <h4>Dues menes de controls lliscants</h4>
 <p>Alguns noms apareixen dues vegades (exposició, saturació, calidesa, vinyeta) perquè fan dues coses diferents:
-els controls del <b>tauler</b> canvien l'<b>escena</b> (la llum, el cel), de manera que la previsualització i Renderitza els dibuixen, i
-un canvi fa que la previsualització s'actualitzi; els controls de <b>retoc</b> de la finestra de previsualització canvien només la <b>imatge acabada</b>,
+els controls del <b>tauler</b> canvien l'<b>escena</b> (la llum, el cel), de manera que la vista prèvia i Renderitza els dibuixen, i
+un canvi fa que la vista prèvia s'actualitzi; els controls de <b>retoc</b> de la finestra de vista prèvia canvien només la <b>imatge acabada</b>,
 a l'instant, sense tornar a renderitzar. Cada control mostra el seu valor i una línia que diu què fa.</p>
 
 <h4>El tauler</h4>
-<p>El tauler té pàgines: <b>Principal</b> (els teus predefinits, l'aspecte, el motor i la qualitat), <b>Imatge</b> (exposició, escalfor, saturació; <i>Efectes</i>: vinyeta i profunditat de camp), <b>Entorn</b> (fons, núvols i sol, terra, i el lloc i la data del sol), <b>Secció</b> i <b>Sortida</b> (les llums i els materials tenen finestra pròpia: <b>Llums…</b>, <b>Materials…</b>). Els controls senzills són a la vista; la resta és plegada sota <i>Avançat</i> o <i>Efectes</i>. Només Renderitza usa el motor, la qualitat i l'amplada; la previsualització és sempre un esborrany ràpid. <b>Predefinits</b>: <i>Desa com a predefinit…</i> guarda els ajustaments amb un nom per fer-los servir en qualsevol dibuix; <i>⋯</i> esborra un predefinit o els exporta i importa com a fitxers per compartir-los. <b>Restableix tots els ajustaments</b> posa tots els ajustaments als valors per defecte (els predefinits desats no es toquen).</p>
+<p>El tauler té pàgines: <b>Principal</b> (els teus predefinits, l'aspecte, el motor i la qualitat), <b>Imatge</b> (exposició, escalfor, saturació; <i>Efectes</i>: vinyeta i profunditat de camp), <b>Entorn</b> (fons, núvols i sol, terra, i el lloc i la data del sol), <b>Secció</b> i <b>Sortida</b> (les llums i els materials tenen finestra pròpia: <b>Llums…</b>, <b>Materials…</b>). Els controls senzills són a la vista; el <b>Mode expert</b> afegeix una pestanya amb tots els ajustaments, on un ull tria què mostra cada pestanya. Només Renderitza usa el motor, la qualitat i l'amplada; la vista prèvia és sempre un esborrany ràpid. <b>Predefinits</b>: <i>Desa com a predefinit…</i> guarda els ajustaments amb un nom per fer-los servir en qualsevol dibuix; <i>⋯</i> esborra un predefinit o els exporta i importa com a fitxers per compartir-los. <b>Restableix tots els ajustaments</b> posa tots els ajustaments als valors per defecte (els predefinits desats no es toquen).</p>
 <table cellspacing='0' cellpadding='3' width='100%'>
 <tr><td valign='top'><b>Aspecte</b></td><td>La llum i l'ambient: vegeu la llista de sota. Canviar-lo posa els valors propis d'aquest aspecte
 als controls que fixa.</td></tr>
@@ -45,13 +45,13 @@ fins a 2. No disponible mentre un fons de 360° il·lumina l'escena.</td></tr>
 <tr><td valign='top'><b>Boira</b></td><td>Com d'espessa és la boira, de 0 a 100 % (0 = cap): vela el que és lluny amb el color de la llum del cel, i com més espessa és, més aviat es tanca.</td></tr>
 <tr><td valign='top'><b>La boira comença a</b></td><td>A quina distància de la càmera comença la boira, en metres: més a prop, tot és clar.</td></tr>
 <tr><td valign='top'><b>Estrelles</b></td><td>Quantes estrelles té el cel de nit, de 0 a 200 % (0 = cap). Només es mostra de nit: l'aspecte Nit, o qualsevol aspecte de dia quan el sol s'ha post al lloc, la data i l'hora del lloc (llavors el render és de nit, sense sol).</td></tr>
-<tr><td valign='top'><b>Horitzó, Perfil</b></td><td><b>Muntanyes</b>, <b>turons</b>, un <b>bosc llunyà</b> o un <b>skyline de ciutat</b> que amaguen la línia on el terra generat es troba amb el cel. Són en capes al voltant de l'escena (la més propera nítida, la més llunyana més pàl·lida, fosa amb el color de l'horitzó del cel), no projecten ombra i de nit són fosques. <b>Alçada</b> és l'angle que arriben els cims més alts per sobre de l'horitzó. Sota <i>Avançat</i>: la <b>Distància</b> de la capa més llunyana (Automàtic: la vora del terra), la <b>Forma</b> (un altre número, un altre contorn) i un <b>Color</b> propi. Cal el terra generat.</td></tr>
+<tr><td valign='top'><b>Horitzó, Perfil</b></td><td><b>Muntanyes</b>, <b>turons</b>, un <b>bosc llunyà</b> o un <b>skyline de ciutat</b> que amaguen la línia on el terra generat es troba amb el cel. Són en capes al voltant de l'escena (la més propera nítida, la més llunyana més pàl·lida, fosa amb el color de l'horitzó del cel), no projecten ombra i de nit són fosques. <b>Alçada</b> és l'angle que arriben els cims més alts per sobre de l'horitzó. Després, la <b>Distància</b> de la capa més llunyana (Automàtic: la vora del terra), la <b>Forma</b> (un altre número, un altre contorn) i un <b>Color</b> propi. Cal el terra generat.</td></tr>
 <tr><td valign='top'><b>Estil</b></td><td>Com es dibuixa la imatge; tots els estils poden tenir <b>contorns</b> (el gruix en píxels, 0 = cap, i el color). <b>Cap</b>: tal com és. <b>Blanc</b>: tots els materials blancs. <b>Maqueta</b>: una maqueta, cada objecte amb un sol material (un color, o un material del dibuix). <b>Llum</b>: la imatge mostra els <b>lux</b> que rep cada superfície, en fals color amb una escala dibuixada a la dreta (números rodons triats a partir de la imatge, o fixats amb <i>Escala fins a</i>); aproximat: superfícies blanques mat, el sol d'un dia clar (100 000 lx) i els lúmens de les llums. <b>Esbós</b>: línies de llapis sobre paper, sense el cel; <i>Traç irregular</i> fa tremolar la línia i la repassa dues vegades, <i>Extensió de les línies</i> deixa que passin de les cantonades. <b>Aquarel·la</b>: rentats de color; <i>Humitat</i> com s'escampa el color, <i>Vores</i> com de fosc s'acumula el pigment, <i>Paper</i> com de rugós és.</td></tr>
 <tr><td valign='top'><b>Lluna</b></td><td>Com de brillant és la llum de la lluna, de 0 a 200 %. No es calcula una lluna real (la fase i el lloc): és un ajustament lliure. Només es mostra de nit.</td></tr>
 <tr><td valign='top'><b>Interior</b></td><td>Marca-ho per a la imatge d'una sala: s'exposa per a l'interior (la finestra es pot cremar) i es renderitza amb Cycles. El dia o la nit segueixen el sol.</td></tr>
 <tr><td valign='top'><b>Data, Hora</b></td><td>Dos lliscadors sempre a la vista: la data al llarg de l'any (l'etiqueta diu l'estació, tal com la viu el lloc) i l'hora al llarg del dia (l'etiqueta diu la part del dia: nit, alba, matí, migdia, tarda, vespre); tots dos tenen marques (les quatre estacions; nit, alba, hora daurada, migdia, hora daurada, vespre) on s'enganxa el control. El calendari, l'hora exacta, el fus horari i el lloc són plegats sota <i>Lloc i data</i>.</td></tr>
 <tr><td valign='top'><b>Fons</b></td><td><b>Cel de l'aspecte</b>, un <b>panorama 360°</b> (vegeu a sota) o una <b>Imatge fixa</b>: una imatge plana darrere del model que no es mou quan gira la vista; omple el marc (retallada), es veu sencera (amb el cel de l'aspecte al voltant) o s'estira. Si la pestanya Sortida deixa el cel transparent, no es veu cap fons.</td></tr>
-<tr><td valign='top'><b>Render, Previsualització</b></td><td>A <i>Avançat</i>: el motor del render final i el de la previsualització. <b>EEVEE</b> és ràpid (uns 3 segons). <b>Cycles</b> dona la millor
+<tr><td valign='top'><b>Render, Vista prèvia</b></td><td>Al <b>Mode expert</b> (o a Qualitat, amb l'ull obert): el motor del render final i el de la vista prèvia. <b>EEVEE</b> és ràpid (uns 3 segons). <b>Cycles</b> dona la millor
 qualitat (uns 5 segons en una targeta gràfica RTX, més lent sense), amb un rebot de llum més veritable.</td></tr>
 <tr><td valign='top'><b>Qualitat</b></td><td>Esborrany, Mitjana o Alta: el nombre de mostres. EEVEE usa 16 / 64 / 128 i
 Cycles 32 / 128 / 512. Més mostres vol dir menys soroll i un render més lent. Usa Esborrany mentre ajustes i Alta per a la
@@ -59,7 +59,7 @@ imatge final.</td></tr>
 <tr><td valign='top'><b>Amplada</b></td><td>L'amplada de la imatge en píxels (de 320 a 7680). L'alçada segueix les
 proporcions de la vista 3D.</td></tr>
 <tr><td valign='top'><b>Materials…</b></td><td>Obre l'editor de materials (vegeu més avall).</td></tr>
-<tr><td valign='top'><b>Obre la previsualització…</b></td><td>Obre la finestra de previsualització (vegeu més avall). La línia de sota diu què
+<tr><td valign='top'><b>Obre la vista prèvia…</b></td><td>Obre la finestra de vista prèvia (vegeu més avall). La línia de sota diu què
 passa, o per què no s'ha pogut iniciar (per exemple, no s'ha trobat Blender).</td></tr>
 </table>
 <h4>Els ajustos es desen al document</h4>
@@ -115,7 +115,7 @@ amb traç discontinu a la vista 3D, i totes dues renders les usen. Aquí només 
 color, feix); <b>Fes-ne una llum del Render Studio</b> en porta una aquí, amb tots els ajustos (la pestanya Render ja no
 la renderitza).</p>
 <p>Les llums es desen al document (les lliures a les seves dades, les altres als seus objectes); cada canvi és un pas de
-desfer. La previsualització les segueix.</p>
+desfer. La vista prèvia les segueix.</p>
 
 <a name="sun"></a>
 <h4>Sol</h4>
@@ -148,18 +148,18 @@ que il·lumina l'escena en porta un de propi.</p>
 <tr><td valign='top'><b>Mida</b></td><td><b>Mateixa forma que la vista 3D</b> (una amplada; l'alçada segueix la vista), una
 mida predefinida (HD, Full HD, QHD, 4K UHD, quadrat, vertical 4:5, vertical 9:16, A4, A3, A2 i A1 a la resolució d'impressió)
 o <b>Personalitzada</b>. Escriure una amplada o una alçada la fa Personalitzada; <b>Mantén les proporcions</b> canvia l'altra amb ella;
-<b>⇄</b> la gira entre apaïsat i vertical. La previsualització enquadra la mateixa imatge: l'alçada de la vista es conserva,
+<b>⇄</b> la gira entre apaïsat i vertical. La vista prèvia enquadra la mateixa imatge: l'alçada de la vista es conserva,
 els costats canvien.</td></tr>
 <tr><td valign='top'><b>Projecció</b></td><td><b>Vista normal</b> és la càmera de la vista 3D. <b>Panoràmica plana</b> és una imatge ampla on les línies verticals es mantenen verticals (com una foto cosida) sobre l'<b>Angle</b> que triïs; <b>Panoràmica 360°</b> és tota l'esfera, 2:1, per a un visor de panoràmiques o de RV. Les dues es renderitzen des del lloc de la càmera amb Cycles (el motor triat s'ignora).</td></tr>
-<tr><td valign='top'><b>Què renderitzar, Desa</b></td><td><b>Vista actual</b> renderitza el que mostra la finestra 3D (o la previsualització); <b>Escenes</b> llista les escenes del dibuix: marca'n algunes i <b>Renderitza</b> (o la seva fletxa, <i>Renderitza les escenes seleccionades</i>) les renderitza una darrere l'altra amb aquesta projecció, mida i format. Totes dues es desen amb la <b>carpeta i el nom</b> de <b>Desa</b> ({document}, {scene}, {look}, {date}): les escenes sempre, la vista actual quan <i>Desa cada render</i> és activat. Cada escena es recupera com ho fa la seva pestanya; al final (o si cancel·les) el dibuix torna a la vista que tenia.</td></tr>
+<tr><td valign='top'><b>Què renderitzar, Desa</b></td><td><b>Vista actual</b> renderitza el que mostra la finestra 3D (o la vista prèvia); <b>Escenes</b> llista les escenes del dibuix: marca'n algunes i <b>Renderitza</b> (o la seva fletxa, <i>Renderitza les escenes seleccionades</i>) les renderitza una darrere l'altra amb aquesta projecció, mida i format. Totes dues es desen amb la <b>carpeta i el nom</b> de <b>Desa</b> ({document}, {scene}, {look}, {date}): les escenes sempre, la vista actual quan <i>Desa cada render</i> és activat. Cada escena es recupera com ho fa la seva pestanya; al final (o si cancel·les) el dibuix torna a la vista que tenia.</td></tr>
 <tr><td valign='top'><b>Resolució d'impressió</b></td><td>Punts per polzada: les mides de paper es calculen amb ella, i la línia de
 sota la mida diu com de gran és una impressió.</td></tr>
-<tr><td valign='top'><b>Format</b></td><td><b>PNG</b> i <b>JPEG</b> (amb la seva qualitat) conserven el retoc de la finestra de previsualització.
+<tr><td valign='top'><b>Format</b></td><td><b>PNG</b> i <b>JPEG</b> (amb la seva qualitat) conserven el retoc de la finestra de vista prèvia.
 <b>PNG, 16 bits</b>, <b>TIFF, 16 bits</b> i <b>OpenEXR</b> (coma flotant de 32 bits, llum lineal, per a composició)
 conserven més llum per editar-la en una altra part; es desen tal com els va escriure Blender, i Desa la imatge… els ofereix
 al costat del PNG i JPEG retocats.</td></tr>
 <tr><td valign='top'><b>Cel transparent</b></td><td>El cel es deixa transparent (el terra i el model es queden), per
-posar-hi un altre cel al darrere; l'exposició continua mesurant-se amb el cel. No per a JPEG. La finestra de previsualització el mostra sobre
+posar-hi un altre cel al darrere; l'exposició continua mesurant-se amb el cel. No per a JPEG. La finestra de vista prèvia el mostra sobre
 un escacat.</td></tr>
 <tr><td valign='top'><b>Desa cada render</b></td><td>Cada render final es desa també en una carpeta d'aquest ordinador,
 amb nom format a partir de {document}, {look} i {date}.</td></tr>
@@ -182,34 +182,45 @@ l'aspecte.</td></tr>
 per exemple un de gratuït de polyhaven.com. El terra es fon amb l'horitzó de la imatge.</p>
 
 <a name="image"></a>
-<h4>La finestra de previsualització</h4>
+<h4>La finestra de vista prèvia</h4>
 <p>Una finestra per mirar l'escena i fer la imatge. Té tres estats:</p>
 <table cellspacing='0' cellpadding='3' width='100%'>
-<tr><td valign='top'><b>Qualitat de la previsualització</b></td><td>A <i>Qualitat › Avançat</i>: <b>Ràpida</b> (imatges més petites i rugoses, respostes més ràpides), <b>Normal</b> o <b>Alta</b> (més grans i netes). Només afecta la previsualització; el Render té la seva qualitat.</td></tr>
-<tr><td valign='top'><b>Previsualització</b></td><td>La vista en directe: Blender es queda obert amb la teva escena i aspecte, i una imatge segueix el teu
-treball. Usa EEVEE amb els efectes més lents desactivats, digui el que digui el <b>Motor</b> i la <b>Qualitat</b> (són per a Renderitza),
-excepte amb l'aspecte <b>Interior</b>: EEVEE no pot omplir d'il·luminació una habitació il·luminada per una finestra, així que allà la previsualització usa <b>Cycles</b> (unes
-poques mostres, sense soroll; millor amb una targeta gràfica) i s'assembla al render. La gespa és tan densa com al render. El
+<tr><td valign='top'><b>Qualitat de la vista prèvia</b></td><td>Al <b>Mode expert</b>, o a Qualitat amb l'ull obert: <b>Ràpida</b> (imatges més petites i rugoses, respostes més ràpides), <b>Normal</b> o <b>Alta</b> (més grans i netes). Només afecta la vista prèvia; el Render té la seva qualitat.</td></tr>
+<tr><td valign='top'><b>Vista prèvia</b></td><td>La vista en directe: Blender es queda obert amb la teva escena i aspecte, i una imatge segueix el teu
+treball, digui el que digui el <b>Motor</b> i la <b>Qualitat</b> (són per a la captura). És un esbós: 960 px d'ample i
+poques mostres (amb la qualitat de vista prèvia <b>Alta</b>, tan ample com el mostra la finestra, fins a l'amplada de la
+captura). Amb el <b>Motor de la vista prèvia</b> en <b>Automàtic</b> usa <b>Cycles</b> si Blender troba una targeta gràfica
+(conserva l'escena a la targeta entre imatges, així que respon més aviat que EEVEE); si no, <b>EEVEE</b> amb els efectes més
+lents desactivats. L'aspecte <b>Interior</b> sempre usa Cycles. La gespa és tan densa com al render. El
 primer inici triga uns segons; després tot passa al mateix Blender. Tancar la finestra l'atura.
 <br><b>Segueix la càmera</b>: mentre orbites o camines, van arribant fotogrames petits i bastos (tres o quatre per segon, tan ràpid com
 Blender els renderitza); atura't, i arriba una imatge <b>ràpida</b>, després un <b>esborrany</b> més net. Desactivat: la imatge conserva la càmera
 que tenia, de manera que pots mirar cap a una altra banda a la vista 3D mentre veus canviar una sola vista.
 <br><b>Segueix els canvis</b>: una edició del model, d'una textura o dels ajustos de render d'un material es veu sola, en aproximadament
-un segon (l'escena es reconstrueix al mateix Blender; el model només s'exporta de nou quan ha canviat). Desactivat: la previsualització
+un segon (l'escena es reconstrueix al mateix Blender; el model només s'exporta de nou quan ha canviat). Desactivat: la vista prèvia
 conserva el model i els materials que tenia mentre treballes; l'aspecte i els controls del tauler continuen aplicant-se. Torna-ho a marcar per portar-hi
 les teves edicions.
 <br><b>Renderitza</b> fa la imatge final amb el motor, la qualitat i l'amplada del tauler (mostrats al costat dels botons).
 <b>Renderitza i desa…</b> demana primer un fitxer (PNG o JPEG), fa la imatge, la desa exactament tal com s'ha renderitzat i torna a
-la previsualització.</td></tr>
+la vista prèvia.</td></tr>
 <tr><td valign='top'><b>Renderitzant</b></td><td>La barra de progrés i <b>Cancel·la</b>. El Blender en directe es tanca mentrestant. Si tanques la
 finestra el render continua, i la imatge s'obre quan és a punt.</td></tr>
 <tr><td valign='top'><b>Imatge final</b></td><td>El render acabat, amb els controls de retoc a sota; canvien la <b>imatge</b>
 a l'instant, sense tornar a renderitzar, i el que veus és el que desa. La vista en directe es queda apagada perquè no dibuixi a sobre;
-<b>Torna a la previsualització</b> la torna a portar.</td></tr>
+<b>Torna a la vista prèvia</b> la torna a portar.</td></tr>
 </table>
-<p><b>Zoom i moviment</b> (previsualització i imatge final): la roda del ratolí amplia on és el cursor, arrossegar mou la imatge, un
+<p><b>Moure la càmera</b> (vista prèvia): arrossega per orbitar, <b>Maj</b>+arrossegar per desplaçar, la roda fa zoom cap
+al cursor; el botó del mig funciona com a la vista 3D. Amb <b>Segueix la càmera</b> activat, la vista 3D també es mou;
+desactivat, només es mou la càmera de la vista prèvia (i és la que fan servir la captura i l'escena nova). <b>Ctrl</b>+roda
+i <b>Ctrl</b>+arrossegar serveixen per mirar de prop la imatge.</p>
+<p><b>Tauler</b> (a la barra de la finestra) mostra el tauler de Render Studio; si la finestra el tapa, s'aparta.</p>
+<p><b>Desar la vista prèvia</b>: <b>Desa la imatge…</b> (o el botó dret sobre la imatge) desa exactament el que es
+veu, en PNG o JPEG, sense capturar de nou; <b>Copia la imatge</b> la posa al porta-retalls. La <b>captura</b> és una altra
+imatge, feta de nou a la mida del tauler amb més mostres i tots els efectes, encara que tinguin el mateix motor i qualitat
+alta.</p>
+<p><b>Zoom i moviment</b> (imatge final): la roda del ratolí amplia on és el cursor, arrossegar mou la imatge, un
 doble clic va entre <b>Ajust</b> i <b>100 %</b> (un píxel de la imatge per píxel de pantalla); les tecles <b>+</b> i <b>-</b> amplien,
-<b>0</b> ajusta i <b>1</b> és 100 %. El zoom i el lloc es conserven mentre arriben nous fotogrames de previsualització.</p>
+<b>0</b> ajusta i <b>1</b> és 100 %.</p>
 <p><b>Controls de retoc</b> (només la imatge final):</p>
 <table cellspacing='0' cellpadding='3' width='100%'>
 <tr><td valign='top'><b>Exposició (EV)</b></td><td>-2 a +2 passos; els llums alts s'esmorteeixen en lloc de retallar-se.</td></tr>
@@ -219,7 +230,7 @@ doble clic va entre <b>Ajust</b> i <b>100 %</b> (un píxel de la imatge per píx
 <tr><td valign='top'><b>Vinyeta</b></td><td>0 a 0,8, enfosqueix les cantonades.</td></tr>
 <tr><td valign='top'><b>Restableix</b></td><td>Posa tots els controls lliscants a neutre.</td></tr>
 <tr><td valign='top'><b>Desa la imatge…</b></td><td>Desa la imatge retocada com a PNG o JPEG.</td></tr>
-<tr><td valign='top'><b>Torna a la previsualització</b></td><td>Torna a la vista en directe per canviar l'escena i renderitzar de nou.</td></tr>
+<tr><td valign='top'><b>Torna a la vista prèvia</b></td><td>Torna a la vista en directe per canviar l'escena i renderitzar de nou.</td></tr>
 </table>
 <a name="materials"></a>
 <h3>L'editor de materials</h3>
@@ -239,8 +250,8 @@ per a aigua o vidre transparents, mou <b>Transparència</b>. A l'EEVEE de Blende
 <table cellspacing='0' cellpadding='3' width='100%'>
 <tr><td valign='top'><b>Ajustos de la imatge</b></td><td>Desplega la secció sota els botons d'imatge: <b>To</b> (graus al voltant de la roda de colors), <b>Saturació</b>,
 <b>Brillantor</b>, <b>Contrast</b>, <b>Rotació</b> de la imatge sobre la superfície (graus, al voltant del seu centre), un <b>Tint</b> de color posat sobre
-la imatge amb una intensitat, o un <b>Color pla</b> en lloc de la imatge. Només es conserva el que canvies. El render i la previsualització els mostren
-(un canvi es fa en una fracció de segon a la previsualització); la vista 3D conserva la imatge original. Un material sense imatge
+la imatge amb una intensitat, o un <b>Color pla</b> en lloc de la imatge. Només es conserva el que canvies. El render i la vista prèvia els mostren
+(un canvi es fa en una fracció de segon a la vista prèvia); la vista 3D conserva la imatge original. Un material sense imatge
 pren el to, la saturació, la brillantor, el contrast i el tint sobre el seu color. <b>Restableix la imatge</b> hi torna.</td></tr>
 <tr><td valign='top'><b>Tria, pinta, nou, duplica</b></td><td>Sota la llista: <b>Tria des de la vista</b> és el comptagotes (clica una cara o un objecte a la vista 3D i se'n tria aquí el
 material); <b>Pinta-hi</b> és el pot de pintura (l'eina Pintar amb aquest material: clica una cara o un objecte per pintar-lo);
@@ -249,8 +260,8 @@ fa una còpia del material triat, amb els seus ajustos de render, com a <i>Nom (
 <tr><td valign='top'><b>Mapa d'opacitat</b></td><td>Sota <b>Transparència</b>: una imatge que diu on el material és transparent, per a un
 retall com fulles, una tanca o una punta. <b>El blanc és opac, el negre és transparent</b>, els grisos entremig; <b>Invertit</b> els
 intercanvia. Amb una imatge al material el mapa segueix la disposició de la imatge, de manera que un mapa fet per a aquella imatge quadra; sense
-una, es repeteix a la <i>mida del mapa</i>. El render i la previsualització el fan servir; la vista 3D només mostra el control Transparència.</td></tr>
-<tr><td valign='top'><b>Previsualització en cub</b></td><td>A dalt, una previsualització ràpida del material en un cub d'un metre. Segueix
+una, es repeteix a la <i>mida del mapa</i>. El render i la vista prèvia el fan servir; la vista 3D només mostra el control Transparència.</td></tr>
+<tr><td valign='top'><b>Vista prèvia en cub</b></td><td>A dalt, una vista prèvia ràpida del material en un cub d'un metre. Segueix
 la imatge (i la seva mida de rajola), el color, el <b>tipus</b> (el vidre i l'aigua són transparents, els lluminosos tenen un halo) i
 els controls de <b>Rugositat</b>, <b>Metall</b>, <b>Relleu</b> i <b>Brillantor pròpia</b>, a l'instant i sense Blender. És només una idea de
 l'aspecte: els <b>mapes</b> i la il·luminació de Blender només es veuen al render.</td></tr>
@@ -286,7 +297,7 @@ les amples es llegeixen com aigua; el sol hi fa llampegar.</td></tr>
 Les fulles existeixen <b>només al render</b>: el model es queda pla i lleuger per treballar-hi. Creixen a cada cara que porta
 el material, drets sigui quin sigui el pendent, en petits flocs girats i amb mida aleatòria. El seu color és la <b>imatge</b> del
 material allà on és cada floc (una imatge de gespa dona les taques de la gespa), o el seu color, més fosc a l'arrel; la
-cara de sota omple els buits. La previsualització en cub en mostra l'alçada.</td></tr>
+cara de sota omple els buits. La vista prèvia en cub en mostra l'alçada.</td></tr>
 <tr><td valign='top'><b>Densitat de la gespa</b></td><td>Només gespa: quants flocs (de unes quantes fulles cadascun) creixen per metre quadrat,
 de 20 a 2000. Una gespa espessa és de 250 a 400, herba llarga de 60 a 120 (els flocs més alts són més grans). La vista en directe i el render usen
 la mateixa densitat, vegi el que vegi la càmera. Només una gespa enorme (més de 600 000 flocs en total) s'aprima perquè Blender
@@ -304,7 +315,7 @@ el material no té imatge pròpia; amb una imatge, els mapes en segueixen la mid
 <li>Per al <b>Relleu</b>: <b>Automàtic</b>, <b>Gra fi</b>, <b>Imatge</b>, un <b>fitxer de mapa d'alçades</b> o un <b>fitxer de mapa de normals</b>.</li>
 <li><b>Invertit</b>: el blanc es torna negre, per a una imatge les parts fosques de la qual han de ser les rugoses, en relleu o lluminoses.</li>
 <li>El control de <b>Contrast</b>: 0 el mapa tal com és, 100 negre o blanc pur.</li>
-<li>La petita <b>previsualització</b> mostra el que llegirà el render. Un material sense imatge ignora un mapa d'Imatge.</li>
+<li>La petita <b>vista prèvia</b> mostra el que llegirà el render. Un material sense imatge ignora un mapa d'Imatge.</li>
 </ul>
 <p>Els fitxers de mapa s'enllacen per la seva <b>ruta</b>, no s'incrusten al document: conserva'ls on són.</p>
 
@@ -331,10 +342,10 @@ Un mapa de rugositat que triïs aquí guanya.</li>
 <li><b>Metall</b>: el mapa del joc; el control en puja el valor més baix. Un mapa de metall que triïs aquí guanya.</li>
 <li>L'<b>oclusió ambiental</b> enfosqueix el color a les ranures; l'<b>opacitat</b> fa forats on és negra.</li>
 <li>El <b>Vidre</b> i l'<b>Aigua</b> només prenen el mapa de normals. La <b>Maqueta blanca</b> ignora els jocs.</li>
-<li>La previsualització en cub només mostra la imatge; els jocs es veuen al render.</li>
+<li>La vista prèvia en cub només mostra la imatge; els jocs es veuen al render.</li>
 </ul>
 <p>L'editor mostra el joc: una línia sota la imatge llista els mapes trobats, i la primera opció sota <b>Rugositat</b>,
-<b>Metall</b> i <b>Relleu</b> diu <b>Joc de textures: …</b> amb una petita previsualització d'aquell mapa (per a un mapa empaquetat, el canal usat).
+<b>Metall</b> i <b>Relleu</b> diu <b>Joc de textures: …</b> amb una petita vista prèvia d'aquell mapa (per a un mapa empaquetat, el canal usat).
 Tria-hi un altre mapa per substituir-lo.</p>
 
 <h4>Punts de partida</h4>

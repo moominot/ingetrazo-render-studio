@@ -23,17 +23,10 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QFormLayout, Q
                                QListWidget, QListWidgetItem, QPushButton, QRadioButton, QSizePolicy, QSpinBox,
                                QToolButton, QVBoxLayout, QWidget)
 
+from . import icons, widgets
 from . import output as O
 
 _SETTINGS = "render_studio/"
-
-
-def _bold(text: str) -> QLabel:
-    lab = QLabel(text)
-    f = lab.font()
-    f.setBold(True)
-    lab.setFont(f)
-    return lab
 
 
 def _shrinkable(combo: QComboBox) -> QComboBox:
@@ -55,10 +48,10 @@ class OutputTab(QWidget):
         self._kept_height = O.DEFAULT["height"]   # the height of its own (the view's shape shows another)
         st = QSettings()
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.addWidget(_bold("Projection"))
-        formp = QFormLayout()
-        formp.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        lay.setContentsMargins(0, 8, 4, 0)
+        projection_box = widgets.Card("Projection", "output_projection", icon="grp_camera")
+        lay.addWidget(projection_box)
+        formp = projection_box.form
         self._proj_form = formp
         self.projection = QComboBox()
         self.projection.addItem(tr("Normal view"), "normal")
@@ -69,7 +62,7 @@ class OutputTab(QWidget):
                                    "are rendered from the camera's place, with Cycles.")
         self.projection.currentIndexChanged.connect(self._projection_chosen)
         _shrinkable(self.projection)
-        formp.addRow("Projection", self.projection)
+        formp.addRow(self.projection)
         self.angle = QSpinBox()
         self.angle.setRange(30, 360)
         self.angle.setSingleStep(10)
@@ -82,11 +75,10 @@ class OutputTab(QWidget):
         self.proj_note.setWordWrap(True)
         self.proj_note.setStyleSheet("color: gray; font-size: 11px")
         formp.addRow(self.proj_note)
-        lay.addLayout(formp)
 
-        lay.addWidget(_bold("Size"))
-        form = QFormLayout()
-        form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        size_box = widgets.Card("Size", "output_size", icon="grp_size")
+        lay.addWidget(size_box)
+        form = size_box.form
         self.size = QComboBox()
         for key, label, _w, _h in O.SIZES:
             self.size.addItem(tr(label), key)
@@ -94,7 +86,7 @@ class OutputTab(QWidget):
                              "follows the view.")
         self.size.currentIndexChanged.connect(self._size_chosen)
         _shrinkable(self.size)
-        form.addRow("Size", self.size)
+        form.addRow(self.size)
         self.width = QSpinBox()
         self.width.setRange(320, O.MAX_PX)
         self.width.setSingleStep(160)
@@ -108,27 +100,28 @@ class OutputTab(QWidget):
         self.height.setValue(O.DEFAULT["height"])
         self.height.setToolTip("The picture's height in pixels")
         for w in (self.width, self.height):
-            w.setMinimumWidth(78)
+            w.setMinimumWidth(76)
             w.setSizePolicy(QSizePolicy.Ignored, w.sizePolicy().verticalPolicy())
         self.width.valueChanged.connect(self._width_edited)
         self.height.valueChanged.connect(self._height_edited)
-        wrow = QHBoxLayout()
-        wrow.setContentsMargins(0, 0, 0, 0)
-        wrow.addWidget(self.width)
-        wrow.addWidget(QLabel("×"))
-        wrow.addWidget(self.height)
+        form.addRow("Width", self.width)                  # one under the other: side by side they did not fit a narrow tray
+        form.addRow("Height", self.height)
         self.swap = QToolButton()
-        self.swap.setText("⇄")
+        self.swap.setText("Turn")
+        self.swap.setIcon(icons.icon("swap"))
+        self.swap.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.swap.setToolTip("Turn it: landscape ↔ portrait")
         self.swap.clicked.connect(self._swap)
-        wrow.addWidget(self.swap)
-        wbox = QWidget()
-        wbox.setLayout(wrow)
-        form.addRow("Width × height", wbox)
         self.keep = QCheckBox("Keep proportions")
         self.keep.setToolTip("Changing the width changes the height with it, and the other way round")
         self.keep.toggled.connect(self._keep_toggled)
-        form.addRow("", self.keep)
+        krow = QHBoxLayout()
+        krow.setContentsMargins(0, 0, 0, 0)
+        self.keep.setSizePolicy(QSizePolicy.Ignored, self.keep.sizePolicy().verticalPolicy())
+        krow.addWidget(self.keep, 1)
+        krow.addStretch(1)                                        # (the box is not there with the view's shape: the button stays right)
+        krow.addWidget(self.swap)
+        form.addRow(krow)
         self.dpi = QSpinBox()
         self.dpi.setRange(30, 1200)
         self.dpi.setSingleStep(50)
@@ -141,12 +134,10 @@ class OutputTab(QWidget):
         self.summary.setWordWrap(True)
         self.summary.setStyleSheet("color: gray; font-size: 11px")
         form.addRow(self.summary)
-        lay.addLayout(form)
 
-
-        lay.addWidget(_bold("File"))
-        form2 = QFormLayout()
-        form2.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        file_box = widgets.Card("File", "output_file", icon="grp_file")
+        lay.addWidget(file_box)
+        form2 = file_box.form
         self._file_form = form2
         self.format = QComboBox()
         for key in O.FORMAT_ORDER:
@@ -172,9 +163,9 @@ class OutputTab(QWidget):
         self.file_note.setWordWrap(True)
         self.file_note.setStyleSheet("color: gray; font-size: 11px")
         form2.addRow(self.file_note)
-        lay.addLayout(form2)
 
-        lay.addWidget(_bold("What to render"))
+        what_box = widgets.Card("What to render", "output_what", icon="grp_presets", kind="column")
+        lay.addWidget(what_box)
         mrow = QVBoxLayout()
         mrow.setSpacing(2)
         self.mode_view = QRadioButton("Current view")
@@ -188,7 +179,7 @@ class OutputTab(QWidget):
             r.setSizePolicy(QSizePolicy.Ignored, r.sizePolicy().verticalPolicy())      # (the tray is narrow)
         mrow.addWidget(self.mode_view)
         mrow.addWidget(self.mode_scenes)
-        lay.addLayout(mrow)
+        what_box.body_layout.addLayout(mrow)
         self.scenes_box = QWidget()
         sb = QVBoxLayout(self.scenes_box)
         sb.setContentsMargins(0, 0, 0, 0)
@@ -199,19 +190,21 @@ class OutputTab(QWidget):
         srow = QHBoxLayout()
         self.scenes_all = QPushButton("All")
         self.scenes_none = QPushButton("None")
+        self.scenes_all.setIcon(icons.icon("check_all"))
+        self.scenes_none.setIcon(icons.icon("check_none"))
         self.scenes_all.clicked.connect(lambda: self._tick_scenes(True))
         self.scenes_none.clicked.connect(lambda: self._tick_scenes(False))
         srow.addWidget(self.scenes_all)
         srow.addWidget(self.scenes_none)
         srow.addStretch(1)
         sb.addLayout(srow)
-        lay.addWidget(self.scenes_box)
+        what_box.body_layout.addWidget(self.scenes_box)
         self._ticked = set()
         self._scenes_stale = True
 
-        lay.addWidget(_bold("Save"))
-        form3 = QFormLayout()
-        form3.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        save_box = widgets.Card("Save", "output_save", icon="save")
+        lay.addWidget(save_box)
+        form3 = save_box.form
         self.autosave = QCheckBox("Save each render")
         self.autosave.setToolTip("The view you render is also saved in the folder, named as below. The scenes are always "
                                  "saved there.")
@@ -222,7 +215,11 @@ class OutputTab(QWidget):
         self.folder = QLineEdit(str(st.value(_SETTINGS + "autosave_dir", "") or ""))
         self.folder.setPlaceholderText("choose a folder")
         self.folder.editingFinished.connect(self._remember_autosave)
-        browse = QPushButton("Browse…")
+        browse = QToolButton()
+        browse.setIcon(icons.icon("folder"))
+        browse.setToolTip("Browse…")
+        browse.setFixedWidth(30)
+        self.browse_btn = browse
         browse.clicked.connect(self._browse)
         frow.addWidget(self.folder, 1)
         frow.addWidget(browse)
@@ -238,7 +235,6 @@ class OutputTab(QWidget):
         self.pattern.editingFinished.connect(self._remember_autosave)
         form3.addRow("Name", self.pattern)
         form3.addRow(self.autosave)
-        lay.addLayout(form3)
         self._mode_changed()
         lay.addStretch(1)
         self._layout()

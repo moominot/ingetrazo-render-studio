@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QColorDialog, QComb
                                QInputDialog, QLabel, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout, QWidget)
 
 from . import section as S
+from . import icons, widgets
 from .widgets import NumberSlider
 
 
@@ -75,12 +76,14 @@ class SectionTab(QWidget):
         self._wanted = None                     # the material chosen (kept while it is not in the list)
         self._building = False                  # the list of sections is being filled: its ticks are not the person's
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
-        self.state = _note()
+        lay.setContentsMargins(0, 8, 4, 0)
+        self.state = _note()                    # what cuts now, over the cards
         lay.addWidget(self.state)
-        self.sections_title = QLabel("Sections in the drawing")
-        self.sections_title.setStyleSheet("font-weight: bold")
-        lay.addWidget(self.sections_title)
+        found_box = widgets.Card("Sections in the drawing", "section_list", icon="grp_section", kind="column")
+        found_box.setToolTip("The cut is the drawing's active section plane and section box (the Section tools place and flip them). "
+                             "It is read again whenever the preview reloads.")
+        self.sections_title = found_box         # (the whole card: gone with an IngeTrazo that has no sections)
+        lay.addWidget(found_box)
         self.sections = QListWidget()
         self.sections.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.sections.setMaximumHeight(130)
@@ -90,22 +93,28 @@ class SectionTab(QWidget):
         self.sections.itemChanged.connect(self._ticked)
         self.sections.itemDoubleClicked.connect(lambda _item: self._rename())
         self.sections.itemSelectionChanged.connect(self._sections_buttons)
-        lay.addWidget(self.sections)
+        found_box.body_layout.addWidget(self.sections)
         srow = QHBoxLayout()
         self.rename_btn = QPushButton("Rename…")
+        self.rename_btn.setIcon(icons.icon("pencil"))
         self.rename_btn.setToolTip("Give the chosen section a name of its own (a section plane keeps its letter).")
         self.rename_btn.clicked.connect(lambda: self._rename())
         self.delete_btn = QPushButton("Delete")
+        self.delete_btn.setIcon(icons.icon("trash"))
         self.delete_btn.setToolTip("Take the chosen sections out of the drawing. Undo (Ctrl+Z) in IngeTrazo brings them back.")
         self.delete_btn.clicked.connect(lambda: self._delete())
         srow.addWidget(self.rename_btn)
         srow.addWidget(self.delete_btn)
         srow.addStretch(1)
-        lay.addLayout(srow)
+        found_box.body_layout.addLayout(srow)
         self.sections_note = _note("No sections in the drawing: place them with the Section tools.")
-        lay.addWidget(self.sections_note)
-        form = QFormLayout()
-        form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        found_box.body_layout.addWidget(self.sections_note)
+        cap_box = widgets.Card("Cap", "section_cap", icon="grp_cap")
+        rim_box = widgets.Card("Cap outline", "section_rim", icon="grp_outline")
+        light_box = widgets.Card("Light", "section_light", icon="grp_light")
+        for box in (cap_box, rim_box, light_box):
+            lay.addWidget(box)
+        form = cap_box.form
         self.cap = QCheckBox("Close the cut with a face")
         self.cap.setChecked(True)
         self.cap.setToolTip("Without it the cut is open and the inside of the walls shows.")
@@ -120,7 +129,7 @@ class SectionTab(QWidget):
                               "one plain colour, a pattern of lines or dots over a colour, or what IngeTrazo itself fills the cut with "
                               "(the section's own fill, or Styles › Section fill): what you see in the 3D view is what renders.")
         self.style.currentIndexChanged.connect(self._edited)
-        form.addRow("Cap", self.style)
+        form.addRow("Type", self.style)
         self.material = QComboBox()
         self.material.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.material.setMinimumContentsLength(8)
@@ -159,16 +168,16 @@ class SectionTab(QWidget):
         self.outline.setToolTip("Draws the rim of the cap: a line round every cut wall and slab, with its own colour and thickness. In the "
                                 "finished picture it stays a line you can restyle (colour, thickness) until you save.")
         self.outline.toggled.connect(self._edited)
-        form.addRow(self.outline)
+        rim_box.form.addRow(self.outline)
         self.outline_colour = ColourButton(S.DEFAULT["outline_color"], "Colour of the cap's outline")
         self.outline_colour.setToolTip("The colour of the cap's outline.")
         self.outline_colour.changed.connect(self._edited)
-        form.addRow("Outline colour", self.outline_colour)
+        rim_box.form.addRow("Colour", self.outline_colour)
         self.outline_width = NumberSlider(0.5, 10.0, 0.1, "{:.1f} px")
         self.outline_width.setValue(S.DEFAULT["outline_width"])
         self.outline_width.setToolTip("The thickness of the cap's outline, in pixels of the finished picture.")
         self.outline_width.valueChanged.connect(self._edited)
-        form.addRow("Outline thickness", self.outline_width)
+        rim_box.form.addRow("Thickness", self.outline_width)
         self.outline.toggled.connect(lambda on: (self.outline_colour.setEnabled(on), self.outline_width.setEnabled(on)))
         self.shadows = QCheckBox("No shadows on the cap")
         self.shadows.setToolTip("The cap neither casts nor receives shadows: it keeps its colour evenly, "
@@ -185,10 +194,7 @@ class SectionTab(QWidget):
             "out of the picture but still casts shadow and bounces light, so the inside is "
             "lit as in the real building (Cycles; EEVEE may show it).")
         self.light.currentIndexChanged.connect(self._edited)
-        form.addRow("Light", self.light)
-        lay.addLayout(form)
-        lay.addWidget(_note("The cut is the drawing's active section plane and section box (the Section tools place and flip them). "
-                            "It is read again whenever the preview reloads."))
+        light_box.form.addRow(self.light)
         lay.addStretch(1)
         self._fill()
         self._fill_sections()

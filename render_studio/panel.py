@@ -21,21 +21,24 @@ import math
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QLocale, QProcess, QProcessEnvironment, QSettings, Qt, QTimer, Signal
+from PySide6.QtCore import QLocale, QProcess, QProcessEnvironment, QSettings, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QImage
 from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGroupBox,
                                QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMenu, QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QTabWidget,
                                QToolButton, QVBoxLayout, QWidget)
 
+from . import wheel_guard
 from . import drawing_fog, lights as studio_lights, materials as mats, fast_export, output, pbr, presets, proxies, section, settings_store, studio_data, visibility, widgets
-from . import look_model, view_camera
+from . import look_model, params, view_camera
 from .style_groups import StyleGroups
 from .toolbar import Commands
 from . import preset_files
 from .ambient import AmbientBox
 from .preset_gallery import PresetGallery, presets_folder
-from . import layouts
+from . import bindings, engine_probe, icons, layouts
 from .expert import ExpertTab
+from .fine_controls import FineControls
+from .header_tools import HeaderTools
 from .live import LiveSession
 from .preview import ImageWindow  # noqa: F401 - re-exported: panel.ImageWindow
 from .widgets import SliderRow
@@ -106,6 +109,14 @@ def blender_version_ok(command, timeout: float = 60.0):
     return True, ""
 
 
+#: The height of the panel's two main buttons, Preview and Render (pixels; the others are 28).
+MAIN_BUTTON = 42
+
+
+#: The room above the first thing of each page, under the tabs (pixels).
+PAGE_TOP = 8
+
+
 def apply_backdrop(block: dict, backdrop: dict | None) -> dict:
     """The look's block with a fixed picture behind the model: ``backdrop`` = {path, fit
     («fill», «fit», «stretch»), strength (multiplier)}. The look keeps lighting the scene."""
@@ -133,6 +144,47 @@ def apply_shadows(block: dict, shadows: dict | None, style: dict | None = None) 
     if st and st["draw"] != "render":
         st["width"] = settings_store.style(style)["width"] or 1.0
         block["shadows"] = st
+    return block
+
+
+def _screen_colour(linear) -> list:
+    """A colour in Blender's linear terms as the screen shows it (sRGB), as the picture's pixels are."""
+    return [round(12.92 * c if c <= 0.0031308 else 1.055 * c ** (1.0 / 2.4) - 0.055, 4) for c in linear[:3]]
+
+
+def apply_fine(block: dict, fine: dict | None) -> dict:
+    """The look's block with the finer settings not at their default (params.fine_clean); nothing when there are none. A texture
+    asked for with no picture to make it of is left out."""
+    values = params.fine_clean(fine)
+    if values.get("finish.texture") == "image" and not os.path.isfile(values.get("finish.texture_path") or ""):
+        del values["finish.texture"]
+    if values:
+        block["fine"] = values
+    return block
+
+
+#: The finer settings of the light and the picture that are values of the look's block: register key -> its name there.
+_FINE_BLOCK = {"surface.albedo_cap": "albedo_cap", "image.bloom": "bloom", "image.exposure_target": "exposure_target",
+               "image.exposure_white": "exposure_white", "image.exposure_max": "exposure_max",
+               "sky.cloud_brightness": "cloud_brightness", "sky.cloud_seed": "cloud_seed", "shadows.softness": "sun_angle"}
+
+
+def apply_fine_light(block: dict, fine: dict | None, sliders: dict | None, look: str) -> dict:
+    """The finer settings of the light and the picture over the look's own. ``look``: the one rendered (a night, if the sun set)."""
+    values = params.fine_clean(fine)
+    block.update({name: values[key] for key, name in _FINE_BLOCK.items() if key in values})
+    if "sky.cloud_scale" in values:
+        block["cloud_scale"] = 1.0 / values["sky.cloud_scale"]      # (Blender's is the noise's: larger, smaller clouds)
+    if "shadows.softness" in values:
+        block["sun_jitter"] = True                               # (EEVEE only softens a shadow when asked to)
+    if "sky.golden_elevation" in values and look == "golden_hour":
+        block["sun_elevation"] = values["sky.golden_elevation"]
+    if values.get("image.contrast"):
+        block["looks"] = list(params.CONTRASTS[values["image.contrast"]])
+    if "image.kelvin" in values:
+        block["white_balance"] = values["image.kelvin"] + 1500.0 * float((sliders or {}).get("warmth") or 0.0)
+    if "image.tint" in values:
+        block["tint"] = 10.0 + values["image.tint"]               # (10 is Blender's own, what an untouched picture has)
     return block
 
 
@@ -240,7 +292,8 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
                      skyline: dict | None = None, style: dict | None = None, lines: str | None = None,
                      serve: bool = False, live: bool = False, reuse_model: bool = False,
                      output: dict | None = None, doc_path=None, section_opts: dict | None = None,
-                     progress=None, viewport=None, flat: dict | None = None, shadows: dict | None = None):
+                     progress=None, viewport=None, flat: dict | None = None, shadows: dict | None = None,
+                     fine: dict | None = None):
     """Export the model (IngeTrazo's own job writer) and add the look (and
     the 360° background, if any). ``serve``: Blender builds the scene and then
     waits for cameras on its input (the live view). ``live``: a draft scene
@@ -272,9 +325,13 @@ def write_studio_job(scene, camera, work: Path, preset_key: str, sliders: dict, 
         if sk["type"]:
             block["skyline"] = {k: v for k, v in sk.items() if v is not None}
     block = apply_style_block(block, scene, style, lines)
+    if params.fine_clean(fine).get("shadows.outline"):
+        block["shadow_ink"] = _screen_colour(settings_store.style(style)["color"])     # the shadows' line: the outlines' ink
     block = apply_flat(block, flat, ground_shadow)
     block = apply_shadows(block, shadows, style)
+    block = apply_fine(block, fine)
     block = presets.apply_sliders(block, sliders)
+    block = apply_fine_light(block, fine, sliders, preset_key)       # (after the sliders: the warmth adds to a balance set here)
     block = drawing_fog.apply(block, scene)           # the drawing's own fog (IngeTrazo 0.6.3), when it has one
     try:
         materials = mats.with_detected(scene, materials)     # «Gespa» grows grass, «Aigua» ripples
@@ -485,6 +542,7 @@ class StudioPanel(QWidget):
         self.work = None
         self.window = None
         self._log_lines = []
+        self.setObjectName("render_studio_panel")
         self.commands = Commands(self)                # the toolbar's, which also hold the live view's two switches
         st = QSettings()
         lang = _lang()
@@ -497,7 +555,7 @@ class StudioPanel(QWidget):
         def page():
             host = QWidget()
             lay = QVBoxLayout(host)
-            lay.setContentsMargins(0, 0, 4, 0)
+            lay.setContentsMargins(0, PAGE_TOP, 4, 0)
             return host, lay
         host_main, col_main = page()
         host_image, col_image = page()
@@ -522,11 +580,10 @@ class StudioPanel(QWidget):
         form.addRow(self._caption("These change the scene itself: the preview and Render both show them."))
         self.sliders, self.slider_rows = {}, {}
         self._sky_labels, self._cam_labels, self._env_labels = {}, {}, {}
-        box_pic = QGroupBox("Corrections")
-        form_pic = QFormLayout(box_pic)
-        self.fx = QGroupBox("Effects")                  # vignette, depth of field: a group of the Image page
-        self.fx.form = QFormLayout(self.fx)
-        box_skyadj = widgets.FoldBox("Sun and sky", "sky")
+        box_pic = widgets.Card("Corrections", "corrections", icon="grp_corrections")
+        form_pic = box_pic.form
+        self.fx = widgets.Card("Effects", "effects", icon="grp_effects")     # vignette, depth of field: a group of the Image page
+        box_skyadj = widgets.Card("Sun and sky", "sky", icon="grp_sky")
         form_skyadj = box_skyadj.form
         for key, (label, lo, hi, default, _unit) in presets.SLIDERS.items():
             block, _amb = presets.studio(self.preset.currentData())
@@ -560,13 +617,14 @@ class StudioPanel(QWidget):
         col_main.addWidget(self._build_camera_box())
 
         # The background: the look's own sky, a 360° panorama, or one fixed picture.
-        box_bg = widgets.FoldBox("Background", "background")
+        box_bg = widgets.Card("Background", "background", icon="grp_background")
         form2 = box_bg.form
         self.bg_mode = QComboBox()
         self.bg_mode.addItem(tr("Sky of the look"), "sky")
         self.bg_mode.addItem(tr("360° panorama"), "pano")
         self.bg_mode.addItem(tr("Fixed picture"), "picture")
         self.bg_mode.addItem(tr("Plain colour"), "flat")
+        self.bg_mode.addItem(tr("Transparent"), "transparent")
         self.bg_mode.addItem(tr("Paper"), "paper")
         self._paper_under = False          # a document's paper behind a plain colour or a picture (an old sketch's)
         self.bg_mode.activated.connect(self._background_chosen)
@@ -578,6 +636,8 @@ class StudioPanel(QWidget):
                                 "360° panorama: a photo all round you, which also lights the model. "
                                 "Fixed picture: one flat picture behind it, which stays put when the view turns. "
                                 "Plain colour: exactly that colour behind the model (white, for instance). "
+                                "Transparent: nothing behind, to put the picture over another one (the model, its lines and its "
+                                "shadow on the floor; save it as PNG). "
                                 "Paper: the sky is left out and drawing paper is behind.")
         form2.addRow("Show", self.bg_mode)
         self.bg_note = self._caption("")
@@ -668,7 +728,7 @@ class StudioPanel(QWidget):
         col.addWidget(box_bg)
 
         # The ground under the model.
-        box_ground = widgets.FoldBox("Ground", "ground")
+        box_ground = widgets.Card("Ground", "ground", icon="grp_ground")
         form_g = box_ground.form
         self.ground = QCheckBox("Generated ground")
         self.ground.setToolTip(
@@ -692,8 +752,7 @@ class StudioPanel(QWidget):
         for key, (label, _c, _r) in presets.GROUND_TYPES.items():
             self.ground_type.addItem(tr(label), key)
         self.ground_type.addItem(tr("Custom"), "custom")
-        self.ground_type.setToolTip("A ready-made ground: its colour and how shiny it is. Change either under Advanced "
-                                    "and it becomes Custom.")
+        self.ground_type.setToolTip("A ready-made ground: its colour and how shiny it is. Change either one and it becomes Custom.")
         self.ground_type.activated.connect(self._ground_type_chosen)
         form_g.setRowWrapPolicy(QFormLayout.WrapLongRows)          # a narrow tray: the label above its field
         form_g.insertRow(0, "Type", self.ground_type)
@@ -706,7 +765,7 @@ class StudioPanel(QWidget):
         self.ground_colour.setToolTip("The ground's own colour instead of the look's.")
         self.ground_colour.changed.connect(self._ground_colour_edited)
         self.ground_colour_reset = QToolButton()
-        self.ground_colour_reset.setText("×")
+        self.ground_colour_reset.setIcon(icons.icon("undo"))
         self.ground_colour_reset.setToolTip("Back to the look's colour")
         self.ground_colour_reset.clicked.connect(self._ground_colour_reset)
         crow.addWidget(self.ground_colour, 1)
@@ -769,7 +828,7 @@ class StudioPanel(QWidget):
         form_g.addRow(self.ground_more)
         col.addWidget(box_ground)
         # The horizon: distant mountains, hills, forest or city that hide where the ground meets the sky.
-        box_horizon = widgets.FoldBox("Horizon", "horizon")
+        box_horizon = widgets.Card("Horizon", "horizon", icon="grp_horizon")
         form_h = box_horizon.form
         self.skyline_type = QComboBox()
         self.skyline_type.addItem(tr("None"), "")
@@ -797,7 +856,7 @@ class StudioPanel(QWidget):
         self.skyline_colour.setToolTip("The colour of the nearest layer (the farther ones are paler). By default the type's own.")
         self.skyline_colour.changed.connect(self._skyline_colour_edited)
         self.skyline_colour_reset = QToolButton()
-        self.skyline_colour_reset.setText("×")
+        self.skyline_colour_reset.setIcon(icons.icon("undo"))
         self.skyline_colour_reset.setToolTip("Back to the type's colour")
         self.skyline_colour_reset.clicked.connect(self._skyline_colour_reset)
         scol.addWidget(self.skyline_colour, 1)
@@ -812,7 +871,7 @@ class StudioPanel(QWidget):
         self.preset.currentIndexChanged.connect(self._swatches_follow)
         col.addWidget(box_horizon)
         # Fog: part of the place, like the horizon it veils (it was among the picture's effects).
-        box_fog = widgets.FoldBox("Fog", "fog")
+        box_fog = widgets.Card("Fog", "fog", icon="grp_fog")
         form_fog = box_fog.form
         self.fog_note = self._caption("")
         self.fog_note.setVisible(False)
@@ -832,42 +891,49 @@ class StudioPanel(QWidget):
         col_sky.insertWidget(1, self.shadows_box)    # and the shadows it casts
 
         # What only the final render uses.
-        box_final = QGroupBox("Quality")
-        form3 = QFormLayout(box_final)
+        box_final = widgets.Card("Quality", "quality", icon="grp_quality")
+        form3 = box_final.form
+        form3.setRowWrapPolicy(QFormLayout.WrapLongRows)
         form3.addRow(self._caption("Quality is for Render; the preview has its own engine."))
-        self.final_more = widgets.Collapsible(tr("Advanced"), "final_more")
         self.preview_engine = QComboBox()
         self.preview_engine.addItem(tr("Automatic"), "auto")
         self.preview_engine.addItem(tr("EEVEE — fast"), "eevee")
         self.preview_engine.addItem(tr("Cycles — like the final render"), "cycles")
         self.preview_engine.setCurrentIndex(max(0, self.preview_engine.findData(st.value(_SETTINGS + "preview_engine", "auto"))))
         self.preview_engine.setToolTip(
-            "Automatic: EEVEE while the preview follows the camera, and Cycles on a big model once it is "
-            "still (Follow the camera and Follow changes both off: nothing is sent to Blender again, "
-            "and a big model looks like the final render). EEVEE or Cycles: always that one.")
+            "Automatic: Cycles when Blender finds a graphics card for it (the quicker and truer live view there), else "
+            "EEVEE. EEVEE or Cycles: always that one.")
         self.preview_engine.currentIndexChanged.connect(lambda _i: QSettings().setValue(_SETTINGS + "preview_engine", self.preview_engine.currentData()))
-        self.final_more.form.addRow("Preview", self.preview_engine)
         self.preview_quality = QComboBox()
         for key, label in (("fast", "Fast"), ("normal", "Normal"), ("high", "High")):
             self.preview_quality.addItem(tr(label), key)
         self.preview_quality.setCurrentIndex(max(0, self.preview_quality.findData(st.value(_SETTINGS + "preview_quality", "normal"))))
         self.preview_quality.setToolTip(
             "How sharp the preview is, which is also how quickly it answers (changing a material or a light, moving the camera). "
-            "Fast: smaller, rougher pictures. High: bigger, cleaner ones. Render has its own quality.")
+            "High: as sharp as the preview window shows it, so a picture saved from the preview is bigger too.")
         self.preview_quality.currentIndexChanged.connect(self._preview_quality_chosen)
-        self.final_more.form.addRow("Preview quality", self.preview_quality)
         self.engine = QComboBox()
+        self.engine.addItem(tr("Automatic"), "auto")
         self.engine.addItem(tr("EEVEE — fast"), "eevee")
         self.engine.addItem(tr("Cycles — best quality"), "cycles")
-        self.engine.setCurrentIndex(max(0, self.engine.findData(st.value(_SETTINGS + "engine", "eevee"))))
-        self.engine.setToolTip("EEVEE: about 3 s. Cycles: the truest light, about 5 s on an RTX card "
-                               "(the Interior look needs it).")
-        self.final_more.form.addRow("Render", self.engine)
-        self.quality = widgets.ChoiceButtons([tr(q) for q in ("Draft", "Medium", "High")])
+        kept = st.value(_SETTINGS + "engine", "auto")
+        if not st.value(_SETTINGS + "engine_auto", ""):
+            # «Automatic» is new: the EEVEE kept until now was the old default, not a choice
+            kept = "auto" if kept == "eevee" else kept
+            st.setValue(_SETTINGS + "engine", kept)
+            st.setValue(_SETTINGS + "engine_auto", "1")
+        self.engine.setCurrentIndex(max(0, self.engine.findData(kept)))
+        self.engine.setToolTip(
+            "Automatic: Cycles when Blender finds a graphics card for it (the truest light, and what the pre"
+            "view shows), else EEVEE. EEVEE: quicker without a card. Cycles: always (the Interior look needs it).")
+        self.quality = widgets.ChoiceButtons([tr(q) for q in ("Draft", "Medium", "High")],
+                                             icons=("q_draft", "q_medium", "q_high"))
         self.quality.setCurrentIndex(int(st.value(_SETTINGS + "quality", 1)))
         self.quality.setToolTip("How many samples: more is less noisy and slower.")
         form3.addRow(self.quality)
-        form3.addRow(self.final_more)
+        form3.addRow("Engine", self.engine)                  # which of these show is the layout's choice (Expert mode)
+        form3.addRow("Preview engine", self.preview_engine)
+        form3.addRow("Preview quality", self.preview_quality)
         # The picture's size and file: the Output tab (its width is the panel's ``width``).
         from .output_panel import OutputTab
         self.output_tab = OutputTab(self, width=int(st.value(_SETTINGS + "width", 1920)))
@@ -909,6 +975,8 @@ class StudioPanel(QWidget):
         form_skyadj.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         form_skyadj.addRow("Date", self.sun_quick.date_box)           # the date and the hour, always in view; the exact ones are folded
         form_skyadj.addRow("Hour", self.sun_quick.hour_box)
+        self.sun_more = widgets.Section()
+        form_skyadj.addRow(self.sun_more)                             # the place, right under the date and the hour
         for key in ("sun_scale", "moon", "clouds", "stars"):      # the sun (or the moonlight), the clouds, the stars
             form_skyadj.addRow(self._sky_labels[key], self.slider_rows[key])
         self._form_skyadj = form_skyadj
@@ -917,9 +985,7 @@ class StudioPanel(QWidget):
         self.sky_note.setVisible(False)
         form_skyadj.addRow(self.sky_note)
         self.sun_tab.embed()                          # (the date and the hour are the two sliders above: said once)
-        self.sun_more = widgets.Section()
         self.sun_more.form.addRow(self.sun_tab)
-        form_skyadj.addRow(self.sun_more)            # the place, the north, the time zone: in view, under the sky
         col_sky.addStretch(1)
         self.ambient = AmbientBox(self)
         self.ambient.chosen.connect(self.set_ambient)
@@ -938,13 +1004,26 @@ class StudioPanel(QWidget):
         for combo in self.findChildren(QComboBox):       # a long name must not widen a narrow tray
             combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
             combo.setMinimumContentsLength(8)
+        flat = widgets.flat_style()
+        for i in range(self.tabs.count()):
+            self.tabs.widget(i).setStyleSheet(flat)
         outer.addWidget(self.tabs, 1)
 
+        self.expert_mode = QToolButton()
+        self.expert_mode.setCheckable(True)
+        self.expert_mode.setText(tr("Expert mode"))
+        self.expert_mode.setIcon(icons.icon("tools"))
+        self.expert_mode.setIconSize(QSize(16, 16))
+        self.expert_mode.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.expert_mode.setToolTip("Adds the Expert page: every setting, with an eye to choose what each page shows.")
         self.help_btn = QToolButton()
-        self.help_btn.setText("?")
+        self.help_btn.setIcon(icons.icon("comp_help"))
         self.help_btn.setToolTip("How Render Studio works, and what each control does")
         self.help_btn.clicked.connect(lambda: self.show_help("panel"))
-        self.tabs.setCornerWidget(self.help_btn, Qt.TopRightCorner)          # the general help, beside the tabs
+        self.help_btn.setIconSize(QSize(16, 16))
+        # Expert mode and the general help: in the tray's header, beside its name (header_tools.py).
+        self.header_tools = HeaderTools(self, (self.expert_mode, self.help_btn))
+        outer.insertWidget(0, self.header_tools.own_row)
         self.editor = None
         self._live = None
         self._prep = None
@@ -952,8 +1031,13 @@ class StudioPanel(QWidget):
         self._direct = False
         self._save_to = None
         self._cancelled = False
-        # Render, and under its arrow «Render and save…», the scenes and «Open in Blender…» (the preview, the materials and the
-        # lights are on the toolbar: toolbar.py).
+        mrow = QHBoxLayout()
+        self.materials_btn, self.lights_btn = self._command_button(self.commands.materials), \
+            self._command_button(self.commands.lights)
+        mrow.addWidget(self.materials_btn, 1)
+        mrow.addWidget(self.lights_btn, 1)
+        outer.addLayout(mrow)
+        # Render, and under its arrow «Render and save…», the scenes and «Open in Blender…».
         self.render_save_btn = QAction("Render and save…", self)
         self.render_save_btn.setToolTip("Asks where to save, makes the final picture and saves it straight away, "
                                         "without the live preview and without retouching.")
@@ -965,26 +1049,48 @@ class StudioPanel(QWidget):
         self.expert_btn.setToolTip("Expert mode: opens the scene, as Render would make it, in a Blender with its own window "
                                    "to work in it. The file is saved first; nothing is rendered.")
         self.expert_btn.triggered.connect(lambda: self.open_in_blender())
+        self.commands.preview.setIconText(tr("Preview"))      # the panel's shorter name: a button takes the icon's text
+        self.preview_btn = self._command_button(self.commands.preview)
         self.render_btn = widgets.split_button(
             "Render", lambda: self.render_main(),
             "Makes the final picture now, with the Engine, Quality and size above, without the live preview. It opens in "
             "a window with the retouch tools and Save image…. With «Scenes» chosen in the Output tab it renders those.",
             [self.render_save_btn, self.render_scenes_btn, self.expert_btn])
-        outer.addWidget(self.render_btn)
-        self.expert_mode = QCheckBox("Expert mode")
-        self.expert_mode.setToolTip("Adds the Expert page: every setting, with an eye to choose what each page shows.")
-        outer.addWidget(self.expert_mode)
+        self.render_btn.setIcon(icons.icon("capture"))
+        self.render_btn.setIconSize(QSize(18, 18))
+        self.render_btn.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)      # half the row each, whatever their words
+        self.preview_btn.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        for button in (self.preview_btn, self.render_btn):                         # the two that matter most: taller
+            button.setMinimumHeight(MAIN_BUTTON)
+            button.setIconSize(QSize(22, 22))
+        self.render_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        row = QHBoxLayout()                                   # look, then take it: the two side by side
+        row.addWidget(self.preview_btn, 1)
+        row.addWidget(self.render_btn, 1)
+        outer.addLayout(row)
+        # The foot's last line: what is going on, and how long a render has taken.
         self.status = QLabel("")
         self.status.setWordWrap(True)
-        outer.addWidget(self.status)
+        self.status.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)      # a long message must not widen the tray
+        self.foot_row = QHBoxLayout()
+        self.foot_row.addWidget(self.status, 1)
+        outer.addLayout(self.foot_row)
+        # The finer settings' controls, each at the end of its group (found by a control of that group).
+        anchors = {"surface": self.style_groups.surface, "finish": self.style_groups.finish,
+                   "image": self.sliders["exposure_bias"], "sky": self.sliders["clouds"], "shadows": self.shadow_draw}
+        self.fine = FineControls(self, {group: bindings.row_of(anchor)[0] for group, anchor in anchors.items()})
+        self.fine.changed.connect(self._fine_changed)
         # Every setting's control is in place: the layout takes out of the pages what it does not show (expert.py).
         self.expert = ExpertTab(self, layouts.Folder(presets_folder().parent / "layouts"))
         self.expert_page = scrolled(self.expert)
         self.expert_mode.setChecked(str(QSettings().value(_SETTINGS + "expert_mode", "false")).lower() == "true")
+        self.expert_page.setStyleSheet(flat)
+        for button in (self.materials_btn, self.lights_btn, self.preview_btn, self.expert_mode, self.help_btn):
+            button.setStyleSheet(flat if button not in (self.expert_mode, self.help_btn) else flat + widgets.SMALL_BUTTON)
         self.set_expert_mode(self.expert_mode.isChecked())
         self.expert_mode.toggled.connect(self.set_expert_mode)
         self.clock = widgets.ClockLabel()
-        outer.addWidget(self.clock)
+        self.foot_row.addWidget(self.clock)
         for combo in (self.engine, self.quality):
             combo.currentIndexChanged.connect(self._update_summary)
         self.width.valueChanged.connect(self._update_summary)
@@ -996,6 +1102,7 @@ class StudioPanel(QWidget):
             box.setSizePolicy(QSizePolicy.Ignored, box.sizePolicy().verticalPolicy())
         self._init_document_settings()
         self.check_blender()
+        wheel_guard.watch(self)          # (the wheel scrolls; it changes only a picked field)
 
     @staticmethod
     def _caption(text: str) -> QLabel:
@@ -1057,6 +1164,16 @@ class StudioPanel(QWidget):
     def blender(self):
         from core import render_blender as rb
         return rb.find_blender(str(QSettings().value(rb.SETTINGS_KEY, "") or "") or None)
+
+    def _command_button(self, action) -> QToolButton:
+        """A button of the panel for one of the toolbar's commands: its icon before its name, greyed when the command is."""
+        button = widgets.CentredButton()
+        button.setDefaultAction(action)
+        button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        button.setIconSize(QSize(18, 18))
+        button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        button.setMinimumHeight(28)
+        return button
 
     def blender_or_none(self):
         try:
@@ -1180,12 +1297,49 @@ class StudioPanel(QWidget):
         if getattr(self, "_live", None) is not None:
             self._live.quality_changed()
 
+    def _detect_gpu(self) -> None:
+        """What «Automatic» goes by: whether Cycles has a graphics card here (asked of Blender once)."""
+        if getattr(self, "_gpu", None) is not None:
+            return
+        found = self.blender()
+        if found is None:
+            return
+        self._set_status(tr("Looking for a graphics card…"))
+        QApplication.processEvents()
+        self._gpu = engine_probe.gpu_backend(found)
+        self._set_status("")
+        self._update_summary()
+
+    def final_engine(self) -> str | None:
+        """The engine Render uses: the one chosen, or with «Automatic» Cycles when there is a graphics card, else EEVEE.
+        None while that has not been looked for yet (:meth:`_detect_gpu`; this never starts Blender)."""
+        choice = self.engine.currentData()
+        if choice != "auto":
+            return choice
+        gpu = getattr(self, "_gpu", None)
+        if gpu is None:
+            try:
+                gpu = engine_probe.known(self.blender())
+            except Exception:  # noqa: BLE001 - not known yet
+                gpu = None
+            if gpu is None:
+                return None
+            self._gpu = gpu
+        return "cycles" if gpu else "eevee"
+
+    def _render_engine(self) -> str:
+        """:meth:`final_engine`, looking for a graphics card first when that is what it takes."""
+        if self.engine.currentData() == "auto":
+            self._detect_gpu()
+        return self.final_engine() or "eevee"
+
     def live_engine(self) -> str:
         """The live view's engine. The Interior look needs Cycles (EEVEE can't fill a room lit
-        through a window). Otherwise the panel's Preview engine: EEVEE, Cycles, or Automatic = EEVEE
-        while the view follows the camera or the changes (it must be quick), Cycles on a big model once
-        it follows neither (nothing is sent to Blender again, and EEVEE looks nothing like the final
-        render there). The panel's Engine is for Render."""
+        through a window). Otherwise the panel's Preview engine: EEVEE, Cycles, or Automatic = Cycles
+        when it has a graphics card here (it keeps the scene between frames, so it is the quicker live
+        view, and the truer one). Without a card, EEVEE; and Cycles on a big model once the view
+        follows neither the camera nor the changes (nothing is sent to Blender again, and EEVEE looks
+        nothing like the final render there). The panel's Engine is for Render."""
         block, _amb = presets.studio(self.preset.currentData())
         if block.get("engine_hint") == "cycles":
             return "cycles"
@@ -1193,6 +1347,8 @@ class StudioPanel(QWidget):
         if choice == "cycles":
             return "cycles"
         if choice == "auto":
+            if getattr(self, "_gpu", ""):
+                return "cycles"
             live = self._live
             if (live is not None and not live.follow_camera and not live.follow_changes
                     and self._big_model()):
@@ -1210,13 +1366,17 @@ class StudioPanel(QWidget):
         return write_studio_job(
             self.app.scene, self.app.viewport.camera, work, self.preset.currentData(),
             self.slider_values(), engine=self.live_engine(), quality=0, width=width,
-            height=height, hdri=self.hdri_settings(), backdrop=self.backdrop_settings(), flat=self.flat_settings(), shadows=self.shadow_settings(), ground=self.ground.isChecked(),
+            height=height, hdri=self.hdri_settings(), backdrop=self.backdrop_settings(), flat=self.flat_settings(), shadows=self.shadow_settings(), fine=self.fine_settings(), ground=self.ground.isChecked(),
                 ground_material=self.ground_material_settings(), ground_look=self.ground_look_settings(), skyline=self.skyline_settings(), style=self.style_settings(),
             ground_shadow=self.ground_shadow.isChecked(),
             materials=self.material_specs() if materials is None else materials, serve=True,
             live=True, reuse_model=reuse_model, doc_path=self.doc_path(),
             section_opts=self.section_tab.settings(), progress=self._export_progress(),
                 viewport=getattr(self.app, "viewport", None))
+
+    def window_of_the_program(self):
+        """IngeTrazo's main window, or None."""
+        return getattr(self.app, "window", None)
 
     def doc_path(self):
         """The drawing's file (None until it is saved): proxies keep their originals
@@ -1280,8 +1440,8 @@ class StudioPanel(QWidget):
             width, height = self.output_tab.frame()
             job, script = write_studio_job(
                 self.app.viewport.scene, self.render_camera(), work, self.preset.currentData(),
-                self.slider_values(), engine=self.engine.currentData(), quality=self.quality.currentIndex(),
-                width=width, height=height, hdri=self.hdri_settings(), backdrop=self.backdrop_settings(), flat=self.flat_settings(), shadows=self.shadow_settings(), ground=self.ground.isChecked(),
+                self.slider_values(), engine=self._render_engine(), quality=self.quality.currentIndex(),
+                width=width, height=height, hdri=self.hdri_settings(), backdrop=self.backdrop_settings(), flat=self.flat_settings(), shadows=self.shadow_settings(), fine=self.fine_settings(), ground=self.ground.isChecked(),
                 ground_material=self.ground_material_settings(), ground_look=self.ground_look_settings(), skyline=self.skyline_settings(), style=self.style_settings(),
                 ground_shadow=self.ground_shadow.isChecked(), materials=self.material_specs(),
                 output=self.output_tab.settings(), doc_path=self.doc_path(),
@@ -1352,6 +1512,8 @@ class StudioPanel(QWidget):
             self._live.image.connect(self._live_image)
             self._live.state.connect(self._set_status)
         win = self.preview()
+        if "auto" in (self.preview_engine.currentData(), self.engine.currentData()):
+            self._detect_gpu()
         self._live.set_follow_camera(self.commands.follow_camera.isChecked())
         self._live.set_follow_changes(self.commands.follow_changes.isChecked())
         if prep and not self._live.active and not self._live.usable and self._prep is None:
@@ -1394,8 +1556,8 @@ class StudioPanel(QWidget):
         from PySide6.QtCore import QSize
         from PySide6.QtGui import QIcon
         from PySide6.QtWidgets import QButtonGroup
-        box = QGroupBox("Camera")
-        lay = QVBoxLayout(box)
+        box = widgets.Card("Camera", "camera", icon="grp_camera", kind="column")
+        lay = box.body_layout
         row = QHBoxLayout()
         self.proj_group = QButtonGroup(self)
         self.proj_group.setExclusive(True)
@@ -1552,6 +1714,13 @@ class StudioPanel(QWidget):
         if not Path(path).is_file() or self.window is None or self.window.mode != "preview":
             return
         self.window.show_draft(path)
+        self.window.set_preview_info(self._preview_info())
+
+    def _preview_info(self) -> str:
+        """What the picture in the preview window is: its engine and its size."""
+        engine = "Cycles" if self.live_engine() == "cycles" else "EEVEE"
+        w, h = self.window.view.picture_size()
+        return tr("Preview: {engine} · {w} × {h} px", engine=engine, w=w, h=h)
 
     def _set_status(self, text: str):
         shown = tr(text)
@@ -1573,8 +1742,9 @@ class StudioPanel(QWidget):
     def _update_summary(self, *_a):
         if self.window is not None:
             w, h = self.output_tab.frame()
+            engine = {"cycles": "Cycles", "eevee": "EEVEE", None: tr("Automatic")}[self.final_engine()]
             self.window.set_summary(tr("Render: {engine} · {quality} · {w} × {h} px · {format}",
-                                       engine=self.engine.currentText().split(' —')[0],
+                                       engine=engine,
                                        quality=self.quality.currentText(), w=w, h=h,
                                        format=tr(output.FORMATS[self.output_tab.format.currentData()][0])))
 
@@ -1667,7 +1837,26 @@ class StudioPanel(QWidget):
                           "brightness": round(_value(self.backdrop_strength), 3)}
                          if pic and pic != _CHOOSE and self.bg_mode.currentData() == "picture" else None),
             "flat": self.flat_settings(),
+            **({"fine": fine} if (fine := self.fine_settings()) else {}),
         }
+
+    def fine_settings(self) -> dict:
+        """The finer settings not at their default ({} while the panel is being built)."""
+        return self.fine.settings() if getattr(self, "fine", None) is not None else {}
+
+    def _fine_enable(self) -> None:
+        """The rows of the finer settings that mean something with the other choices."""
+        if getattr(self, "fine", None) is None:
+            return
+        model = dict(self.style_groups.values())
+        model.update({"background.kind": self.bg_mode.currentData(), "shadows.draw": self.shadow_draw.currentData(),
+                      "ground.on": self.ground.isChecked(), "ambient.look": self.preset.currentData()})
+        self.fine.enable(model)
+
+    def _fine_changed(self) -> None:
+        self._fine_enable()
+        self._filter_layout()
+        self._schedule_save()
 
     # -- the ambients and the presets ---------------------------------------------------------
     def set_ambient(self, look: str) -> None:
@@ -1800,11 +1989,13 @@ class StudioPanel(QWidget):
             else:
                 self.backdrop.setCurrentIndex(0)
             self._backdrop_prev = self.backdrop.currentIndex()
+            if getattr(self, "fine", None) is not None:
+                self.fine.set_values(model)
             plain = data.get("flat")
             if plain:
                 self.flat_colour.set_rgb(plain["color"])
             self.bg_mode.setCurrentIndex(self.bg_mode.findData(
-                "flat" if plain else "pano" if self.hdri.currentData() else ("picture" if self.backdrop.currentData() else "sky")))
+                ("transparent" if plain.get("transparent") else "flat") if plain else "pano" if self.hdri.currentData() else ("picture" if self.backdrop.currentData() else "sky")))
             paper = model["background.paper_sky"]
             if paper and self.bg_mode.currentData() == "sky" and model["surface.kind"] != "paper":
                 self.bg_mode.setCurrentIndex(self.bg_mode.findData("paper"))
@@ -1814,6 +2005,7 @@ class StudioPanel(QWidget):
                 w.blockSignals(False)
             self._applying = False
         self._shadows_enable()
+        self._floor_enable()
         for row in (self.ground_rough_row, self.ground_haze_row):
             row.update_value()
         for row in (*self.slider_rows.values(), self.hdri_rotation_row, self.hdri_strength_row, self.hdri_height_row,
@@ -1823,6 +2015,7 @@ class StudioPanel(QWidget):
         self._bg_enable()
         self._skyline_enable()
         self._update_summary()
+        self._fine_enable()
         self._filter_layout()
         if getattr(self, "expert", None) is not None and self.expert.isVisible():
             self.expert.refresh()
@@ -1855,7 +2048,7 @@ class StudioPanel(QWidget):
             s = self.sliders[key]
             s.setValue(int(round((float(value) - lo) / (hi - lo) * s.maximum())))
         hint = block.get("engine_hint")
-        if hint and self.engine.currentData() != hint:
+        if hint and self.engine.currentData() != hint and self.final_engine() != hint:
             # EEVEE's screen-space light can't fill a room lit through a
             # window (it comes out blue and flat): a path tracer is needed.
             self.engine.setCurrentIndex(max(0, self.engine.findData(hint)))
@@ -1878,10 +2071,10 @@ class StudioPanel(QWidget):
         """Select ``path`` as the 360° background, adding it to the list."""
         path = str(Path(path))
         i = self.hdri.findData(path)
-        if i < 0:
+        self.hdri.blockSignals(True)              # (before the insert: it moves «Choose a file…», which is the current line,
+        if i < 0:                                 # and that change would open the dialog again)
             i = self.hdri.count() - 1             # before "Choose a file…"
             self.hdri.insertItem(i, Path(path).name, path)
-        self.hdri.blockSignals(True)
         self.hdri.setCurrentIndex(i)
         self.hdri.blockSignals(False)
         self._hdri_prev = i
@@ -1923,6 +2116,7 @@ class StudioPanel(QWidget):
         self._shadows_enable()
         self._skyline_enable()
         self._ground_grass_hint()
+        self._fine_enable()
         try:
             self.sun_tab._show_sun()                    # the night's sliders or the sun's
         except Exception:  # noqa: BLE001 - while the panel is being built
@@ -1934,7 +2128,7 @@ class StudioPanel(QWidget):
 
     def _floor_enable(self, *_a):
         """«Shadow on the floor» can be chosen unless a generated ground is seen as it is."""
-        self.ground_shadow.setEnabled(not self.ground.isChecked() or self.bg_mode.currentData() == "flat")
+        self.ground_shadow.setEnabled(not self.ground.isChecked() or self.bg_mode.currentData() in ("flat", "transparent"))
 
     def _bg_enable(self, *_a):
         """Show the controls of the chosen background only (and say when the output hides it)."""
@@ -1949,7 +2143,7 @@ class StudioPanel(QWidget):
             self.slider_rows["clouds"].setEnabled(sky_only)
             self.sky_note.setText("" if sky_only else tr("Clouds are the look's sky: the panorama or the picture has its own."))
             self.sky_note.setVisible(not sky_only)
-        hidden = mode != "sky" and bool(self.output_tab.transparent.isChecked())
+        hidden = mode not in ("sky", "transparent") and bool(self.output_tab.transparent.isChecked())
         self.bg_note.setText(tr("The Output tab leaves the sky transparent, so this background will not show in the "
                                 "render. Untick «Transparent sky» there.") if hidden else "")
         self._form_bg.setRowVisible(self.bg_note, hidden)
@@ -1969,10 +2163,10 @@ class StudioPanel(QWidget):
     def set_backdrop_path(self, path: str):
         """Use ``path`` as the fixed picture (and remember it among the recent ones)."""
         i = self.backdrop.findData(path)
+        self.backdrop.blockSignals(True)              # (before the insert, as in set_hdri_path)
         if i < 0:
             i = self.backdrop.count() - 1             # before "Choose a file…"
             self.backdrop.insertItem(i, Path(path).name, path)
-        self.backdrop.blockSignals(True)
         self.backdrop.setCurrentIndex(i)
         self.backdrop.blockSignals(False)
         self._backdrop_prev = i
@@ -2011,9 +2205,8 @@ class StudioPanel(QWidget):
     def _build_shadows_box(self):
         """«Shadows»: how the sun's shadows are drawn, whatever the style. One choice; its settings only when it needs them."""
         from .section_panel import ColourButton
-        box = QGroupBox("Shadows")
-        form = QFormLayout(box)
-        form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        box = widgets.Card("Shadows", "shadows", icon="grp_shadows")
+        form = box.form
         self._form_shadows = form
         self.shadow_draw = QComboBox()
         for key, label in presets.SHADOW_DRAWS.items():
@@ -2059,6 +2252,9 @@ class StudioPanel(QWidget):
 
     def _background_chosen(self, _i) -> None:
         self._paper_under = False                # what a person chooses is what there is
+        if self.bg_mode.currentData() == "transparent" and self.output_tab.format.currentData() == "jpeg":
+            self.output_tab.format.setCurrentIndex(self.output_tab.format.findData("png"))     # a JPEG has no transparency
+            self._set_status(tr("The output is now PNG: a JPEG cannot be transparent."))
 
     def style_settings(self) -> dict:
         """The surface, outline, finish and paper as the document and the render job keep them (format 1's style)."""
@@ -2208,9 +2404,13 @@ class StudioPanel(QWidget):
                 "strength": 2.0 ** _value(self.backdrop_strength)}
 
     def flat_settings(self) -> dict | None:
-        if self.bg_mode.currentData() != "flat":
+        mode = self.bg_mode.currentData()
+        if mode not in ("flat", "transparent"):
             return None
-        return {"color": [round(float(c), 4) for c in self.flat_colour.rgb()]}
+        out = {"color": [round(float(c), 4) for c in self.flat_colour.rgb()]}
+        if mode == "transparent":
+            out["transparent"] = True                # (kept as a plain colour that is not painted)
+        return out
 
     def hdri_settings(self) -> dict | None:
         path = self.hdri.currentData()
@@ -2498,8 +2698,8 @@ class StudioPanel(QWidget):
         if live is None or not live.usable:
             return False
         out = self.output_tab.settings()
-        engine = self.engine.currentData()
-        if (out.get("projection") in ("flat", "360") or out.get("transparent") or out.get("format") not in ("png", "jpeg")
+        engine = self._render_engine()
+        if (out.get("projection") in ("flat", "360") or out.get("transparent") or self.bg_mode.currentData() == "transparent" or out.get("format") not in ("png", "jpeg")
                 or live.live_engine_name() != engine or engine not in rb.SAMPLES):
             return False
         width, height = self.output_tab.frame()
@@ -2634,8 +2834,8 @@ class StudioPanel(QWidget):
             job, script = write_studio_job(
                 self.app.viewport.scene, camera or self.app.viewport.camera, self.work,
                 self.preset.currentData(), self.slider_values(),
-                engine=self.engine.currentData(), quality=self.quality.currentIndex(),
-                width=width, height=height, hdri=self.hdri_settings(), backdrop=self.backdrop_settings(), flat=self.flat_settings(), shadows=self.shadow_settings(), ground=self.ground.isChecked(),
+                engine=self._render_engine(), quality=self.quality.currentIndex(),
+                width=width, height=height, hdri=self.hdri_settings(), backdrop=self.backdrop_settings(), flat=self.flat_settings(), shadows=self.shadow_settings(), fine=self.fine_settings(), ground=self.ground.isChecked(),
                 ground_material=self.ground_material_settings(), ground_look=self.ground_look_settings(), skyline=self.skyline_settings(), style=self.style_settings(), lines=lines,
                 ground_shadow=self.ground_shadow.isChecked(),
                 materials=self.material_specs(), output=out, doc_path=self.doc_path(),

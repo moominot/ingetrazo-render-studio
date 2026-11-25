@@ -68,7 +68,7 @@ where IngeTrazo's Render tab keeps it, so both use the same Blender.</p>
 
 <h4>In four steps</h4>
 <ol>
-<li>Choose a <b>Look</b> and move the sliders (the scene), and set the <b>Quality</b> (three buttons; the engines are under <i>Advanced</i>) and the <b>Width</b> of the final render.</li>
+<li>Choose a <b>Look</b> and move the sliders (the scene), and set the <b>Quality</b> (three buttons; <b>Expert mode</b> has the engines) and the <b>Width</b> of the final render.</li>
 <li>Press <b>Open preview…</b>: a window with a <b>live preview</b> of the 3D view that you can zoom and move. (To skip the preview, press <b>Render</b> in the panel.)</li>
 <li>Press <b>Render</b> for the final picture. Then the retouch sliders and <b>Save image…</b> appear. Or press
 <b>Render and save…</b> to choose a file and get the picture saved straight away, with no retouching.</li>
@@ -84,8 +84,8 @@ instantly, without rendering again. Every slider shows its value and a line sayi
 <h4>The panel</h4>
 <p>The panel has pages: <b>Main</b> (your presets, the look, the engine and quality), <b>Image</b> (exposure, warmth,
 saturation; <i>Effects</i>: vignette and depth of field), <b>Environment</b> (background, clouds and sun, ground, horizon, fog, and the sun's
-place and date), <b>Section</b> and <b>Output</b> (the lights and the materials have windows of their own: <b>Lights…</b>, <b>Materials…</b>). The simple controls are in view; the rest is folded
-under <i>Advanced</i>. Only Render uses the engine, quality and width; the preview is always a quick
+place and date), <b>Section</b> and <b>Output</b> (the lights and the materials have windows of their own: <b>Lights…</b>, <b>Materials…</b>). The simple controls are in view; <b>Expert mode</b> adds a page
+with every setting, where an eye chooses what each page shows. Only Render uses the engine, quality and width; the preview is always a quick
 draft. <b>Presets</b>: <i>Save as preset…</i> keeps the settings under a name to use in any drawing; <i>⋯</i> deletes a
 preset or exports and imports them as files to share. <b>Reset all settings</b> puts every setting back to the defaults
 (saved presets are not touched).</p>
@@ -132,7 +132,7 @@ and the place are folded under <i>Place and date</i>.</td></tr>
 <tr><td valign='top'><b>Background</b></td><td><b>Sky of the look</b>, a <b>360° panorama</b> (see below) or a <b>Fixed
 picture</b>: one flat image behind the model that stays put when the view turns, shown filling the frame (cropped),
 whole (the look's sky around it) or stretched. If the Output tab leaves the sky transparent, no background shows.</td></tr>
-<tr><td valign='top'><b>Render, Preview</b></td><td>Under <i>Advanced</i>: the engine of the final render and the one of the preview. <b>EEVEE</b> is fast (about 3 seconds). <b>Cycles</b> gives the best
+<tr><td valign='top'><b>Render, Preview</b></td><td>In <b>Expert mode</b> (or in Quality, with their eye open): the engine of the final render and the one of the preview. <b>EEVEE</b> is fast (about 3 seconds). <b>Cycles</b> gives the best
 quality (about 5 seconds on an RTX graphics card, slower without one), with truer light bouncing.</td></tr>
 <tr><td valign='top'><b>Quality</b></td><td>Draft, Medium or High: the number of samples. EEVEE uses 16 / 64 / 128 and
 Cycles 32 / 128 / 512. More samples mean less noise and a slower render. Use Draft while you adjust and High for the
@@ -282,11 +282,13 @@ file, for example a free one from polyhaven.com. The ground melts into the image
 <h4>The preview window</h4>
 <p>One window to look at the scene and to make the picture. It has three states:</p>
 <table cellspacing='0' cellpadding='3' width='100%'>
-<tr><td valign='top'><b>Preview quality</b></td><td>Under <i>Quality › Advanced</i>: <b>Fast</b> (smaller, rougher pictures, quicker answers), <b>Normal</b> or <b>High</b> (bigger, cleaner ones). It only affects the preview; Render has its own quality.</td></tr>
+<tr><td valign='top'><b>Preview quality</b></td><td>In <b>Expert mode</b>, or in Quality with its eye open: <b>Fast</b> (smaller, rougher pictures, quicker answers), <b>Normal</b> or <b>High</b> (bigger, cleaner ones). It only affects the preview; Render has its own quality.</td></tr>
 <tr><td valign='top'><b>Preview</b></td><td>The live view: Blender stays open with your scene and look, and an image follows your
-work. It uses EEVEE with its slowest effects off, whatever the <b>Engine</b> and <b>Quality</b> say (those are for Render),
-except with the <b>Interior</b> look: EEVEE can't fill a room lit through a window, so there the preview uses <b>Cycles</b> (a
-few samples, denoised; best with a graphics card) and looks like the render. The grass is as dense as in the render. The
+work, whatever the <b>Engine</b> and <b>Quality</b> say (those are for Render). It is a draft: 960 px wide and few
+samples (with <b>High</b> preview quality, as wide as the window shows it, up to the final picture's width). With
+<b>Preview engine</b> on <b>Automatic</b> it uses <b>Cycles</b> when Blender finds a graphics card (it keeps the scene in
+the card between pictures, so it answers quicker than EEVEE), else <b>EEVEE</b> with its slowest effects off. The
+<b>Interior</b> look always uses Cycles. The grass is as dense as in the render. The
 first start takes a few seconds; after that everything happens in the same Blender. Closing the window stops it.
 <br><b>Follow the camera</b>: while you orbit or walk, small rough frames keep coming (three or four a second, as fast as
 Blender renders them); stop, and a <b>quick</b> image comes, then a cleaner <b>draft</b>. Off: the image keeps the camera
@@ -304,9 +306,16 @@ window the render goes on, and the picture opens when it is ready.</td></tr>
 instantly, without rendering again, and what you see is what you save. The live view stays off so it does not draw over it;
 <b>Back to preview</b> brings it back.</td></tr>
 </table>
-<p><b>Zoom and move</b> (preview and final picture): the mouse wheel zooms where the cursor is, dragging moves the picture, a
+<p><b>Moving the camera</b> (preview): drag to orbit, <b>Shift</b>+drag to pan, the wheel zooms towards the pointer; the
+middle button works as in the 3D view. With <b>Sync camera</b> on, the 3D view moves too; off, only the preview's camera
+moves (and Render and New scene use it). <b>Ctrl</b>+wheel and <b>Ctrl</b>+drag look closely at the picture instead.</p>
+<p><b>Panel</b> (in the window's bar) brings Render Studio's panel into view; if the window covers it, it moves aside.</p>
+<p><b>Saving the preview</b>: <b>Save picture…</b> (or a right click on the picture) saves exactly what is on screen,
+as PNG or JPEG, without rendering; <b>Copy picture</b> puts it on the clipboard. <b>Render</b> is another picture, made
+anew at the panel's size with more samples and every effect, even with the same engine and High quality.</p>
+<p><b>Zoom and move</b> (final picture): the mouse wheel zooms where the cursor is, dragging moves the picture, a
 double click goes between <b>Fit</b> and <b>100 %</b> (one picture pixel per screen pixel); the keys <b>+</b> and <b>-</b> zoom,
-<b>0</b> fits and <b>1</b> is 100 %. The zoom and place stay while new preview frames arrive.</p>
+<b>0</b> fits and <b>1</b> is 100 %.</p>
 <p><b>Retouch sliders</b> (final picture only):</p>
 <table cellspacing='0' cellpadding='3' width='100%'>
 <tr><td valign='top'><b>Exposure (EV)</b></td><td>-2 to +2 stops; highlights soften instead of clipping.</td></tr>

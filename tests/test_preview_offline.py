@@ -120,11 +120,11 @@ ok(w.expert_btn in w.render_btn.menu().actions(), "…and Open in Blender… is 
 c = panel.commands
 ok(c.follow_camera.isCheckable() and c.follow_changes.isCheckable() and not c.follow_camera.icon().isNull(),
    "the two switches are commands with icons")
-ok(not c.update.isVisible(), "…«Update preview» is not offered while the changes are synced")
+ok(c.update.isVisible() and not c.update.isEnabled(), "…«Update preview» is there but greyed while the changes are synced")
 c.follow_changes.setChecked(False); qa.processEvents()
-ok(c.update.isVisible(), "…and it is when they are not")
+ok(c.update.isEnabled(), "…and usable when they are not")
 c.follow_changes.setChecked(True); qa.processEvents()
-ok(w.summary.text() == "Render: EEVEE · Medium · 1920 × 1080 px · PNG, 8 bits", f"…and says what Render will use («{w.summary.text()}»)")
+ok(w.summary.text() == "Render: Automatic · Medium · 1920 × 1080 px · PNG, 8 bits", f"…and says what Render will use («{w.summary.text()}»)")
 panel.quality.setCurrentIndex(2); panel.engine.setCurrentIndex(panel.engine.findData("cycles")); panel.width.setValue(1280)
 ok(w.summary.text() == "Render: Cycles · High · 1280 × 720 px · PNG, 8 bits", f"…following the panel («{w.summary.text()}»)")
 w.show_draft(small); qa.processEvents()
@@ -167,10 +167,47 @@ ok(solo.mode == "final" and sees(solo.bar_final) and not sees(solo.bar_preview) 
 solo.close()
 
 # ---- the panel ---------------------------------------------------------------------------------------------
+# what is see-through shows the WINDOW's checkerboard: the same squares, in the same place, whatever the picture's size or zoom
+import tempfile as _tmp
+from PySide6.QtGui import QColor as _Color, QImage as _Image
+from render_studio.preview import ImageWindow as _Window
+_w = _Window()
+_w.resize(900, 600); _w.show()
+_dir = _tmp.mkdtemp()
+def _frame(width):
+    """A live frame ``width`` wide: nothing, but for a red block at the right."""
+    img = _Image(width, width // 2, _Image.Format_ARGB32); img.fill(_Color(0, 0, 0, 0))
+    for x in range(width * 3 // 4, width):
+        for y in range(width // 2):
+            img.setPixelColor(x, y, _Color(200, 30, 30, 255))
+    path = os.path.join(_dir, f"live{width}.png"); img.save(path)
+    return path
+def _board():
+    """What the view shows: the greys along a line across the middle of its left half, in the window's own pixels."""
+    for _ in range(5):
+        QApplication.processEvents()
+    shot = _w.view.viewport().grab().toImage()
+    y = 200                                  # (a fixed line: a scroll bar that appears makes the view a little shorter)
+    return [shot.pixelColor(x, y).red() for x in range(shot.width() // 4, shot.width() // 2)]
+_w.show_draft(_frame(160)); _small = _board()
+_runs = [len(r) for r in "".join("L" if g > 220 else "D" for g in _small).replace("LD", "L|D").replace("DL", "D|L").split("|")]
+ok(set(_small) == {236, 204} and set(_runs[1:-1]) == {12}, f"a live frame with nothing behind shows the checkerboard, 12 px squares ({sorted(set(_small))}, {_runs[1:-1][:4]})")
+_w.show_draft(_frame(480)); _large = _board()
+ok(_large == _small, "a frame of another size: the same squares in the same place")
+_w.view.zoom_by(1.7); _zoomed = _board()
+ok(_zoomed == _small, "…and zoomed in too: the board is the window's")
+_w.view.fit(); _w.set_image(_frame(320))
+ok(_board() == _small, "…and under the finished picture")
+_solid = _Image(320, 160, _Image.Format_RGB32); _solid.fill(_Color(10, 90, 10)); _p = os.path.join(_dir, "solid.png"); _solid.save(_p)
+_w.show_draft(_p)
+ok(set(_board()) == {10}, "a picture with nothing see-through has no board")
+_w.close(); _w.deleteLater()
+
 ok(hasattr(panel, "render_btn") and hasattr(panel, "render_save_btn") and not hasattr(panel, "live_box"),
    "the panel has Render and Render and save…, and no Live view box (that is in the preview window)")
-ok(panel.commands.preview.isEnabled() and not hasattr(panel, "preview_btn") and not hasattr(panel, "materials_btn"),
-   "…and the preview, the materials and the lights are commands of the toolbar, not buttons of the panel")
+ok(panel.commands.preview.isEnabled() and panel.preview_btn.defaultAction() is panel.commands.preview
+   and panel.materials_btn.defaultAction() is panel.commands.materials and panel.lights_btn.defaultAction() is panel.commands.lights,
+   "…and its Open preview, Materials and Lights buttons are the toolbar's own commands")
 ok(set(panel.slider_rows) == set(presets.SLIDERS), "every panel slider has a row with a value and a hint")
 ok(all(r.hint.text() and r.value_label.text() for r in panel.slider_rows.values()), "…each says what it does and its value")
 ok(panel.slider_rows["exposure_bias"].value_label.text() == "+0.0 EV" and panel.slider_rows["clouds"].value_label.text().endswith("%"),
@@ -182,7 +219,8 @@ ok(panel.slider_rows["clouds"].value_label.text() == f"{presets.studio('night')[
 panel.apply_settings(panel.settings_dict() | {"sliders": {"clouds": 0.8}});
 ok(panel.slider_rows["clouds"].value_label.text() == "80%", "…and settings put in from the document")
 titles = [g.title() for g in panel.findChildren(P.QGroupBox) if not g.isHidden()]       # (the look's group is hidden)
-ok(set(titles) == {"Presets", "Light", "Surface", "Outline", "Finish", "Shadows", "Camera", "Corrections", "Sun and sky", "Background", "Ground", "Horizon", "Fog", "Quality"}, f"the panel's groups ({titles})")
+ok(set(titles) == {"Projection", "Size", "File", "What to render", "Save", "Sections in the drawing", "Cap", "Cap outline",
+                   "Presets", "Light", "Surface", "Outline", "Finish", "Shadows", "Camera", "Corrections", "Sun and sky", "Background", "Ground", "Horizon", "Fog", "Quality"}, f"the panel's groups ({titles})")
 ok({"preview", "rendering", "final"} <= set(__import__("render_studio.preview", fromlist=["x"]).NOTES), "each state has its own note")
 _restore_settings()
 # ---- the preview's quality: fast, normal, high ----

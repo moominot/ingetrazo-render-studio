@@ -24,7 +24,7 @@ un cambio hace que la vista previa se actualice; los controles de <b>retoque</b>
 al instante, sin volver a renderizar. Cada control muestra su valor y una línea que dice qué hace.</p>
 
 <h4>El panel</h4>
-<p>El panel tiene páginas: <b>Principal</b> (tus preajustes, el aspecto, el motor y la calidad), <b>Imagen</b> (exposición, calidez, saturación; <i>Efectos</i>: viñeta y profundidad de campo), <b>Entorno</b> (fondo, nubes y sol, suelo, y el lugar y la fecha del sol), <b>Sección</b> y <b>Salida</b> (las luces y los materiales tienen ventana propia: <b>Luces…</b>, <b>Materiales…</b>). Los controles sencillos están a la vista; el resto está plegado bajo <i>Avanzado</i> o <i>Efectos</i>. Solo Renderizar usa el motor, la calidad y el ancho; la vista previa es siempre un borrador rápido. <b>Preajustes</b>: <i>Guardar como preajuste…</i> guarda los ajustes con un nombre para usarlos en cualquier dibujo; <i>⋯</i> borra un preajuste o los exporta e importa como archivos para compartirlos. <b>Restablecer todos los ajustes</b> pone todos los ajustes en los valores por defecto (los preajustes guardados no se tocan).</p>
+<p>El panel tiene páginas: <b>Principal</b> (tus preajustes, el aspecto, el motor y la calidad), <b>Imagen</b> (exposición, calidez, saturación; <i>Efectos</i>: viñeta y profundidad de campo), <b>Entorno</b> (fondo, nubes y sol, suelo, y el lugar y la fecha del sol), <b>Sección</b> y <b>Salida</b> (las luces y los materiales tienen ventana propia: <b>Luces…</b>, <b>Materiales…</b>). Los controles sencillos están a la vista; el <b>Modo experto</b> añade una pestaña con todos los ajustes, donde un ojo elige lo que muestra cada pestaña. Solo Renderizar usa el motor, la calidad y el ancho; la vista previa es siempre un borrador rápido. <b>Preajustes</b>: <i>Guardar como preajuste…</i> guarda los ajustes con un nombre para usarlos en cualquier dibujo; <i>⋯</i> borra un preajuste o los exporta e importa como archivos para compartirlos. <b>Restablecer todos los ajustes</b> pone todos los ajustes en los valores por defecto (los preajustes guardados no se tocan).</p>
 <table cellspacing='0' cellpadding='3' width='100%'>
 <tr><td valign='top'><b>Aspecto</b></td><td>La luz y el ambiente: véase la lista de abajo. Cambiarlo pone los valores propios de ese aspecto
 en los controles que fija.</td></tr>
@@ -45,13 +45,13 @@ hasta 2. No disponible mientras un fondo de 360° ilumina la escena.</td></tr>
 <tr><td valign='top'><b>Niebla</b></td><td>Cuán espesa es la niebla, de 0 a 100 % (0 = ninguna): vela lo lejano con el color de la luz del cielo, y cuanto más espesa, antes se cierra.</td></tr>
 <tr><td valign='top'><b>La niebla empieza a</b></td><td>A qué distancia de la cámara empieza la niebla, en metros: más cerca, todo es claro.</td></tr>
 <tr><td valign='top'><b>Estrellas</b></td><td>Cuántas estrellas tiene el cielo de noche, de 0 a 200 % (0 = ninguna). Solo se muestra de noche: el aspecto Noche, o cualquier aspecto de día cuando el sol se ha puesto en el lugar, la fecha y la hora del sitio (entonces el render es de noche, sin sol).</td></tr>
-<tr><td valign='top'><b>Horizonte, Perfil</b></td><td><b>Montañas</b>, <b>colinas</b>, un <b>bosque lejano</b> o un <b>skyline de ciudad</b> que ocultan la línea donde el suelo generado se encuentra con el cielo. Están en capas alrededor de la escena (la más cercana nítida, la más lejana más pálida, fundida con el color del horizonte del cielo), no proyectan sombra y de noche son oscuras. <b>Altura</b> es el ángulo que alcanzan las cimas más altas por encima del horizonte. Bajo <i>Avanzado</i>: la <b>Distancia</b> de la capa más lejana (Automático: el borde del suelo), la <b>Forma</b> (otro número, otro contorno) y un <b>Color</b> propio. Hace falta el suelo generado.</td></tr>
+<tr><td valign='top'><b>Horizonte, Perfil</b></td><td><b>Montañas</b>, <b>colinas</b>, un <b>bosque lejano</b> o un <b>skyline de ciudad</b> que ocultan la línea donde el suelo generado se encuentra con el cielo. Están en capas alrededor de la escena (la más cercana nítida, la más lejana más pálida, fundida con el color del horizonte del cielo), no proyectan sombra y de noche son oscuras. <b>Altura</b> es el ángulo que alcanzan las cimas más altas por encima del horizonte. Después, la <b>Distancia</b> de la capa más lejana (Automático: el borde del suelo), la <b>Forma</b> (otro número, otro contorno) y un <b>Color</b> propio. Hace falta el suelo generado.</td></tr>
 <tr><td valign='top'><b>Estilo</b></td><td>Cómo se dibuja la imagen; todos los estilos pueden tener <b>contornos</b> (el grosor en píxeles, 0 = ninguno, y el color). <b>Ninguno</b>: tal como es. <b>Blanco</b>: todos los materiales blancos. <b>Maqueta</b>: una maqueta, cada objeto con un solo material (un color, o un material del dibujo). <b>Luz</b>: la imagen muestra los <b>lux</b> que recibe cada superficie, en falso color con una escala dibujada a la derecha (números redondos elegidos a partir de la imagen, o fijados con <i>Escala hasta</i>); aproximado: superficies blancas mate, el sol de un día claro (100 000 lx) y los lúmenes de las luces. <b>Boceto</b>: líneas de lápiz sobre papel, sin el cielo; <i>Trazo irregular</i> hace temblar la línea y la repasa dos veces, <i>Extensión de las líneas</i> deja que pasen de las esquinas. <b>Acuarela</b>: lavados de color; <i>Humedad</i> cómo se extiende el color, <i>Bordes</i> cuán oscuro se acumula el pigmento, <i>Papel</i> cuán rugoso es.</td></tr>
 <tr><td valign='top'><b>Luna</b></td><td>Cuán brillante es la luz de la luna, de 0 a 200 %. No se calcula una luna real (la fase y el lugar): es un ajuste libre. Solo se muestra de noche.</td></tr>
 <tr><td valign='top'><b>Interior</b></td><td>Márcalo para la imagen de una sala: se expone para el interior (la ventana puede quemarse) y se renderiza con Cycles. El día o la noche siguen al sol.</td></tr>
 <tr><td valign='top'><b>Fecha, Hora</b></td><td>Dos deslizadores siempre a la vista: la fecha a lo largo del año (la etiqueta dice la estación, como la vive el lugar) y la hora a lo largo del día (la etiqueta dice la parte del día: noche, alba, mañana, mediodía, tarde, anochecer); ambos tienen marcas (las cuatro estaciones; noche, alba, hora dorada, mediodía, hora dorada, anochecer) a las que se pega el control. El calendario, la hora exacta, la zona horaria y el lugar están plegados bajo <i>Lugar y fecha</i>.</td></tr>
 <tr><td valign='top'><b>Fondo</b></td><td><b>Cielo del aspecto</b>, un <b>panorama 360°</b> (ver abajo) o una <b>Imagen fija</b>: una imagen plana detrás del modelo que no se mueve al girar la vista; llena el marco (recortada), se ve entera (con el cielo del aspecto alrededor) o se estira. Si la pestaña Salida deja el cielo transparente, no se ve ningún fondo.</td></tr>
-<tr><td valign='top'><b>Render, Previsualización</b></td><td>En <i>Avanzado</i>: el motor del render final y el de la previsualización. <b>EEVEE</b> es rápido (unos 3 segundos). <b>Cycles</b> da la mejor
+<tr><td valign='top'><b>Render, Vista previa</b></td><td>En el <b>Modo experto</b> (o en Calidad, con el ojo abierto): el motor del render final y el de la vista previa. <b>EEVEE</b> es rápido (unos 3 segundos). <b>Cycles</b> da la mejor
 calidad (unos 5 segundos en una tarjeta gráfica RTX, más lento sin ella), con un rebote de luz más verdadero.</td></tr>
 <tr><td valign='top'><b>Calidad</b></td><td>Borrador, Media o Alta: el número de muestras. EEVEE usa 16 / 64 / 128 y
 Cycles 32 / 128 / 512. Más muestras significan menos ruido y un render más lento. Usa Borrador mientras ajustas y Alta para la
@@ -185,11 +185,13 @@ por ejemplo uno gratuito de polyhaven.com. El suelo se funde con el horizonte de
 <h4>La ventana de vista previa</h4>
 <p>Una ventana para mirar la escena y hacer la imagen. Tiene tres estados:</p>
 <table cellspacing='0' cellpadding='3' width='100%'>
-<tr><td valign='top'><b>Calidad de la vista previa</b></td><td>En <i>Calidad › Avanzado</i>: <b>Rápida</b> (imágenes más pequeñas y toscas, respuestas más rápidas), <b>Normal</b> o <b>Alta</b> (más grandes y limpias). Solo afecta a la vista previa; el Render tiene su propia calidad.</td></tr>
+<tr><td valign='top'><b>Calidad de la vista previa</b></td><td>En el <b>Modo experto</b>, o en Calidad con el ojo abierto: <b>Rápida</b> (imágenes más pequeñas y toscas, respuestas más rápidas), <b>Normal</b> o <b>Alta</b> (más grandes y limpias). Solo afecta a la vista previa; el Render tiene su propia calidad.</td></tr>
 <tr><td valign='top'><b>Vista previa</b></td><td>La vista en vivo: Blender se queda abierto con tu escena y aspecto, y una imagen sigue tu
-trabajo. Usa EEVEE con los efectos más lentos desactivados, diga lo que diga el <b>Motor</b> y la <b>Calidad</b> (son para Renderizar),
-salvo con el aspecto <b>Interior</b>: EEVEE no puede llenar de luz una habitación iluminada por una ventana, así que allí la vista previa usa <b>Cycles</b> (unas
-pocas muestras, sin ruido; mejor con una tarjeta gráfica) y se parece al render. El césped es tan denso como en el render. El
+trabajo, diga lo que diga el <b>Motor</b> y la <b>Calidad</b> (son para la captura). Es un borrador: 960 px de ancho y
+pocas muestras (con la calidad de vista previa <b>Alta</b>, tan ancho como lo muestra la ventana, hasta el ancho de la
+captura). Con el <b>Motor de la vista previa</b> en <b>Automático</b> usa <b>Cycles</b> si Blender encuentra una tarjeta
+gráfica (conserva la escena en la tarjeta entre imágenes, así que responde antes que EEVEE); si no, <b>EEVEE</b> con los
+efectos más lentos desactivados. El aspecto <b>Interior</b> siempre usa Cycles. El césped es tan denso como en el render. El
 primer arranque tarda unos segundos; después todo ocurre en el mismo Blender. Cerrar la ventana lo detiene.
 <br><b>Seguir la cámara</b>: mientras orbitas o caminas, van llegando fotogramas pequeños y toscos (tres o cuatro por segundo, tan rápido como
 Blender los renderiza); detente, y llega una imagen <b>rápida</b>, luego un <b>borrador</b> más limpio. Desactivado: la imagen conserva la cámara
@@ -207,9 +209,18 @@ ventana el render continúa, y la imagen se abre cuando está lista.</td></tr>
 al instante, sin volver a renderizar, y lo que ves es lo que se guarda. La vista en vivo queda apagada para que no dibuje encima;
 <b>Volver a la vista previa</b> la trae de nuevo.</td></tr>
 </table>
-<p><b>Zoom y movimiento</b> (vista previa e imagen final): la rueda del ratón amplía donde está el cursor, arrastrar mueve la imagen, un
+<p><b>Mover la cámara</b> (vista previa): arrastra para orbitar, <b>Mayús</b>+arrastrar para desplazar, la rueda hace
+zoom hacia el cursor; el botón central funciona como en la vista 3D. Con <b>Seguir la cámara</b> activado, la vista 3D
+también se mueve; desactivado, solo se mueve la cámara de la vista previa (y es la que usan la captura y la escena nueva).
+<b>Ctrl</b>+rueda y <b>Ctrl</b>+arrastrar sirven para mirar de cerca la imagen.</p>
+<p><b>Panel</b> (en la barra de la ventana) muestra el panel de Render Studio; si la ventana lo tapa, se aparta.</p>
+<p><b>Guardar la vista previa</b>: <b>Guardar la imagen…</b> (o el botón derecho sobre la imagen) guarda exactamente lo
+que se ve, en PNG o JPEG, sin capturar de nuevo; <b>Copiar la imagen</b> la pone en el portapapeles. La <b>captura</b> es
+otra imagen, hecha de nuevo al tamaño del panel con más muestras y todos los efectos, aunque tengan el mismo motor y
+calidad alta.</p>
+<p><b>Zoom y movimiento</b> (imagen final): la rueda del ratón amplía donde está el cursor, arrastrar mueve la imagen, un
 doble clic va entre <b>Ajuste</b> y <b>100 %</b> (un píxel de la imagen por píxel de pantalla); las teclas <b>+</b> y <b>-</b> amplían,
-<b>0</b> ajusta y <b>1</b> es 100 %. El zoom y el lugar se conservan mientras llegan nuevos fotogramas de vista previa.</p>
+<b>0</b> ajusta y <b>1</b> es 100 %.</p>
 <p><b>Controles de retoque</b> (solo la imagen final):</p>
 <table cellspacing='0' cellpadding='3' width='100%'>
 <tr><td valign='top'><b>Exposición (EV)</b></td><td>-2 a +2 pasos; las luces altas se suavizan en lugar de recortarse.</td></tr>

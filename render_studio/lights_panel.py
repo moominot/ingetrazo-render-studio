@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QColorDialog, QComb
                                QLabel, QLineEdit, QPushButton, QSizePolicy, QSlider, QSpinBox, QToolButton,
                                QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
+from . import wheel_guard
 from . import light_ops as ops, light_view, lights as L
 
 _SETTINGS = "render_studio/lights_"
@@ -194,6 +195,7 @@ class LightEditor(QDialog):
         lay = QVBoxLayout(self)
         lay.addWidget(tab, 1)
         self.tab = tab
+        wheel_guard.watch(self)          # (the wheel scrolls; it changes only a picked field)
 
 
 class LightsTab(QWidget):

@@ -3598,6 +3598,8 @@ def build(job):
             sun = core["add_sun"](scene, sun_dir, strength)
             if st.get("sun_angle"):
                 sun.data.angle = math.radians(float(st["sun_angle"]))
+            if st.get("sun_jitter") and hasattr(sun.data, "use_shadow_jitter"):
+                sun.data.use_shadow_jitter = True
             kelvin = float(st.get("sun_kelvin") or sun_kelvin(sun_dir))
             sun.data.color = kelvin_rgb(kelvin)
             say("sun", f"{kelvin:.0f} K")
@@ -3712,6 +3714,8 @@ def build(job):
     r.film_transparent = False
     scene["rs_flat"] = json.dumps(st.get("flat"))      # the plain-colour background: put behind the picture when it is rendered
     scene["rs_shadows"] = json.dumps(st.get("shadows"))        # how the shadows are painted over it (None: as rendered)
+    scene["rs_fine"] = json.dumps(st.get("fine"))              # the finer settings not at their default
+    scene["rs_shadow_ink"] = json.dumps(st.get("shadow_ink"))
     set_look(scene, st.get("looks") or ["AgX - Medium High Contrast", "Medium High Contrast"],
              st.get("white_balance"), st.get("tint"))
     _expose(scene, job)
@@ -4376,6 +4380,138 @@ def shadows_of(scene):
         return None
 
 
+# -- the texture of a paper or a canvas, over the whole picture ------------------------------------------------------------
+#: A texture's sizes are of a picture this wide; at other widths they follow it, so the preview and the final picture match.
+TEXTURE_WIDTH = 1920.0
+#: How much the darkest of a texture darkens the picture, at full strength.
+TEXTURE_DEPTH = {"paper": 0.22, "rough": 0.38, "canvas": 0.34, "image": 0.60}
+
+
+def fine_of(scene):
+    """The finer settings of the scene that are not at their default ({} = none)."""
+    try:
+        return json.loads(scene.get("rs_fine") or "null") or {}
+    except (TypeError, ValueError):
+        return {}
+
+
+def textured(fine):
+    return (fine or {}).get("finish.texture", "none") != "none"
+
+
+def _value_noise(h, w, cell, seed):
+    """Smooth random values (0..1), a new one every ``cell`` pixels."""
+    import numpy as np
+    cell = max(1.0, float(cell))
+    gh, gw = int(h / cell) + 3, int(w / cell) + 3
+    g = np.random.default_rng(seed).random((gh, gw)).astype(np.float32)
+    ys, xs = np.arange(h, dtype=np.float32) / cell, np.arange(w, dtype=np.float32) / cell
+    y0, x0 = ys.astype(int), xs.astype(int)
+    fy, fx = (ys - y0)[:, None], (xs - x0)[None, :]
+    fy, fx = fy * fy * (3.0 - 2.0 * fy), fx * fx * (3.0 - 2.0 * fx)
+    top = g[y0][:, x0] * (1 - fx) + g[y0][:, x0 + 1] * fx
+    bottom = g[y0 + 1][:, x0] * (1 - fx) + g[y0 + 1][:, x0 + 1] * fx
+    return (top * (1 - fy) + bottom * fy).astype(np.float32)
+
+
+def _spread(t):
+    """``t`` stretched to 0..1 between its darkest and lightest (but for the odd speck)."""
+    import numpy as np
+    lo, hi = np.percentile(t, (1.0, 99.0))
+    return np.clip((t - lo) / max(1e-6, float(hi - lo)), 0.0, 1.0)
+
+
+def texture_field(kind, h, w, scale=1.0, picture=None):
+    """The texture ``kind`` for a picture of ``h`` x ``w``: 1 where it leaves the picture as it is, 0 where it darkens it most.
+    ``picture``: for "image", a file whose light and dark is repeated, two of it across the picture at ``scale`` 1."""
+    import numpy as np
+    s = max(0.05, float(scale)) * w / TEXTURE_WIDTH
+    if kind == "paper":
+        return _spread(0.55 * _value_noise(h, w, 2.2 * s, 11) + 0.30 * _value_noise(h, w, 5.0 * s, 12)
+                       + 0.15 * _value_noise(h, w, 22.0 * s, 13))
+    if kind == "rough":
+        height = 0.45 * _value_noise(h, w, 7.0 * s, 21) + 0.35 * _value_noise(h, w, 16.0 * s, 22) \
+            + 0.20 * _value_noise(h, w, 3.0 * s, 23)
+        gy, gx = np.gradient(height)
+        lit = _spread(-(gx + gy))                              # its bumps, lit from the upper left
+        return _spread(0.65 * lit + 0.35 * _value_noise(h, w, 2.0 * s, 24))
+    if kind == "canvas":
+        period = max(3.0, 7.0 * s)
+        yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+        xx = xx + (_value_noise(h, w, 40.0 * s, 31) - 0.5) * period * 0.8      # threads are not ruled lines
+        yy = yy + (_value_noise(h, w, 40.0 * s, 32) - 0.5) * period * 0.8
+        across, down = np.abs(np.sin(np.pi * xx / period)), np.abs(np.sin(np.pi * yy / period))
+        over = ((np.floor(xx / period) + np.floor(yy / period)) % 2) == 0       # a plain weave: over, under
+        weave = np.where(over, 0.35 + 0.65 * across * (0.6 + 0.4 * down), 0.35 + 0.65 * down * (0.6 + 0.4 * across))
+        return _spread(0.82 * weave + 0.18 * _value_noise(h, w, 2.0 * s, 33))
+    if kind == "image" and picture and os.path.isfile(picture):
+        img = _read_pixels(picture)
+        grey = (0.299 * img[..., 0] + 0.587 * img[..., 1] + 0.114 * img[..., 2]).astype(np.float32)
+        ih, iw = grey.shape
+        step = iw / max(8.0, w * 0.5 * max(0.05, float(scale)))              # pixels of the file per pixel of the render
+        if step > 1.5:
+            grey = _blur(grey, int(step / 2.0), 1)
+        ys = (np.arange(h) * step).astype(int) % ih
+        xs = (np.arange(w) * step).astype(int) % iw
+        return _spread(grey[ys][:, xs])
+    return None
+
+
+def apply_texture(arr, fine):
+    """``arr`` (HxWx4) printed on the chosen paper or canvas: its dark parts darken the picture, ink and all."""
+    import numpy as np
+    if not textured(fine):
+        return arr
+    kind = fine["finish.texture"]
+    field = texture_field(kind, arr.shape[0], arr.shape[1], fine.get("finish.texture_scale", 1.0), fine.get("finish.texture_path"))
+    if field is None:
+        say("texture skipped", kind, fine.get("finish.texture_path"))
+        return arr
+    strength = max(0.0, min(1.0, float(fine.get("finish.texture_strength", 0.5))))
+    out = arr.copy()
+    out[..., :3] = arr[..., :3] * (1.0 - strength * TEXTURE_DEPTH.get(kind, 0.3) * (1.0 - field))[..., None]
+    say("texture", kind, f"{strength:g}")
+    return out.astype(np.float32)
+
+
+# -- the line round the shadows ---------------------------------------------------------------------------------------------
+def outline_of(scene):
+    """``(width in pixels, colour)`` of the line round the shadows, or None."""
+    width = float(fine_of(scene).get("shadows.outline") or 0.0)
+    if width <= 0.0:
+        return None
+    try:
+        ink = json.loads(scene.get("rs_shadow_ink") or "null")
+    except (TypeError, ValueError):
+        ink = None
+    return width, tuple(ink or (0.25, 0.25, 0.25))
+
+
+def shadow_outline(arr, mask, edge):
+    """``arr`` (HxWx4) with a line where the shadows of ``mask`` end: ``edge`` = (width in pixels, colour). The line is drawn
+    over what is see-through too."""
+    import numpy as np
+    if edge is None or mask is None or mask.shape != arr.shape[:2]:
+        return arr
+    width, colour = edge
+    # The edge is where a softened mask is one half; a pixel's distance to it is how far from one half it is over how fast
+    # that changes there. So the line is as wide as asked, smooth, and follows the edge without its steps.
+    radius = max(2, int(width / 2.0) + 1)
+    soft = _blur((mask > 0.5).astype(np.float32), radius, 2)
+    gy, gx = np.gradient(soft)
+    slope = np.sqrt(gx * gx + gy * gy)
+    distance = np.abs(soft - 0.5) / np.maximum(slope, 1e-6)
+    cover = np.clip(width / 2.0 + 0.5 - distance, 0.0, 1.0) * np.clip((slope - 0.02) / 0.03, 0.0, 1.0)
+    out = arr.copy()
+    a = out[..., 3]
+    total = cover + a * (1.0 - cover)
+    ink = np.array(colour[:3], dtype=np.float32)
+    out[..., :3] = (ink * cover[..., None] + arr[..., :3] * (a * (1.0 - cover))[..., None]) / np.maximum(total, 1e-6)[..., None]
+    out[..., 3] = total
+    say("shadow outline", f"{width:g} px")
+    return out.astype(np.float32)
+
+
 def overlay_lines(arr, lines_png):
     """The line layer (a transparent PNG the app drew, the size of the picture) laid over ``arr`` (H×W×4, as _read_pixels gives it). The
     ink is over the style's picture, wash and all: it is the last thing a hand puts on a drawing."""
@@ -4454,6 +4590,20 @@ def over_colour(arr, flat, floor_shadow=None):
     return out.astype(np.float32)
 
 
+def over_nothing(arr, floor_shadow=None):
+    """The model (``arr``, straight alpha) with nothing behind; ``floor_shadow`` (a mask) is left there as a see-through black,
+    which darkens whatever the picture is put over as much as it would darken a plain colour."""
+    import numpy as np
+    out = arr.copy()
+    if floor_shadow is not None and floor_shadow.shape == arr.shape[:2]:
+        a = arr[..., 3]
+        shade = FLOOR_SHADOW * np.clip(floor_shadow, 0.0, 1.0) * (1.0 - a)
+        total = a + shade
+        out[..., :3] = arr[..., :3] * (a / np.maximum(total, 1e-6))[..., None]
+        out[..., 3] = total
+    return out.astype(np.float32)
+
+
 def flat_of(scene):
     """The scene's plain-colour background, or None."""
     try:
@@ -4474,6 +4624,7 @@ def render_flat(scene, style, path, flat, lines=None):
     lines when asked."""
     parts = style_parts(style)
     sh = shadows_of(scene)
+    edge = outline_of(scene)
     floor = bool(flat.get("floor", True))
     r = scene.render
     keep = (r.filepath, r.image_settings.file_format, r.image_settings.color_depth, r.image_settings.color_mode)
@@ -4481,7 +4632,8 @@ def render_flat(scene, style, path, flat, lines=None):
         r.filepath = path
         r.image_settings.file_format = "PNG"
         r.image_settings.color_mode = "RGBA"
-        sketch = parts["paper_sky"]                       # (the colour is its paper)
+        see_through = bool(flat.get("transparent"))       # nothing is painted behind
+        sketch = parts["paper_sky"] and not see_through   # (the colour is its paper)
         water = parts["finish"] == "watercolour"
         with _OverColour(scene) as over:
             if parts["surface"] == "paper":
@@ -4489,14 +4641,22 @@ def render_flat(scene, style, path, flat, lines=None):
             else:
                 bpy.ops.render.render(write_still=True)
                 arr = _read_pixels(path)
-            mask = over.shadows(path, floor) if sh or (floor and not sketch) else None
-        if sketch:
+            mask = over.shadows(path, floor) if sh or edge or (floor and not sketch) else None
+        if see_through:
+            if water:
+                arr = watercolour(arr, style)
+            if sh:
+                arr = paint_shadows(arr, mask, sh)
+            else:
+                arr = over_nothing(arr, mask if floor else None)
+            out = overlay_lines(shadow_outline(arr, mask, edge), lines)
+        elif sketch:
             # (the sketch's paper is the colour: its shadows, when painted, go over the model and the floor alike)
             if water:
                 arr = watercolour(arr, style)
             if sh:
                 arr = paint_shadows(arr, mask, sh)
-            out = paper_behind(overlay_lines(arr, lines), tuple(flat["color"][:3]))
+            out = paper_behind(overlay_lines(shadow_outline(arr, mask, edge), lines), tuple(flat["color"][:3]))
         else:
             if sh:
                 out = paint_shadows(over_colour(arr, flat), mask, sh)
@@ -4504,9 +4664,9 @@ def render_flat(scene, style, path, flat, lines=None):
                 out = over_colour(arr, flat, None if mask is None else mask * (1.0 - arr[..., 3]))
             if water:
                 out = watercolour(out, style)
-            out = overlay_lines(out, lines)
+            out = overlay_lines(shadow_outline(out, mask, edge), lines)
         r.filepath, r.image_settings.file_format, r.image_settings.color_depth, r.image_settings.color_mode = keep
-        _write_png(path, out)
+        _write_png(path, apply_texture(out, fine_of(scene)))
         say("plain background", flat["color"], "floor", floor, "shadows", (sh or {}).get("draw", "as rendered"))
     finally:
         r.filepath, r.image_settings.file_format, r.image_settings.color_depth, r.image_settings.color_mode = keep
@@ -4526,9 +4686,11 @@ def render_styled(scene, style, path, lines=None):
         render_flat(scene, style, path, flat, lines)
         return None
     sh = shadows_of(scene) if not lux else None
+    fine = {} if lux else fine_of(scene)                  # (no paper under the lux picture: its colours are measures)
+    edge = None if lux else outline_of(scene)
     r = scene.render
     if not (lux or paper or water or bare):
-        if not lines and not sh:
+        if not lines and not sh and not edge and not textured(fine):
             bpy.ops.render.render(write_still=True)
             return None
     keep = (r.filepath, r.image_settings.file_format, r.image_settings.color_depth, r.image_settings.color_mode)
@@ -4551,7 +4713,7 @@ def render_styled(scene, style, path, lines=None):
             _write_png(path, res)
             say("lux scale", f"{lo:g} to {hi:g} lx")
             return (lo, hi)
-        mask = shadow_mask(scene, path) if sh else None
+        mask = shadow_mask(scene, path) if sh or edge else None
         r.filepath = path
         r.image_settings.color_mode = "RGBA"
         if bare:
@@ -4563,9 +4725,11 @@ def render_styled(scene, style, path, lines=None):
             arr = watercolour(arr, style)
         if sh:
             arr = paint_shadows(arr, mask, sh)
+        arr = shadow_outline(arr, mask, edge)
         arr = overlay_lines(arr, lines)                        # ink over the picture, wash and all
         if paper or bare:
             arr = paper_behind(arr)                            # …and the paper behind it all
+        arr = apply_texture(arr, fine)                         # its grain over everything, ink included
         r.filepath, r.image_settings.file_format, r.image_settings.color_depth, r.image_settings.color_mode = keep
         _write_png(path, arr)
         say("style picture", style_parts(style)["surface"], "paper" if paper else "", "watercolour" if water else "")
@@ -4730,8 +4894,12 @@ def main():
     lines = (st_main.get("style") or {}).get("lines")
     made = style_parts(st_main.get("style"))
     styled = (made["surface"] in ("lux", "paper") or made["paper_sky"] or made["finish"] != "none" or bool(lines)
-              or bool(flat_of(scene)) or bool(shadows_of(scene)))
+              or bool(flat_of(scene)) or bool(shadows_of(scene))
+              or (made["surface"] != "lux" and (textured(fine_of(scene)) or outline_of(scene) is not None)))
     render_styled(scene, st_main.get("style"), job["output"], lines)
+    if out.get("path") and (flat_of(scene) or {}).get("transparent") and \
+            (out.get("image_settings") or {}).get("file_format") != "JPEG":
+        out = dict(out, image_settings=dict(out.get("image_settings") or {}, color_mode="RGBA"))
     if out.get("path"):
         if styled:
             save_final_from_png(scene, out, job["output"])

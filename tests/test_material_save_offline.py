@@ -193,9 +193,9 @@ ok(ed.maps["opacity"].spec() == {"source": "picture"}, "...and that is what the 
 panel = P.StudioPanel(src)
 win = panel.preview()
 panel.commands.follow_changes.setChecked(True)
-ok(not panel.commands.update.isVisible(), "Update is out of sight while the preview follows the changes")
+ok(not panel.commands.update.isEnabled(), "Update is greyed while the preview follows the changes")
 panel.commands.follow_changes.setChecked(False)
-ok(panel.commands.update.isVisible(), "...and in view when it does not")
+ok(panel.commands.update.isEnabled(), "...and usable when it does not")
 class Stub(QObject):
     def __init__(self): super().__init__(); self.key = (2, "mats-new", "look-new")
     def live_key(self): return self.key

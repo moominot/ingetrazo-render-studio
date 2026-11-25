@@ -53,7 +53,7 @@ class App:
     def set_document_data(self, v): pass
     def on_document_changed(self, fn): pass
 panel = P.StudioPanel(App())
-ok(panel.help_btn.text() == "?" and panel.help_btn.toolTip(), "panel has a ? button")
+ok(not panel.help_btn.icon().isNull() and panel.help_btn.toolTip(), "panel has a ? button")
 panel.help_btn.click(); qa.processEvents()
 d = ui_help._dialog
 ok(d is not None and d.isVisible() and "Look" in d.view.toPlainText(), "the panel's ? opens the help")

@@ -12,7 +12,7 @@ format is a public contract; ``version`` goes up if it ever changes::
         "version": 1,
         "look": "clear",                 # clear partly_cloudy golden_hour overcast
                                          # white_model interior night
-        "engine": "eevee",               # or "cycles"
+        "engine": "auto",                # auto (Cycles with a graphics card, else EEVEE), eevee or cycles
         "quality": 1,                    # 0 draft, 1 medium, 2 high
         "width": 1920,                   # pixels; the height follows the 3D view
         "ground": true,                  # the generated ground under the model
@@ -44,17 +44,18 @@ format is a public contract; ``version`` goes up if it ever changes::
                                          #     one flat picture behind the model (not with a 360° one)
         "output": {"size": "view", "height": 1080, "dpi": 300, "format": "png",
                    "jpeg_quality": 92, "transparent": false},      # see output.py
-        "section": {"cap": true, "material": null, "light": "open"}   # see section.py
+        "section": {"cap": true, "material": null, "light": "open"},  # see section.py
+        "fine": {"finish.texture": "paper"}      # optional: the finer settings not at their default, by the keys of params.py
       } }
 
 Pure Python: no Qt, so it can be tested and read by anything.
 """
 from __future__ import annotations
 
-from . import output, presets, section
+from . import output, params, presets, section
 
 VERSION = 1
-ENGINES = ("eevee", "cycles")
+ENGINES = ("auto", "eevee", "cycles")
 
 
 def _num(value, lo, hi, default):
@@ -95,10 +96,14 @@ def style_parts(raw) -> dict | None:
 
 
 def flat(raw) -> dict | None:
-    """The plain-colour background, cleaned: ``color`` (sRGB 0..1); None: none."""
+    """The plain-colour background, cleaned: ``color`` (sRGB 0..1) and, only when it is so, ``transparent``: nothing is
+    painted behind the model; None: none."""
     if not isinstance(raw, dict):
         return None
-    return {"color": _colour(raw.get("color"), [1.0, 1.0, 1.0])}
+    out = {"color": _colour(raw.get("color"), [1.0, 1.0, 1.0])}
+    if raw.get("transparent"):
+        out["transparent"] = True
+    return out
 
 
 def shadows(raw, old_style=None) -> dict:
@@ -200,7 +205,7 @@ def clean(raw) -> dict | None:
     out = {
         "version": VERSION,
         "look": look if look in presets.PRESETS else "clear",
-        "engine": raw.get("engine") if raw.get("engine") in ENGINES else "eevee",
+        "engine": raw.get("engine") if raw.get("engine") in ENGINES else "auto",
         "quality": int(_num(raw.get("quality"), 0, 2, 1)),
         "width": int(_num(raw.get("width"), 320, 16384, 1920)),
         "ground": bool(raw.get("ground", True)),
@@ -217,6 +222,9 @@ def clean(raw) -> dict | None:
         "output": output.clean(raw.get("output")),
         "section": section.clean(raw.get("section")),
     }
+    fine = params.fine_clean(raw.get("fine"))
+    if fine:
+        out["fine"] = fine                            # (only what is not at its default: other drawings are saved as before)
     g = raw.get("ground_material")
     if isinstance(g, dict) and isinstance(g.get("name"), str) and g["name"]:
         out["ground_material"] = {"name": g["name"][:120], "tile": _num(g.get("tile"), 0.0, 100.0, 0.0)}

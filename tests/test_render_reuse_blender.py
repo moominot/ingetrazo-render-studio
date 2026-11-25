@@ -68,6 +68,7 @@ panel.check_blender = lambda: found
 panel.blender = lambda: found
 panel.quality.setCurrentIndex(0)
 panel.engine.setCurrentIndex(max(0, panel.engine.findData("eevee")))
+panel.preview_engine.setCurrentIndex(panel.preview_engine.findData("eevee"))   # the same engine in both: only then is the live scene reused
 live = LiveSession(panel, argv_factory=lambda job, script: [BLENDER, "-b", "--factory-startup", "--python", str(script), "--", str(job)])
 panel._live = live
 images = []

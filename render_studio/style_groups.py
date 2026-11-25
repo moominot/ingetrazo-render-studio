@@ -18,11 +18,9 @@ FINISHES = {"none": "None", "watercolour": "Watercolour"}
 FIRST_WIDTH = 0.8
 
 
-def _group(title: str):
-    box = QGroupBox(title)
-    form = QFormLayout(box)
-    form.setRowWrapPolicy(QFormLayout.WrapLongRows)
-    return box, form
+def _group(title: str, key: str):
+    box = widgets.Card(title, key, icon="grp_" + key)
+    return box, box.form
 
 
 def _default(key):
@@ -39,7 +37,7 @@ class StyleGroups(QObject):
         self.boxes = []
 
         # -- surface
-        box, form = _group("Surface")
+        box, form = _group("Surface", "surface")
         self.surface_form = form
         self.surface = QComboBox()
         for key, label in SURFACES.items():
@@ -66,7 +64,7 @@ class StyleGroups(QObject):
         self.boxes.append(box)
 
         # -- outline
-        box, form = _group("Outline")
+        box, form = _group("Outline", "outline")
         self.outline_form = form
         self.outline = QCheckBox("Outlines")
         self.outline.setToolTip("Ink lines over the picture, with any surface.")
@@ -87,7 +85,7 @@ class StyleGroups(QObject):
         self.boxes.append(box)
 
         # -- finish
-        box, form = _group("Finish")
+        box, form = _group("Finish", "finish")
         self.finish_form = form
         self.finish = QComboBox()
         for key, label in FINISHES.items():

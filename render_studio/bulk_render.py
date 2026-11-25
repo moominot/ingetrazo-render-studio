@@ -16,6 +16,7 @@ from PySide6.QtCore import QObject, QSettings, Qt, QTimer, Signal
 from PySide6.QtWidgets import (QDialog, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget,
                                QListWidgetItem, QProgressBar, QPushButton, QVBoxLayout, QWidget)
 
+from . import wheel_guard
 from . import output
 from .i18n import tr
 
@@ -177,6 +178,7 @@ class BulkDialog(QDialog):
         self.close_btn.clicked.connect(self._close_or_cancel)
         brow.addWidget(self.close_btn)
         lay.addLayout(brow)
+        wheel_guard.watch(self)          # (the wheel scrolls; it changes only a picked field)
 
     def start(self, views, folder, pattern) -> bool:
         """Render ``views`` into ``folder`` named after ``pattern``."""

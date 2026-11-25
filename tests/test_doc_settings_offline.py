@@ -69,7 +69,7 @@ ok(p2.preset.currentData() == "interior", "another document brings its own setti
 
 # garbage is cleaned, not trusted
 bad = SS.clean({"look": "nonsense", "engine": "x", "quality": 99, "width": -5, "sliders": {"clouds": "abc", "sun_scale": 99}, "hdri": {"path": 3}})
-ok(bad["look"] == "clear" and bad["engine"] == "eevee" and bad["quality"] == 2 and bad["width"] == 320 and "clouds" not in bad["sliders"]
+ok(bad["look"] == "clear" and bad["engine"] == "auto" and bad["quality"] == 2 and bad["width"] == 320 and "clouds" not in bad["sliders"]
    and bad["sliders"]["sun_scale"] == 2.0 and bad["hdri"] is None, f"unknown values fall back and numbers are clamped ({bad})")
 ok(SS.clean(None) is None and SS.clean({}) is None and SS.read(None) is None and SS.read({"render_studio": 5}) is None, "nothing usable -> None")
 

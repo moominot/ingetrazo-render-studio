@@ -65,7 +65,8 @@ ok(wait(lambda: any("samples=8" in l for l in renders())), "the draft follows (8
 first = renders()[:2]
 ok(len(first) == 2 and "samples=1 width=480" in first[0] and "samples=8 width=960" in first[1],
    f"quick first (1 sample, half width), then the draft: {first}")
-ok(panel.window.mode == "preview" and "draft" in panel.window.note.text() and panel.window.note.isVisible(), "the window says it is a draft")
+ok(panel.window.mode == "preview" and "draft" in panel.window.help_btn.toolTip(), "the ? button says it is a draft")
+ok(panel.window.preview_info.text().startswith("Preview: EEVEE · "), f"the window says what is on screen: {panel.window.preview_info.text()}")
 job = json.load(open(live._work / "job.json"))
 ok(job["serve"] is True and job["studio"]["clouds"] >= 0 and job["width"] == 960, "job: serve mode, the look's studio block, draft width")
 ok(job["engine"] == "eevee" and job["studio"].get("live") is True, "the live job is a lightened EEVEE draft")
