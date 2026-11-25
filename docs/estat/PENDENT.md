@@ -30,8 +30,8 @@ Són còpies de feina de l'ordinador local, **sense revisar ni provar**. No les 
 | ingetrazo-render-studio | `wip/stash-grass-igmat-2026-11-25` | «igmat + densitat d'herba + readme», apartat amb `git stash` |
 | ingetrazo-render-studio | `wip/bento-panel-2026-11-25` | experiment de tauler d'estil «bento» (sobre 0.26) |
 | ingetrazo-render-studio | `preview-improvement-plan` | pla de millora de la vista prèvia (`docs/preview-plan.md`) |
-| ingetrazo-skp-dc-import | `wip/local-dc-tools-0.3.6-uncommitted-2026-11-25` | canvis vells sense commit |
-| ingetrazo-skp-dc-import | `wip/library-redesign-folder-2026-11-25` | carpeta de treball del redisseny de la Library |
+| ingetrazo-skp-dc-import | `wip/local-dc-tools-0.3.6-uncommitted-2026-11-25` | **revisada: no hi queda res a recuperar** (el codi ja és a `main`; les proves que hi faltaven hi van entrar amb el PR #20) |
+| ingetrazo-skp-dc-import | `wip/library-redesign-folder-2026-11-25` | **revisada: no hi queda res a recuperar** (esborrany anterior a la 0.8.0) |
 | moominot/ingetrazo (*fork*) | `wip/wheel-guard-2026-11-25` | correcció del nucli perquè la roda no canviï valors (incidència #1483). Abans d'obrir cap PR, cal el vistiplau de l'usuari. Proves a mitges: les específiques passaven; no consta el resultat de la bateria sencera |
 | moominot/openskp (*fork*) | `feat/instanced-definition-attribute-dictionaries` | atributs de definició a l'escena instanciada. L'usuari vol fer-ne una proposta més endavant (importar .skp sense aplanar) |
 
