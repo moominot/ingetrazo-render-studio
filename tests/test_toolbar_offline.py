@@ -84,4 +84,30 @@ AssetPanel = type("AssetPanel", (QWidget,), {"__module__": "asset_manager.panel"
 dock = QDockWidget(win); dock.setWidget(AssetPanel())
 c.library.trigger()
 ok(shown == [dock] and asked == ["manager"], "with the Library: its tab is shown")
+# torn off the window, it keeps the size of its buttons
+from PySide6.QtCore import Qt
+win2 = QMainWindow(); panel.app.window = win2
+try:                                              # IngeTrazo's own title strip on a floating bar, where this version has it
+    from views.floating_toolbar import watch_toolbars
+    watch_toolbars(win2)
+except ImportError:
+    pass
+def pump():
+    for _ in range(20):
+        qa.processEvents()
+c.follow_changes.setChecked(True)
+win2.resize(900, 600); win2.show()
+bar2 = c.build(panel.app); pump()
+bar2.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint); bar2.move(100, 100); bar2.show(); pump()
+def cut():
+    return [a.text() for a in bar2.actions() if a.isVisible() and not a.isSeparator()
+            and not (bar2.widgetForAction(a).isVisible() and bar2.rect().contains(bar2.widgetForAction(a).geometry()))]
+ok(bar2.isFloating() and not cut(), f"floating, every button is whole ({cut()})")
+narrow = bar2.width()
+c.follow_changes.setChecked(False); pump()
+ok(not cut() and bar2.width() > narrow, f"…also when «Update preview» appears: the bar widens ({cut()})")
+c.follow_changes.setChecked(True); pump()
+ok(not cut() and bar2.width() == narrow, "…and narrows again when it goes")
+bar2.resize(narrow - 60, bar2.height()); pump()
+ok(not cut() and bar2.width() == narrow, f"a size too small, as an old saved layout may give, is put right ({cut()})")
 print("FAILED" if fails else "ALL OK"); sys.exit(1 if fails else 0)

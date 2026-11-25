@@ -248,8 +248,16 @@ def _follow_changes(p, ink):
 
 
 def _refresh(p, ink):
-    # One arrow round: update now.
-    _arc_arrow(p, 60, 270)
+    # One heavy arrow round, its head large: update now. (With the thin arc and small head of the others it read as a «C».)
+    r, end = 13.0, math.radians(70)
+    p.setBrush(Qt.NoBrush)
+    p.setPen(_pen(ink, _WIDTH * 1.7))
+    q = QPainterPath()
+    q.arcMoveTo(QRectF(24 - r, 24 - r, 2 * r, 2 * r), 10)
+    q.arcTo(QRectF(24 - r, 24 - r, 2 * r, 2 * r), 10, -300)       # clockwise, round to near the top
+    p.drawPath(q)
+    dx, dy = math.sin(end), math.cos(end)                          # the way it goes there (clockwise, y down)
+    _arrow_head(p, QPointF(24 + r * math.cos(end) + 10 * dx, 24 - r * math.sin(end) + 10 * dy), dx, dy, 14.0)
 
 
 def _preview(p, ink):

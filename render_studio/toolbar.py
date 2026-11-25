@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import QSettings, QTimer
+from PySide6.QtCore import QEvent, QObject, QSettings, QTimer
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QApplication, QMessageBox, QToolBar
 
@@ -22,6 +22,32 @@ LIBRARY_SEARCH = "asset_manager"
 _SETTINGS = "render_studio/"
 #: The toolbar's order; None is a separator.
 ORDER = ("studio", "preview", "follow_changes", "update", "follow_camera", None, "materials", "lights", "library")
+
+
+class _FitWhenFloating(QObject):
+    """Keeps a floating toolbar the size of its buttons. Qt gives a floating bar its size once: a button shown later (the
+    «update» one), or a size kept from a saved layout, leaves the last ones cut off, with no arrow to reach them."""
+
+    EVENTS = (QEvent.Show, QEvent.Resize, QEvent.LayoutRequest, QEvent.ActionAdded, QEvent.ActionChanged, QEvent.ActionRemoved)
+
+    def __init__(self, bar: QToolBar):
+        super().__init__(bar)
+        self.bar = bar
+        self.timer = QTimer(self)
+        self.timer.setSingleShot(True)
+        self.timer.setInterval(0)                      # after Qt has laid the bar out
+        self.timer.timeout.connect(self.fit)
+        bar.installEventFilter(self)
+        bar.topLevelChanged.connect(lambda _floating: self.timer.start())
+
+    def eventFilter(self, _obj, ev) -> bool:  # noqa: N802 (Qt)
+        if ev.type() in self.EVENTS and self.bar.isFloating():
+            self.timer.start()
+        return False
+
+    def fit(self) -> None:
+        if self.bar.isFloating() and self.bar.size() != self.bar.sizeHint():
+            self.bar.adjustSize()
 
 
 class Commands:
@@ -80,6 +106,7 @@ class Commands:
                 bar.addSeparator()
             else:
                 bar.addAction(getattr(self, key))
+        _FitWhenFloating(bar)
         window.addToolBar(bar)
         restore = getattr(app, "restore_toolbar_layout", None)
         if restore is not None:
