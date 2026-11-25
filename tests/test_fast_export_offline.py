@@ -267,7 +267,7 @@ ok(view3.name == "Facade view 2", f"a name in use gets a number ({view3.name})")
 QInputDialog.getText = staticmethod(lambda *a, **k: ("", False))
 ok(panel.scene_from_preview() is None, "cancelling the name makes nothing")
 QInputDialog.getText = real_get
-ok(hasattr(panel.window, "scene_btn") and "scene" in panel.window.scene_btn.text().lower(), "the preview window has the button")
+ok(hasattr(panel.window, "scene_btn") and "scene" in panel.window.scene_btn.toolTip().lower(), "the preview window has the button")
 
 print("FAILED" if fails else "ALL PASSED", len(fails))
 sys.exit(1 if fails else 0)

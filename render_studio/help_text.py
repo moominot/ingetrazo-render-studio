@@ -310,6 +310,7 @@ instantly, without rendering again, and what you see is what you save. The live 
 middle button works as in the 3D view. With <b>Sync camera</b> on, the 3D view moves too; off, only the preview's camera
 moves (and Render and New scene use it). <b>Ctrl</b>+wheel and <b>Ctrl</b>+drag look closely at the picture instead.</p>
 <p><b>Panel</b> (in the window's bar) brings Render Studio's panel into view; if the window covers it, it moves aside.</p>
+<p><b>The bar</b> (at the top) has the live view's switches too (<b>Sync camera</b>, <b>Sync changes</b> and <b>Update preview</b>, the same as the toolbar's) and the preview's quality; in a narrow window some buttons show their icon alone.</p>
 <p><b>Saving the preview</b>: <b>Save picture…</b> (or a right click on the picture) saves exactly what is on screen,
 as PNG or JPEG, without rendering; <b>Copy picture</b> puts it on the clipboard. <b>Render</b> is another picture, made
 anew at the panel's size with more samples and every effect, even with the same engine and High quality.</p>

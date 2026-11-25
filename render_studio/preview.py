@@ -21,14 +21,14 @@ from pathlib import Path
 
 from PySide6.QtCore import QSettings, QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QImage, QPainter, QPixmap
-from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel,
+from PySide6.QtWidgets import (QApplication, QCheckBox, QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel,
                                QMenu, QScrollArea, QProgressBar, QPushButton, QSizePolicy, QToolButton, QVBoxLayout,
                                QWidget)
 
 from . import icons, wheel_guard
 from . import post
 from .preview_nav import Navigator, PreviewView
-from .widgets import Card, SliderRow, flat_style, slider, split_button, value, set_value
+from .widgets import Card, ChoiceButtons, SliderRow, flat_style, slider, split_button, value, set_value
 
 _SETTINGS = "render_studio/"
 #: Every control of the window's bar is this tall, with icons of BAR_ICON (pixels).
@@ -52,7 +52,12 @@ QFrame#rs_window_bar QToolButton[primary="true"], QFrame#rs_window_bar QPushButt
 QFrame#rs_window_bar QToolButton[primary="true"]:hover, QFrame#rs_window_bar QPushButton[primary="true"]:hover {{
     background: rgba({r},{g},{b},120); }}
 QFrame#rs_window_bar QToolButton[primary="true"]:disabled {{ background: rgba(128,128,128,20); }}
+QFrame#rs_window_bar QToolButton:checked {{ background: rgba({r},{g},{b},80); }}
+QFrame#rs_window_bar QToolButton:checked:hover {{ background: rgba({r},{g},{b},120); }}
+QFrame#rs_window_bar QToolButton[square="true"] {{ padding: 0px; }}
 """
+#: The narrowest the window goes; below what the bar's words need, the quality and «New scene…» show their icons alone.
+MIN_WINDOW_WIDTH = 760
 #: The side bar's width: the sliders and their words fit, the picture keeps the rest.
 SIDE_WIDTH = 360
 
@@ -72,6 +77,8 @@ class ImageWindow(QWidget):
         super().__init__(parent, Qt.Window)
         self.panel = panel
         self.setWindowTitle("Render Studio")
+        self.setMinimumWidth(MIN_WINDOW_WIDTH)
+        self._compact, self._full_bar, self._scene_words = False, 0, ""
         self.resize(1100, 780)
         self.path = None
         self.original = None            # H×W×3 uint8 of the final picture
@@ -115,7 +122,7 @@ class ImageWindow(QWidget):
         mid.addWidget(self.side)
         lay.addLayout(mid, 1)
 
-        # -- the bar: the way back to the panel and help, then what the state needs
+        # -- the bar, at the top: the way back to the panel and help, then what the state needs
         self.tool_bar = QFrame()
         self.tool_bar.setObjectName("rs_window_bar")
         controls = QHBoxLayout(self.tool_bar)
@@ -133,7 +140,7 @@ class ImageWindow(QWidget):
         self.help_btn.clicked.connect(self._help)
         controls.addWidget(self.help_btn)
         controls.addWidget(self._separator())
-        lay.addWidget(self.tool_bar)
+        lay.insertWidget(0, self.tool_bar)
 
         # -- preview: what is on screen and what Render will make; the quality, a new scene, save this picture, Render
         self.bar_preview = QWidget()
@@ -152,15 +159,26 @@ class ImageWindow(QWidget):
         self.summary.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         info.addWidget(self.preview_info, 2)
         info.addWidget(self.summary, 3)
-        lay.insertWidget(lay.count() - 1, self.info_row)       # above the bar
+        lay.addWidget(self.info_row)                           # under the picture, above the messages
         self.preview_info.setToolTip("The picture on screen: «Save picture…» saves exactly this one. With High "
                                      "preview quality it is as big as the window shows it.")
         self.summary.setToolTip("The final picture, made anew with the engine, quality and size set in the panel: more "
                                 "samples and every effect. The preview is a draft of it.")
+        # the live view's switches: the toolbar's own commands, so both always say the same
+        self.sync_buttons = []
+        commands = getattr(panel, "commands", None)
+        for name in ("follow_camera", "follow_changes", "update") if commands is not None else ():
+            button = QToolButton()
+            button.setDefaultAction(getattr(commands, name))
+            button.setToolButtonStyle(Qt.ToolButtonIconOnly)
+            button.setProperty("square", True)
+            button.setFixedWidth(BAR_HEIGHT + 4)
+            self.sync_buttons.append(button)
+            main.addWidget(button)
         main.addStretch(1)
-        self.quality_combo = QComboBox()
         self._link_quality()
-        main.addWidget(self.quality_combo)
+        if self.quality_buttons is not None:
+            main.addWidget(self.quality_buttons)
         main.addWidget(self._separator())
         self.scene_btn = QPushButton("New scene…")
         self.scene_btn.setIcon(icons.icon("grp_camera"))
@@ -277,8 +295,9 @@ class ImageWindow(QWidget):
             w.setStyleSheet(flat)
         accent = icons._accent()
         self.tool_bar.setStyleSheet(BAR_STYLE.format(r=accent.red(), g=accent.green(), b=accent.blue()))
-        for w in (self.panel_btn, self.help_btn, self.quality_combo, self.scene_btn, self.snapshot_btn, self.render_btn,
-                  self.fit_btn, self.actual_btn, self.back_btn, self.save_btn):      # one height for all
+        quality = self.quality_buttons._buttons if self.quality_buttons is not None else []
+        for w in (self.panel_btn, self.help_btn, *self.sync_buttons, *quality, self.scene_btn, self.snapshot_btn,
+                  self.render_btn, self.fit_btn, self.actual_btn, self.back_btn, self.save_btn):      # one height for all
             w.setFixedHeight(BAR_HEIGHT)
             if hasattr(w, "setIconSize"):
                 w.setIconSize(QSize(BAR_ICON, BAR_ICON))
@@ -363,13 +382,14 @@ class ImageWindow(QWidget):
     def resizeEvent(self, ev) -> None:           # noqa: N802 (Qt)
         super().resizeEvent(ev)
         self._place_side_handle()
+        self._fit_bar()
         if hasattr(self, "_resharpen"):
             self._resharpen.start()
 
     def showEvent(self, ev) -> None:             # noqa: N802 (Qt)
         super().showEvent(ev)
-        from PySide6.QtCore import QTimer
         QTimer.singleShot(0, self._place_side_handle)
+        QTimer.singleShot(0, self._fit_bar)
 
     # -- the outlines: vectors until the picture is saved ----------------------------------------
     def _build_lines_box(self, parent_layout) -> None:
@@ -535,6 +555,7 @@ class ImageWindow(QWidget):
         has_panel = self.panel is not None
         self.view.set_live_state(mode == "preview" and has_panel)
         self.info_row.setVisible(mode in ("preview", "rendering") and has_panel)
+        QTimer.singleShot(0, self._fit_bar)
         self.bar_preview.setVisible(mode in ("preview", "rendering") and has_panel)
         for w in (self.render_btn, self.render_save_btn, self.expert_btn):
             w.setEnabled(mode == "preview")
@@ -639,18 +660,53 @@ class ImageWindow(QWidget):
         self.move(x, y)
 
     def _link_quality(self) -> None:
-        """The preview's quality, here too: the same choice as the panel's."""
+        """The preview's quality, here too: the same choice as the panel's, as three buttons like the panel's own."""
+        self.quality_buttons = None
         own = getattr(self.panel, "preview_quality", None)
-        self.quality_combo.setVisible(own is not None)
         if own is None:
             return
-        for i in range(own.count()):
-            self.quality_combo.addItem(own.itemText(i), own.itemData(i))
-        self.quality_combo.setCurrentIndex(own.currentIndex())
-        self.quality_combo.setToolTip("Preview quality. High: as sharp as the window shows it, so a picture saved from "
-                                      "the preview is bigger too. Render has its own quality.")
-        self.quality_combo.currentIndexChanged.connect(own.setCurrentIndex)
-        own.currentIndexChanged.connect(self.quality_combo.setCurrentIndex)
+        buttons = ChoiceButtons([own.itemText(i) for i in range(own.count())], icons=("q_draft", "q_medium", "q_high"))
+        buttons.layout().setSpacing(0)
+        buttons.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        tip = tr("Preview quality. High: as sharp as the window shows it, so a picture saved from the preview is bigger "
+                 "too. Render has its own quality.")
+        for i, button in enumerate(buttons._buttons):                    # in the bar: icon beside the word, one line
+            button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+            button.setFont(self.font())
+            button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+            button.setToolTip(f"{own.itemText(i)} — {tip}")
+        buttons.setCurrentIndex(own.currentIndex())
+        buttons.currentIndexChanged.connect(own.setCurrentIndex)
+        own.currentIndexChanged.connect(buttons.setCurrentIndex)
+        self.quality_buttons = buttons
+
+    def _fit_bar(self) -> None:
+        """The words that can go, gone when the window is too narrow for them (their tool tips still say them)."""
+        if not hasattr(self, "scene_btn") or self.mode == "final" or self.panel is None:
+            return
+        if not self._compact:
+            self.tool_bar.layout().activate()
+            margins = self.layout().contentsMargins()
+            self._full_bar = self.tool_bar.sizeHint().width() + margins.left() + margins.right()
+        narrow = self.width() < self._full_bar
+        if narrow == self._compact:
+            return
+        self._compact = narrow
+        if narrow:
+            self._scene_words = self.scene_btn.text()
+        self.scene_btn.setText("" if narrow else self._scene_words)
+        self.scene_btn.setProperty("square", narrow)
+        self.scene_btn.setMinimumWidth(BAR_HEIGHT + 4 if narrow else 0)
+        self.scene_btn.style().unpolish(self.scene_btn)
+        self.scene_btn.style().polish(self.scene_btn)
+        if self.quality_buttons is not None:
+            for button in self.quality_buttons._buttons:
+                button.setToolButtonStyle(Qt.ToolButtonIconOnly if narrow else Qt.ToolButtonTextBesideIcon)
+                button.setProperty("square", narrow)
+                button.setMinimumWidth(BAR_HEIGHT if narrow else 0)
+                button.setMaximumWidth(BAR_HEIGHT if narrow else (1 << 24) - 1)
+                button.style().unpolish(button)
+                button.style().polish(button)
 
     def _sync_snapshot(self) -> None:
         if hasattr(self, "snapshot_btn"):
@@ -668,7 +724,8 @@ class ImageWindow(QWidget):
 
     def _sharpen(self) -> None:
         live = getattr(self.panel, "_live", None)
-        if live is not None and self.mode == "preview" and self.quality_combo.currentData() == "high":
+        own = getattr(self.panel, "preview_quality", None)
+        if live is not None and self.mode == "preview" and own is not None and own.currentData() == "high":
             live.sharpen()
 
     def picture(self) -> QImage:

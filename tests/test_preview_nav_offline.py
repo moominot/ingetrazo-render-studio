@@ -139,7 +139,8 @@ QFileDialog.getSaveFileName = real
 ok((tmp / "picked.jpg").is_file() and "view-" in asked["start"] and "picked.jpg" in win.status.text(), f"the button asks for a name and saves: {win.status.text()}")
 
 # the bar: one height, and the way back to the panel
-bar = [win.panel_btn, win.help_btn, win.quality_combo, win.scene_btn, win.snapshot_btn, win.render_btn]
+quality = win.quality_buttons._buttons
+bar = [win.panel_btn, win.help_btn, *win.sync_buttons, *quality, win.scene_btn, win.snapshot_btn, win.render_btn]
 ok(all(w.isVisibleTo(win) for w in bar) and len({w.height() for w in bar}) == 1, f"the bar's controls are all {bar[0].height()} px tall")
 ok(all(win.tool_bar.isAncestorOf(w) for w in bar + [win.back_btn, win.save_btn, win.fit_btn]), "…in one bar")
 from PySide6.QtWidgets import QDockWidget, QMainWindow
@@ -158,15 +159,45 @@ ok(shown == [dock] and panel.isVisible(), "«Panel» shows Render Studio's tab, 
 ok(win.isMinimized() or not win.frameGeometry().intersects(where), f"…and the window no longer covers it ({'minimised' if win.isMinimized() else 'beside it'})")
 win.showNormal(); win.resize(1200, 760); qa.processEvents()
 
-# the quality, here too, and High follows the window
-ok(win.quality_combo.isVisibleTo(win) and win.quality_combo.currentData() == "normal", "the preview's quality is in the window")
+# the bar at the top, the messages at the bottom
+top = lambda w: w.mapTo(win, QPoint(0, 0)).y()
+ok(top(win.tool_bar) < top(win.view) < top(win.info_row) < top(win.status), "the bar is at the top; the data and the messages under the picture")
+
+# the live view's switches, the toolbar's own
+cam_b, changes_b, update_b = win.sync_buttons
+ok(cam_b.defaultAction() is panel.commands.follow_camera and changes_b.defaultAction() is panel.commands.follow_changes
+   and update_b.defaultAction() is panel.commands.update and not cam_b.icon().isNull(), "Sync camera, Sync changes and Update are in the window")
+cam_b.click(); qa.processEvents()
+ok(not panel.commands.follow_camera.isChecked() and not live.follow_camera and live.frozen_camera is not None, "«Sync camera» off from the window")
+cam_b.click(); qa.processEvents()
+ok(panel.commands.follow_camera.isChecked() and live.follow_camera, "…and on again")
+ok(not update_b.isEnabled(), "Update is greyed while the changes are synced")
+changes_b.click(); qa.processEvents()
+ok(update_b.isEnabled() and not live.follow_changes, "…and usable with «Sync changes» off")
+panel.commands.follow_changes.setChecked(True); qa.processEvents()
+ok(changes_b.isChecked(), "…the toolbar's switch moves the window's too")
+
+# narrow: the words that can go, go
+win.resize(1400, 760); qa.processEvents()
+ok(all(b.toolButtonStyle() == Qt.ToolButtonTextBesideIcon for b in quality) and win.scene_btn.text(), "wide: the quality and New scene say their words")
+win.resize(760, 600); qa.processEvents(); qa.processEvents()
+right = max(w.mapTo(win, QPoint(w.width(), 0)).x() for w in bar)
+ok(win.width() == 760 and all(b.toolButtonStyle() == Qt.ToolButtonIconOnly for b in quality) and not win.scene_btn.text() and right <= 760,
+   f"narrow: icons alone, and everything inside the window (right edge {right})")
+win.resize(1400, 760); qa.processEvents(); qa.processEvents()
+ok(win.scene_btn.text() and quality[0].toolButtonStyle() == Qt.ToolButtonTextBesideIcon, "wide again: the words are back")
+win.resize(1200, 760); qa.processEvents()
+
+# the quality, three buttons, and High follows the window
+ok(win.quality_buttons.isVisibleTo(win) and len(quality) == 3 and win.quality_buttons.currentIndex() == 1
+   and all(not b.icon().isNull() for b in quality), "the preview's quality: three buttons with icons")
 n0 = len(renders())
-win.quality_combo.setCurrentIndex(win.quality_combo.findData("high")); qa.processEvents()
+quality[2].click(); qa.processEvents()
 ok(panel.preview_quality.currentData() == "high", "…the same choice as the panel's")
 expected = min(win.picture_pixels(panel._aspect()), panel.output_tab.frame()[0])
 ok(expected > 960 and wait(lambda: any(f"width={expected} " in l for l in renders()[n0:])), f"High: the draft is as wide as the window shows it ({expected} px)")
 panel.preview_quality.setCurrentIndex(panel.preview_quality.findData("normal"))
-ok(win.quality_combo.currentData() == "normal", "…both ways")
+ok(quality[1].isChecked(), "…both ways")
 
 # the final picture: no camera moves, the picture's own zoom
 big = tmp / "big.png"
