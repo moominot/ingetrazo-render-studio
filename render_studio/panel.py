@@ -27,10 +27,13 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDoubleSpinBo
                                QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMenu, QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QTabWidget,
                                QToolButton, QVBoxLayout, QWidget)
 
-from . import drawing_fog, user_presets, lights as studio_lights, materials as mats, fast_export, output, pbr, presets, proxies, section, settings_store, studio_data, visibility, widgets
+from . import drawing_fog, lights as studio_lights, materials as mats, fast_export, output, pbr, presets, proxies, section, settings_store, studio_data, visibility, widgets
 from . import look_model, view_camera
 from .style_groups import StyleGroups
 from .toolbar import Commands
+from . import preset_files
+from .ambient import AmbientBox
+from .preset_gallery import PresetGallery
 from .live import LiveSession
 from .preview import ImageWindow  # noqa: F401 - re-exported: panel.ImageWindow
 from .widgets import SliderRow
@@ -499,37 +502,10 @@ class StudioPanel(QWidget):
         host_sky, col_sky = page()
         col = col_sky
 
-        # Your presets: a named copy of the settings, to come back to or to share as a file.
-        box_presets = QGroupBox("Presets")
-        form_p = QFormLayout(box_presets)
-        self.user_presets = QComboBox()
-        self.user_presets.setToolTip("Your saved presets. Choosing one puts its settings (look, adjustments, "
-                                     "background, ground, engine, quality, output) in the panel.")
-        self.user_presets.activated.connect(self._apply_user_preset)
-        self.save_preset_btn = QPushButton("Save as preset…")
-        self.save_preset_btn.setToolTip("Keeps the settings as they are now under a name, to use them again in any drawing.")
-        self.save_preset_btn.clicked.connect(self.save_user_preset)
-        self.preset_menu_btn = QToolButton()
-        self.preset_menu_btn.setText("⋯")
-        self.preset_menu_btn.setPopupMode(QToolButton.InstantPopup)
-        self.preset_menu_btn.setToolTip("Delete a preset, or share them as files")
-        menu = QMenu(self.preset_menu_btn)
-        self.act_delete_preset = menu.addAction(tr("Delete this preset"), self.delete_user_preset)
-        menu.addAction(tr("Export these settings to a file…"), self.export_user_preset)
-        menu.addAction(tr("Import a preset from a file…"), self.import_user_preset)
-        self.preset_menu_btn.setMenu(menu)
-        prow = QHBoxLayout()
-        prow.addWidget(self.user_presets, 1)
-        prow.addWidget(self.preset_menu_btn)
-        form_p.addRow(prow)
-        form_p.addRow(self.save_preset_btn)
-        self.reset_btn = QPushButton("Reset all settings")
-        self.reset_btn.setToolTip("Puts every setting (style, adjustments, sky, background, ground, horizon, output) back to the "
-                                  "defaults. Your saved presets are not touched.")
-        self.reset_btn.clicked.connect(self.reset_all)
-        form_p.addRow(self.reset_btn)
-        col_main.addWidget(box_presets)
-        self._refresh_user_presets()
+        # The presets (a whole look, with its picture) and the ambients (only the light). Both are filled in further down,
+        # once the controls they put values in exist.
+        presets_slot = QVBoxLayout()
+        col_main.addLayout(presets_slot)
 
         # The look: the scene's mood. Its sliders (the adjustments) are in the Image and Environment pages.
         box_look = QGroupBox("Look")
@@ -928,15 +904,6 @@ class StudioPanel(QWidget):
         from .sun_panel import SunQuick
         self.sun_quick = SunQuick(self.sun_tab)
         self.sun_tab.quick = self.sun_quick
-        # The look is no longer chosen by name: the day or the night follows the sun, and an interior is a box to tick.
-        self.interior = QCheckBox("Interior")
-        self.interior.setToolTip("The picture is of a room: it is metered for the inside, and the window is allowed to burn out. "
-                                 "Leave it off for a view outside.")
-        self.interior.setChecked(self.preset.currentData() == "interior")
-        self.interior.toggled.connect(self._interior_toggled)
-        self.preset.currentIndexChanged.connect(lambda _i: self.interior.blockSignals(True) or self.interior.setChecked(
-            self.preset.currentData() == "interior") or self.interior.blockSignals(False))
-        form_skyadj.addRow(self.interior)
         form_skyadj.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         form_skyadj.addRow("Date", self.sun_quick.date_box)           # the date and the hour, always in view; the exact ones are folded
         form_skyadj.addRow("Hour", self.sun_quick.hour_box)
@@ -952,6 +919,16 @@ class StudioPanel(QWidget):
         self.sun_more.form.addRow(self.sun_tab)
         form_skyadj.addRow(self.sun_more)            # the place, the north, the time zone: in view, under the sky
         col_sky.addStretch(1)
+        self.ambient = AmbientBox(self)
+        self.ambient.chosen.connect(self.set_ambient)
+        self.gallery = PresetGallery(self)
+        presets_slot.addWidget(self.gallery)
+        presets_slot.addWidget(self.ambient)
+        for signal in (self.preset.currentIndexChanged, self.hdri.currentIndexChanged, self.hdri_light.toggled,
+                       self.bg_mode.currentIndexChanged):
+            signal.connect(self._ambient_state)
+        self._ambient_state()
+        col_main.addStretch(1)
         for tab_widget, title in ((self.section_tab, "Section"), (self.output_tab, "Output")):
             self.tabs.addTab(scrolled(tab_widget), title)
         self.tabs.setCurrentIndex(min(self.tabs.count() - 1, max(0, int(st.value(_SETTINGS + "tab", 0) or 0))))
@@ -1681,10 +1658,44 @@ class StudioPanel(QWidget):
             "flat": self.flat_settings(),
         }
 
-    def _interior_toggled(self, on: bool) -> None:
-        """Interior: metered for a room. Off: the clear day (the night follows the sun by itself)."""
-        want = "interior" if on else ("clear" if self.preset.currentData() == "interior" else self.preset.currentData())
-        self.preset.setCurrentIndex(max(0, self.preset.findData(want)))
+    # -- the ambients and the presets ---------------------------------------------------------
+    def set_ambient(self, look: str) -> None:
+        """An ambient's button: only the light changes (the look, with its own values in the sliders it sets)."""
+        index = self.preset.findData(look)
+        if index >= 0:
+            if index == self.preset.currentIndex():
+                self._preset_changed(index)                  # pressed again: the look's own values come back
+            else:
+                self.preset.setCurrentIndex(index)
+        self._ambient_state()
+        self._schedule_save()
+
+    def _sun_has_set(self) -> bool:
+        """Whether a look of the day will be rendered as a night: the sun is down at the site's place, date and hour."""
+        if self.preset.currentData() not in presets.NIGHT_WHEN_SUN_SET or (self.hdri_settings() or {}).get("light"):
+            return False
+        try:
+            from . import sun_site
+            return not sun_site.info(sun_site.site(self.app.scene))["up"]
+        except Exception:  # noqa: BLE001 - not worked out: the look as chosen
+            return False
+
+    def _ambient_state(self, *_a) -> None:
+        if getattr(self, "ambient", None) is not None:
+            self.ambient.show_state(self.preset.currentData(), self._sun_has_set())
+
+    def apply_preset(self, preset: dict) -> None:
+        """Wear a preset's look; the camera, the quality, the section and the output stay."""
+        self.apply_settings(preset_files.apply_to(self.settings_dict(), preset))
+        self._schedule_save()
+
+    def preview_picture(self):
+        """The picture the preview window shows now, or None (closed, or nothing in it yet)."""
+        window = self.window
+        if window is None or not window.isVisible() or not window.has_image() or window.path is None:
+            return None
+        image = QImage(str(window.path))
+        return None if image.isNull() else image
 
     def reset_all(self) -> None:
         """Every setting back to its default (the default look, no style, the look's own adjustments)."""
@@ -1879,95 +1890,6 @@ class StudioPanel(QWidget):
                 self.slider_rows[key].setEnabled(not lit)
 
     # -- your presets ---------------------------------------------------------------
-    def _user_presets(self) -> dict:
-        return user_presets.load_all(QSettings().value(_SETTINGS + "user_presets", ""))
-
-    def _refresh_user_presets(self, select: str = "") -> None:
-        names = sorted(self._user_presets(), key=str.lower)
-        self.user_presets.blockSignals(True)
-        self.user_presets.clear()
-        self.user_presets.addItem(tr("My presets…") if names else tr("No presets saved yet"), "")
-        for n in names:
-            self.user_presets.addItem(n, n)
-        self.user_presets.setCurrentIndex(max(0, self.user_presets.findData(select)))
-        self.user_presets.blockSignals(False)
-        self.act_delete_preset.setEnabled(bool(names))
-
-    def _store_user_preset(self, name: str, preset: dict) -> None:
-        allp = self._user_presets()
-        allp[name] = preset
-        QSettings().setValue(_SETTINGS + "user_presets", user_presets.dump_all(allp))
-        self._refresh_user_presets(name)
-
-    def save_user_preset(self):
-        """Ask for a name and keep the settings as they are now (asks before replacing one)."""
-        default = self.user_presets.currentData() or ""
-        name, ok = QInputDialog.getText(self, tr("Save as preset…"), tr("Name of the preset"), text=default)
-        name = user_presets.clean_name(name)
-        if not ok or not name:
-            return
-        if name in self._user_presets() and QMessageBox.question(
-                self, tr("Save as preset…"), tr("A preset called «{name}» exists. Replace it?", name=name)) != QMessageBox.Yes:
-            return
-        preset = user_presets.make(self.settings_dict())
-        if preset is not None:
-            self._store_user_preset(name, preset)
-            self._set_status(tr("Preset «{name}» saved.", name=name))
-
-    def _apply_user_preset(self, _i=0):
-        name = self.user_presets.currentData()
-        preset = self._user_presets().get(name) if name else None
-        if preset is None:
-            return
-        data = dict(preset)
-        data["section"] = self.section_tab.settings()           # the cut belongs to the model, not to a look
-        data["width"] = self.width.value()
-        self.apply_settings(data)
-        self._schedule_save()
-        self._set_status(tr("Preset «{name}» applied.", name=name))
-
-    def delete_user_preset(self):
-        name = self.user_presets.currentData()
-        if not name:
-            return
-        if QMessageBox.question(self, tr("Delete this preset"), tr("Delete the preset «{name}»?", name=name)) != QMessageBox.Yes:
-            return
-        allp = self._user_presets()
-        allp.pop(name, None)
-        QSettings().setValue(_SETTINGS + "user_presets", user_presets.dump_all(allp))
-        self._refresh_user_presets()
-
-    def export_user_preset(self):
-        """The settings as they are now, in a file to share (named after the chosen preset, if any)."""
-        name = self.user_presets.currentData() or "Render Studio"
-        start = str(Path(str(QSettings().value(_SETTINGS + "preset_dir", "") or "")) / f"{name}.rspreset.json")
-        path, _f = QFileDialog.getSaveFileName(self, tr("Export these settings to a file…"), start, "Render Studio preset (*.json)")
-        if not path:
-            return
-        try:
-            Path(path).write_text(user_presets.to_file(name, self.settings_dict()), encoding="utf-8")
-        except OSError as exc:
-            self._set_status(tr("Could not write the file: {error}", error=exc))
-            return
-        QSettings().setValue(_SETTINGS + "preset_dir", str(Path(path).parent))
-        self._set_status(tr("Settings exported to {path}", path=path))
-
-    def import_user_preset(self):
-        start = str(QSettings().value(_SETTINGS + "preset_dir", "") or "")
-        path, _f = QFileDialog.getOpenFileName(self, tr("Import a preset from a file…"), start, "Render Studio preset (*.json)")
-        if not path:
-            return
-        try:
-            got = user_presets.from_file(Path(path).read_text(encoding="utf-8"))
-        except OSError:
-            got = None
-        if got is None:
-            self._set_status(tr("That file is not a Render Studio preset."))
-            return
-        name, preset = got
-        self._store_user_preset(name, preset)
-        self._set_status(tr("Preset «{name}» imported. Choose it in the list to use it.", name=name))
-
     def _floor_enable(self, *_a):
         """«Shadow on the floor» can be chosen unless a generated ground is seen as it is."""
         self.ground_shadow.setEnabled(not self.ground.isChecked() or self.bg_mode.currentData() == "flat")
@@ -2158,6 +2080,7 @@ class StudioPanel(QWidget):
                 form.setRowVisible(self.slider_rows[key], night)
         if "sun_scale" in self.slider_rows:
             form.setRowVisible(self.slider_rows["sun_scale"], not night)       # the sun by day, the moonlight by night
+        self._ambient_state()                       # the sun may have set (or risen): the buttons say what will be rendered
 
     def _ground_grass_hint(self):
         """Under the grass radius: how far the grass of the chosen material can reach at its density."""

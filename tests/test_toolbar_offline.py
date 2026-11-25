@@ -42,7 +42,7 @@ shown = []
 panel.app.show_panel = shown.append
 bar = c.build(panel.app)
 names = ["|" if a.isSeparator() else a.text() for a in bar.actions()]
-ok(names == ["Open preview", "Sync changes", "Update preview", "Sync camera", "|", "Materials", "Lights", "Library"], f"the toolbar, in order ({names})")
+ok(names == ["Render Studio", "Open preview", "Sync changes", "Update preview", "Sync camera", "|", "Materials", "Lights", "Library"], f"the toolbar, in order ({names})")
 ok(bar.objectName() == "render_studio_toolbar" and bar in win.findChildren(QToolBar), "it is in the window, under a stable name")
 ok(all(not a.icon().isNull() and a.toolTip() for a in bar.actions() if not a.isSeparator()), "every button has an icon and says what it does")
 pix = [a.icon().pixmap(32, 32).toImage() for a in bar.actions() if not a.isSeparator()]
@@ -59,6 +59,15 @@ opened = []
 panel.open_preview = lambda: opened.append("preview"); panel.open_materials = lambda: opened.append("materials"); panel.open_lights = lambda: opened.append("lights")
 c.need_blender(True); c.preview.trigger(); c.materials.trigger(); c.lights.trigger()
 ok(opened == ["preview", "materials", "lights"], f"each button does its job ({opened})")
+
+# the panel's own button
+home = QDockWidget(win); home.setWidget(panel)
+c.studio.trigger()
+ok(shown == [home], "the first button shows the Render Studio panel's tab")
+shown.clear()
+c.need_blender(False)
+ok(c.studio.isEnabled(), "…also without Blender")
+c.need_blender(True)
 
 # the Library: not installed, then installed
 answers = []

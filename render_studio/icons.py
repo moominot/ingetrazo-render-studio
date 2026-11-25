@@ -290,7 +290,82 @@ def _lights(p, ink):
     p.drawPolyline(QPolygonF([QPointF(21, 29), QPointF(21, 22), QPointF(24, 25), QPointF(27, 22), QPointF(27, 29)]))
 
 
+def _sun_at(p, cx, cy, r, rays, long=5.0):
+    disc = QPainterPath()
+    disc.addEllipse(QPointF(cx, cy), r, r)
+    _fill(p, disc, 190)
+    p.setBrush(Qt.NoBrush)
+    p.drawEllipse(QPointF(cx, cy), r, r)
+    for deg in rays:
+        a = math.radians(deg)
+        p.drawLine(QPointF(cx + (r + 3) * math.cos(a), cy - (r + 3) * math.sin(a)),
+                   QPointF(cx + (r + 3 + long) * math.cos(a), cy - (r + 3 + long) * math.sin(a)))
+
+
+def _cloud_path(x, y):
+    q = QPainterPath()
+    q.moveTo(x + 6, y + 22)
+    q.cubicTo(x - 3, y + 22, x - 2, y + 10, x + 8, y + 11)
+    q.cubicTo(x + 9, y - 1, x + 26, y - 1, x + 27, y + 10)
+    q.cubicTo(x + 36, y + 8, x + 38, y + 22, x + 28, y + 22)
+    q.closeSubpath()
+    return q
+
+
+def _amb_sunny(p, ink):
+    _sun_at(p, 24, 24, 9, range(0, 360, 45))
+
+
+def _amb_cloudy(p, ink):
+    cloud = _cloud_path(7, 14)
+    _fill(p, cloud, 70)
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(cloud)
+
+
+def _amb_golden(p, ink):
+    # A low sun, half under the horizon.
+    half = QPainterPath()
+    half.moveTo(13, 32)
+    half.arcTo(QRectF(13, 21, 22, 22), 180, -180)
+    half.closeSubpath()
+    _fill(p, half, 200)
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(half)
+    p.drawLine(QPointF(6, 32), QPointF(42, 32))
+    p.drawLine(QPointF(14, 39), QPointF(34, 39))
+    for a, b in (((24, 15), (24, 9)), ((13, 20), (9, 15)), ((35, 20), (39, 15))):
+        p.drawLine(QPointF(*a), QPointF(*b))
+
+
+def _amb_night(p, ink):
+    moon = QPainterPath()
+    moon.moveTo(27, 9)
+    moon.cubicTo(8, 8, 5, 38, 27, 39)
+    moon.cubicTo(34, 39, 39, 35, 41, 30)
+    moon.cubicTo(26, 33, 17, 20, 27, 9)
+    _fill(p, moon, 110)
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(moon)
+    _dot(p, 35, 13, 2.2)
+    _dot(p, 40, 21, 1.6)
+
+
+def _amb_interior(p, ink):
+    # A room with its window lit.
+    p.setBrush(Qt.NoBrush)
+    p.drawPolyline(QPolygonF([QPointF(7, 22), QPointF(24, 8), QPointF(41, 22)]))
+    p.drawPolyline(QPolygonF([QPointF(11, 20), QPointF(11, 40), QPointF(37, 40), QPointF(37, 20)]))
+    window = QPolygonF([QPointF(18, 24), QPointF(30, 24), QPointF(30, 34), QPointF(18, 34)])
+    _fill(p, window, 160)
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(window)
+    p.drawLine(QPointF(24, 24), QPointF(24, 34))
+
+
 _DRAW = {
+    "amb_sunny": _amb_sunny, "amb_cloudy": _amb_cloudy, "amb_golden": _amb_golden, "amb_night": _amb_night,
+    "amb_interior": _amb_interior,
     "preview": _preview, "materials": _materials, "lights": _lights,
     "follow_camera": _follow_camera, "follow_changes": _follow_changes, "refresh": _refresh,
     "comp_import": _comp_import, "comp_export": _comp_export,

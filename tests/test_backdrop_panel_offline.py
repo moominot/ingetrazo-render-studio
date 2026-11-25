@@ -77,9 +77,9 @@ ok(not panel.bg_note.isVisible(), "…and goes when it does not")
 panel.tabs.setCurrentIndex(TAB["Style"])
 panel.sliders["vignette"].setValue(panel.sliders["vignette"].maximum())
 panel.sliders["exposure_bias"].setValue(panel.sliders["exposure_bias"].maximum())
-panel.reset_btn.click()
+panel.gallery.reset_action.trigger()
 ok(abs(panel.slider_values()["exposure_bias"]) < 0.05 and abs(panel.slider_values()["vignette"] - presets.studio(panel.preset.currentData())[0].get("vignette", 0.16)) < 0.1,
-   "the reset button puts the sliders back to the look's values")
+   "«Reset all settings» puts the sliders back to the look's values")
 ok(all(panel.slider_rows[k].isVisible() for k in ("exposure_bias", "saturation", "vignette")),
    "Image: the simple sliders and the «Effects» group (vignette, depth of field) are all in view")
 panel.tabs.setCurrentIndex(TAB["Environment"])
@@ -127,23 +127,16 @@ ok(panel.sun_tab.lat.isVisible() and panel.sun_tab.north.isVisible() and panel.s
 panel.tabs.setCurrentIndex(TAB["Main"])
 ok(not panel.preview_engine.isVisible(), "Main: the preview engine is under Advanced")
 
-# the person's presets
-from render_studio import user_presets as UP
+# the person's presets: the whole look, in the gallery of the Main page (their files: test_presets_offline.py)
 panel.preset.setCurrentIndex(panel.preset.findData("golden_hour"))
 panel.sliders["clouds"].setValue(panel.sliders["clouds"].maximum())
 panel.set_backdrop_path(pic)
-mine = UP.make(panel.settings_dict())
-ok(mine is not None and "section" not in mine and mine["backdrop"]["path"] == pic and mine["look"] == "golden_hour", "a preset keeps the look, adjustments and background, not the section")
-panel._store_user_preset("Evening", mine)
-ok([panel.user_presets.itemText(i) for i in range(panel.user_presets.count())][-1] == "Evening" and panel.user_presets.currentData() == "Evening", "saved presets are listed")
+panel.bg_mode.setCurrentIndex(panel.bg_mode.findData("picture"))
+path = panel.gallery.keep("Evening")
+ok(path is not None and path.is_file() and panel.gallery.item("Evening") is not None, "a saved preset is in the gallery")
 panel.preset.setCurrentIndex(panel.preset.findData("overcast")); panel.bg_mode.setCurrentIndex(panel.bg_mode.findData("sky"))
-panel.user_presets.setCurrentIndex(panel.user_presets.findData("Evening")); panel._apply_user_preset()
-ok(panel.preset.currentData() == "golden_hour" and panel.bg_mode.currentData() == "picture" and abs(panel.slider_values()["clouds"] - 1.0) < 0.02, "choosing a preset puts it back in the panel")
-text = UP.to_file("Evening", panel.settings_dict())
-got = UP.from_file(text)
-ok(got and got[0] == "Evening" and got[1]["look"] == "golden_hour", "a preset file reads back")
-ok(UP.from_file("{}") is None and UP.from_file("nonsense") is None and UP.clean_name("  a" + chr(10) + " b  ") == "a b", "other files are refused; names are tidied")
-ok(set(UP.load_all(UP.dump_all({"x": mine, "": mine}))) == {"x"}, "stored presets load, nameless ones drop")
+panel.gallery.apply_item(panel.gallery.item("Evening"))
+ok(panel.preset.currentData() == "golden_hour" and panel.bg_mode.currentData() == "picture" and abs(panel.slider_values()["clouds"] - 1.0) < 0.02, "clicking it puts it back in the panel")
 
 # ---- the ground's material, the sun's group, «Lights the scene» out of the fold ---------------------
 from core.group import Group

@@ -58,4 +58,9 @@ img, st = render("paper_only", surface__kind="paper", background__paper_sky=True
 ok(not img.isNull() and share(img, paperish) > 0.85, f"no surface: paper, with the shadows' hatching ({share(img, paperish):.0%})")
 img, st = render("material_no_glass", surface__kind="mono", surface__material="Fusta", surface__keep_glass=False)
 ok(not img.isNull() and st.get("mode") == "model" and "parts" not in st, "one material over everything: still said as before")
+img, _ = render("hatch_no_ground", surface__kind="paper", background__paper_sky=True, ground__on=False, outline__on=True, shadows__draw="lines")
+corner = [img.pixelColor(x, y) for x in range(2, 120) for y in range(2, 60)]
+ok(not img.isNull() and max(c.lightness() for c in corner) - min(c.lightness() for c in corner) <= 2,
+   "with no ground the shadows' hatching stays on the shadows: the paper's corner is clean")
+ok(share(img, paperish) > 0.85 and share(img, lambda r, g, b: r < 200) > 0.002, "…and there is hatching where the shadows fall")
 print("FAILED" if fails else "ALL OK"); sys.exit(1 if fails else 0)

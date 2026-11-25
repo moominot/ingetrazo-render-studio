@@ -4256,6 +4256,9 @@ def shadow_mask(scene, path):
     hidden = [ob for ob in bpy.data.objects if ob.type == "LIGHT" and ob not in suns and not ob.hide_render]
     tmp = path + ".shadows.png"
     swapped = None
+    # The invisible floor that only shows shadows would read as shadow all over: for the mask a plain floor stands in its place.
+    catchers = [ob for ob in bpy.data.objects if ob.name.startswith("IngeTrazo shadow floor") and not ob.hide_render]
+    stand_ins = []
     cycles = getattr(scene, "cycles", None) if r.engine == "CYCLES" else None
     keep_samples = cycles.samples if cycles is not None else None
     keep_bounces = cycles.max_bounces if cycles is not None else None
@@ -4281,12 +4284,26 @@ def shadow_mask(scene, path):
         r.image_settings.file_format = "PNG"
         r.image_settings.color_mode = "RGBA"
         r.image_settings.color_depth = "8"
+        for ob in catchers:
+            plain = ob.copy()
+            plain.data = ob.data.copy()
+            plain.data.materials.clear()
+            plain.is_shadow_catcher = False
+            scene.collection.objects.link(plain)
+            ob.hide_render = True
+            stand_ins.append(plain)
         swapped = _whiten_slots()
         bpy.ops.render.render(write_still=True)
         arr = _read_pixels(tmp)
     finally:
         if swapped is not None:
             _restore_slots(*swapped)
+        for plain in stand_ins:
+            mesh = plain.data
+            bpy.data.objects.remove(plain, do_unlink=True)
+            bpy.data.meshes.remove(mesh)
+        for ob in catchers:
+            ob.hide_render = False
         for ob in hidden:
             ob.hide_render = False
         if cycles is not None:

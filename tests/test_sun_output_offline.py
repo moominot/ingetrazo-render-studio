@@ -269,10 +269,9 @@ ok(rows.index(panel.slider_rows["sun_scale"]) > rows.index(q.date_box), "…unde
 panel.sun_tab.set_minutes(23 * 60); panel.sun_tab.flush(); panel.sun_tab._show_sun(); qa.processEvents()
 ok(not panel.slider_rows["sun_scale"].isVisibleTo(panel.tabs.widget(2).widget()) and panel.slider_rows["moon"].isVisibleTo(panel.tabs.widget(2).widget()), "at night the moonlight takes the sun's place")
 ok(PR.apply_sliders({"stars": 1.0}, {"stars": 1.0, "clouds": 1.0})["stars"] < 0.2 and PR.apply_sliders({"stars": 1.0}, {"stars": 1.0, "clouds": 0.0})["stars"] == 1.0, "clouds dim the stars")
-# the interior box: the look follows it; the sliders share their left edge
-panel.interior.setChecked(True); ok(panel.preset.currentData() == "interior", "Interior ticked: the interior look")
-panel.interior.setChecked(False); ok(panel.preset.currentData() == "clear", "…and unticked: the clear day again")
-panel.preset.setCurrentIndex(panel.preset.findData("interior")); ok(panel.interior.isChecked(), "…the box follows the look")
+# the ambients: five buttons that change the look
+panel.ambient.buttons["interior"].click(); ok(panel.preset.currentData() == "interior", "«Interior»: the interior look")
+panel.ambient.buttons["overcast"].click(); ok(panel.preset.currentData() == "overcast" and not panel.ambient.buttons["interior"].isChecked(), "…«Cloudy»: the overcast one")
 panel.preset.setCurrentIndex(panel.preset.findData("clear"))
 panel.show(); panel.tabs.setCurrentIndex(2); panel.resize(380, 900); qa.processEvents()
 xs = {k: panel.slider_rows[k].mapTo(panel, panel.slider_rows[k].rect().topLeft()).x() for k in ("sun_scale", "clouds")}

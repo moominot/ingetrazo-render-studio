@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Render Studio's commands and its toolbar: open the preview, keep it in step with the model and with the camera | the
+"""Render Studio's commands and its toolbar: open the panel, open the preview, keep it in step with the model and with the camera | the
 materials, the lights and the Library.
 
 The commands are the panel's own (they exist, and hold their state, also where there is no window to put a toolbar in);
@@ -21,12 +21,13 @@ OBJECT_NAME = "render_studio_toolbar"          # stable: the saved layout keys o
 LIBRARY_SEARCH = "asset_manager"
 _SETTINGS = "render_studio/"
 #: The toolbar's order; None is a separator.
-ORDER = ("preview", "follow_changes", "update", "follow_camera", None, "materials", "lights", "library")
+ORDER = ("studio", "preview", "follow_changes", "update", "follow_camera", None, "materials", "lights", "library")
 
 
 class Commands:
     def __init__(self, panel):
         self.panel = panel
+        self.studio = self._action("render_studio", "Render Studio", "Opens the Render Studio panel.", lambda: show_dock(panel, panel))
         self.preview = self._action("preview", "Open preview", "A live view of the scene that you can zoom and move, with Render.",
                                     lambda: panel.open_preview())
         self.follow_changes = self._toggle(
@@ -92,22 +93,27 @@ def library_panel():
                  and type(w).__module__.startswith("asset_manager")), None)
 
 
+def show_dock(panel, widget) -> bool:
+    """Bring to the front the side tab ``widget`` lives in (shown again if it was closed). False when it is in none."""
+    dock = widget
+    while dock is not None and not hasattr(dock, "setFloating"):
+        dock = dock.parentWidget()
+    if dock is None:
+        return False
+    try:
+        panel.app.show_panel(dock)
+    except Exception:  # noqa: BLE001 - an IngeTrazo that shows it otherwise
+        _log.exception("could not show the panel")
+        dock.show()
+        dock.raise_()
+    return True
+
+
 def open_library(panel) -> None:
     """Show the Library's tab; without the extension, say so and offer IngeTrazo's extension manager."""
     library = library_panel()
-    if library is not None:
-        dock = library
-        while dock is not None and not hasattr(dock, "setFloating"):
-            dock = dock.parentWidget()
-        if dock is not None:
-            try:
-                panel.app.show_panel(dock)
-                return
-            except Exception:  # noqa: BLE001 - an IngeTrazo that shows it otherwise
-                _log.exception("could not show the Library")
-                dock.show()
-                dock.raise_()
-                return
+    if library is not None and show_dock(panel, library):
+        return
     window = getattr(panel.app, "window", None)
     manager = getattr(window, "_on_manage_extensions", None)
     if ask_install(panel, callable(manager)):
