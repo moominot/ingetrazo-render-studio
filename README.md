@@ -15,6 +15,28 @@ newer) and saved under IngeTrazo's own key (`render/blender_path`), so the Rende
 
 Render Studio speaks every language IngeTrazo does: English, Español, Català, Português (Brasil), 简体中文, 正體中文, Italiano, Bahasa Indonesia, Français, Deutsch, Polski, Русский, Tiếng Việt, ລາວ, ไทย, 日本語, 한국어, Українська, العربية, Български and Türkçe. It follows the language chosen in IngeTrazo; a text without a translation shows in English.
 
+## New in 0.29.0
+
+- **A simpler panel.** Every group is a card with its icon, which folds away, with flat buttons. There are no *Advanced*
+  folds: the finer settings are on the **Expert** page.
+- **Expert mode** (button at the top of the tray) adds a page with every setting, with a search box, a mark and a reset
+  for what is not at its default, and an **eye** that says whether the setting shows in its own page. The eyes make a
+  layout you can save under a name. The **+** on a card opens that group there, with Expert mode on or off.
+- **Style**: **Surface** (real materials, one colour or material, none, light analysis), **Outline** and **Finish** are
+  three separate choices, so they combine (a watercolour of the white model, hand-drawn lines on the real materials).
+  A paper or canvas **texture** can go over the whole picture.
+- **Environment**: five **light** buttons (sunny, cloudy, golden hour, night, interior); **Shadows** for every style
+  (as rendered, a colour, lines, cross-hatching or dots, with an optional outline); a **transparent** background and a
+  **plain colour** one, both with the floor's shadows.
+- **Presets** are a gallery with thumbnails, seven built in; they are `.rspreset` files that carry their pictures.
+- **Section**: the cap's material is picked from a grid of the drawing's textures; hatching and cap outline have the same
+  line settings (thickness, colour, hand, ink), with a preview; the light in the cut is two large buttons.
+- A **toolbar**: panel, preview, sync camera, sync changes, update, materials, lights and the Library.
+- **Preview window**: move the camera with the mouse as in the 3D view, with its bar at the top (sync switches, preview
+  quality, new scene, save, capture); the picture on screen can be saved or copied; a checkerboard shows transparency.
+- **Automatic** engine: Cycles when Blender finds a graphics card for it, else EEVEE. **Two-point perspective** renders.
+- The mouse wheel changes only a field you have clicked.
+
 ![Looks](docs/looks.png)
 
 ## Looks
@@ -352,7 +374,7 @@ It then sets how the cut looks:
 - Meshes that are not closed get no cap (a single surface has no section to fill).
 - Kept in the document under `settings["section"]`.
 
-![The Section tab](docs/tab_section.png)
+
 ## What is hidden
 
 Whatever is hidden in the drawing stays out of the render and of the preview, and out of the model
@@ -447,31 +469,30 @@ what you save (Ctrl+S) back into the drawing, one undo step.
 
 ## Panel
 
-`Render Studio…` in the extensions menu opens the panel. It has five tabs: **Main**, **Image**, **Environment**,
-**Section** and **Output** ([Output](#output)); the sun's place and date
-([Sun](#sun)) are in view in **Environment**, whose groups fold away with a click on their title (it is remembered). What is under them (**Materials…** and **Lights…**, which open windows of their own,
-Open preview…, the status) serves all.
-The simple controls are in view and the rest folded under *Advanced*:
+`Render Studio…` in the extensions menu (or the toolbar's first button) opens the panel. Its pages are **Main**,
+**Style**, **Environment**, **Section** and **Output** ([Output](#output)), and **Expert** with Expert mode on. Each group
+is a card that folds with a click on its title (it is remembered). At the bottom: **Materials…** and **Lights…**, which
+open windows of their own, **Preview** and **Capture** (the final picture; its arrow has *Render and save…*, *Render the
+selected scenes* and *Open in Blender…*).
+
 - **Render** reuses the preview's Blender when it can: with the preview open and up to date, the same engine and an ordinary PNG/JPEG,
   the final picture is made in the scene the preview already has (nothing is exported or built again: about four times sooner, and
   the same picture to within a level of 255). Panoramas, a transparent sky, deeper file formats, grass (a sparser draft in the preview)
-  or a scene behind the panel go the long way. **Quality › Advanced › Preview quality** (Fast, Normal, High) sets how big and how
-  clean the preview's pictures are.
-- **Main** also has a **Style** group: how the picture is drawn. *None*, *White*, *Model* (a maquette: every object wears one material),
+  or a scene behind the panel go the long way. The **preview quality** (Fast, Normal, High: three buttons in the preview window and in the panel) sets how big
+  and how clean the preview's pictures are.
+- The **Style** page: how the picture is drawn. *None*, *White*, *Model* (a maquette: every object wears one material),
   *Light* (the lux each surface receives, in false colour with a scale), *Sketch* (pencil lines on paper: irregular stroke and the line extension, in centimetres of the model: 100 % is 50 cm; a ruler goes exactly that far past a corner) and
   *Watercolour* (wetness, edges, paper); every style can have **outlines** (thickness and colour). Outlines are not Blender's: Blender renders without lines and the app draws them from the model's own geometry, seen from the same camera
   (a depth buffer and every edge walked pixel by pixel, the engine of [Croquis for IngeTrazo](https://github.com/vicc3d/croquis-ingetrazo) by Victor Crespo, GPL-3.0-or-later,
   kept in `render_studio/croquis_engine`). On a model of 670 000 triangles that is about 4 s where Freestyle took 33 s. They are laid over the picture, wash and all.
   The lux, the paper and the watercolour are made on the finished picture, so the live view shows them too (slower). The live view draws the outlines on the quick and the
   refined images, not on a big model and not while the camera moves.
-- **Main**: your **presets** (*Save as preset…* keeps the settings under a name for any drawing; *⋯* deletes,
-  exports and imports them as `.json` files to share), the **look** with a button that resets every adjustment
-  to the look's values, and the **final render** (engine and quality; *Advanced*: the preview's engine);
-- **Image**: a **Camera** group (the 3D view's own: parallel, perspective or two-point with the program's icons, and the **angle of view**); exposure, warmth and saturation; *Effects* (a group): vignette, **depth of field** (focused on the middle of
-  the view) and **ambient occlusion** (strength and reach: the render's AO pass multiplied into the picture);
+- **Main**: the five **light** buttons, the gallery of **presets** and the **quality** of the final picture;
+- **Style**: **Surface**, **Outline** and **Finish**, the picture's corrections (exposure, warmth, saturation) and effects
+  (vignette, **depth of field**, focused on the middle of the view, and **ambient occlusion**);
 - **Environment**, in the order a person decides it, with everything in view (nothing is folded under *Advanced*; what has no meaning in the
   current choice is greyed or left out):
-  **Sun and sky** — *Interior*; the sun's **date** and **hour** as two sliders (said once); its strength, the clouds (they wait, with a line saying
+  **Sun and sky** — the sun's **date** and **hour** as two sliders (said once); its strength, the clouds (they wait, with a line saying
   why, when the background is not the look's sky), the stars and moonlight at night; and below, always in view, the **place** (latitude and longitude,
   or the map), the **north**, the **time zone** and the shadows of the 3D view. **Background** — the look's sky, a 360° panorama or a fixed picture,
   and only the controls of the chosen one: a panorama's image, *Lights the scene*, rotation, brightness and viewpoint height; a picture's fit and
@@ -497,53 +518,9 @@ The simple controls are in view and the rest folded under *Advanced*:
   folder and one name — `{document}`, `{scene}`, `{look}`, `{date}` — for a single render with *Save each render* and for the
   scenes, which are always saved there; the drawing goes back to its view afterwards). The general help button (?) is beside the tabs.
 
-The fixed buttons are few: **Materials…** and **Lights…**, then **Render** (its arrow: *Render and save…* and *Render the
-selected scenes*) and **Open preview…** (its arrow: *Open in Blender…*). The preview window has **Render** with the same arrow,
-**New scene from this view…** always in view and **Update preview** only when it can be used; *More* opens the live view's options, *New scene
-from this view…* and *Open in Blender…*, and the retouch of a finished picture folds its warmth and vignette.
-
-The panel has **Render** and **Render and save…** (the final picture right away, without the live preview: the window opens only to show it) and **Open preview…** (the live view).
-
-![Panel](docs/panel.png)
-
-### The tabs
-
-**Main**: presets, the style of the picture, the camera and the quality (the panel scrolls: the second picture is its lower part).
-
-<table>
-<tr>
-<td valign="top"><img src="docs/tab_main.png" width="300" alt="Main tab: presets, style and camera"></td>
-<td valign="top"><img src="docs/tab_main_2.png" width="300" alt="Main tab, lower part: camera and quality"></td>
-<td valign="top"><img src="docs/tab_image.png" width="300" alt="Image tab: exposure, warmth, saturation, vignette and ambient occlusion"></td>
-</tr>
-</table>
-
-**Image**: exposure, warmth and saturation, and the effects (vignette, ambient occlusion and its reach).
-
-**Environment** (three parts of one long tab): sun and sky (date, hour, clouds, place and the shadows of the 3D view), the
-background and the ground, then the horizon and the fog.
-
-<table>
-<tr>
-<td valign="top"><img src="docs/tab_environment_1.png" width="300" alt="Environment tab: sun and sky"></td>
-<td valign="top"><img src="docs/tab_environment_2.png" width="300" alt="Environment tab: background and ground"></td>
-<td valign="top"><img src="docs/tab_environment_3.png" width="300" alt="Environment tab: ground, horizon and fog"></td>
-</tr>
-</table>
-
-**Section** closes the cut of the active section plane or section box with a cap (its material, the outline of the cap, shadows and light; [both are rendered](#section)) and **Output** sets the
-projection, the size, the file and where it is saved.
-
-<table>
-<tr>
-<td valign="top"><img src="docs/tab_section.png" width="300" alt="Section tab: the cap of the cut"></td>
-<td valign="top"><img src="docs/tab_output.png" width="300" alt="Output tab: projection, size, file and what to render"></td>
-</tr>
-</table>
-
 ### Styles
 
-The **Style** group of the Main tab changes how the whole picture is drawn, in the live view and in the final render:
+The **Style** page changes how the whole picture is drawn, in the live view and in the final render:
 
 <table>
 <tr>
@@ -715,7 +692,7 @@ another, and Render Studio works on its own), and they share data stored in the 
 |---|---|---|
 | **SketchUp files** (`skp_dc_import`) | Imports a `.skp` keeping its components and dynamic data; exports one back. | A light in the file (point, spot, linear, rectangular, disk) comes in as a **Render Studio light** on its component, and the component's symbol is left out of the render (`hide_in_render`, Render Studio 0.17.0 or later). |
 | **Dynamic components** (`dc_tools`) | Component Options and Attributes, and the formula engine. | None directly: a component redrawn by its options is simply geometry the render sees. |
-| **Components manager** (`asset_manager`) | The drawing's components, your catalogs and free online assets (Poly Haven, ambientCG). | Its **HDRIs** are 360° backgrounds, its **materials** arrive with a `.pbr.json` manifest naming every map (see *Full texture sets*), its **proxies** are rendered as their full model (see *Proxies*), and a **stand-in** is left out of the render. |
+| **Render Studio Library** (`asset_manager`) | The drawing's components, your catalogs and free online assets (Poly Haven, ambientCG). | Its **HDRIs** are 360° backgrounds, its **materials** arrive with a `.pbr.json` manifest naming every map (see *Full texture sets*), its **proxies** are rendered as their full model (see *Proxies*), and a **stand-in** is left out of the render. |
 
 ## Releases
 
