@@ -37,6 +37,11 @@ Render Studio speaks every language IngeTrazo does: English, Español, Català, 
 - **Automatic** engine: Cycles when Blender finds a graphics card for it, else EEVEE. **Two-point perspective** renders.
 - The mouse wheel changes only a field you have clicked.
 
+  ![Interface](docs/render_studio_cataleg.png)
+  ![New panel. Simpler. Pretier](docs/cloud_shots.png)
+  ![Preview window. Move inside the Rendered View](docs/top-dark-narrow.png)
+  ![Render window. Easy post-procesing image](docs/top-final.png)
+
 ![Looks](docs/looks.png)
 
 ## Looks
