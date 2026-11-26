@@ -42,6 +42,7 @@ Render Studio speaks every language IngeTrazo does: English, Español, Català, 
   
   ![New panel. Simpler. Pretier](docs/cloud_shots.png)
 
+  <img width="302" height="73" alt="image" src="https://github.com/user-attachments/assets/1fc39717-09a4-41f9-b33b-dd2fa048a1a0" />
   
   ![Preview window. Move inside the Rendered View](docs/top-dark-narrow.png)
 
