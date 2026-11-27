@@ -62,6 +62,20 @@ Imatges: `imatges/targetes-clar.png`, `imatges/targetes-fosc.png`, `imatges/secc
 
 Imatge: `imatges/expert-ull.png`.
 
+## 5 bis. Etiquetes, finestres i configuració (decidit el 26-11-2026)
+
+- **Etiquetes damunt** del control, que ocupa tot l'ample. El valor d'un control lliscant va **a la dreta de la línia del nom**, amb el color de text normal. Al tauler ho fa `labels_above.py`; a les finestres de Materials i Llums, el bloc `Block` de `material_view.py`.
+- Les **finestres** (Materials, Llums) segueixen el tauler: targetes plegables amb «+», botons grans amb icona per a les tries de poques opcions, i **Mode expert** (pestanya Expert amb cercador, un ull per ajustament i «Vista per defecte»).
+- A dalt a la dreta, «Mode expert» i l'ajuda, **de la mida dels del tauler** (`SMALL_BUTTON`, icones de 16 px; l'ajuda només amb icona).
+- **Marges:** 10 px a la vora de la finestra; la columna de la llista i tot el que té a sobre i a sota, de la mateixa amplada; la capçalera, el cercador i el peu s'alineen amb les targetes (deixen a la dreta el lloc de la barra de desplaçament).
+- Els botons de la llista, en **dues columnes**. «Esborra» només hi és quan es pot fer servir.
+- Un element **editat al Blender amaga els ajustos** (no els desactiva) i destaca «Desbloqueja», amb icona i el color d'accent.
+- **Cap miniatura que no mostri el resultat de debò.** Si n'hi ha una de fidel, va centrada.
+- Una finestra que s'obre amb alguna cosa seleccionada al model **la deixa triada** (sense botó «De la selecció»).
+- Un programa extern: un **sol botó amb la icona**; el botó dret en tria un altre.
+- **En obrir un dibuix:** pestanya Principal i tots els grups replegats menys els Predefinits.
+- A Expert del tauler, el **cercador queda fix**; les opcions pròpies de l'extensió van al grup «Configuració del tauler», amb els grups en **acordió** (activat per defecte). Es parla de «configuració», no de «disposició».
+
 ## 6. Textos
 
 - Etiquetes curtes: «Alçada», no «Alçada dels cims» (el grup ja diu de què).

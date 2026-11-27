@@ -1,6 +1,6 @@
 # Estat i feina pendent (totes les extensions)
 
-Actualitzat el 25-11-2026. Aquest és el document **mestre**; si tanqueu o obriu alguna cosa, poseu-ho aquí al dia.
+Actualitzat el 27-11-2026. Aquest és el document **mestre**; si tanqueu o obriu alguna cosa, poseu-ho aquí al dia.
 
 ## Les extensions
 
@@ -35,13 +35,28 @@ Són còpies de feina de l'ordinador local, **sense revisar ni provar**. No les 
 | moominot/ingetrazo (*fork*) | `wip/wheel-guard-2026-11-25` | correcció del nucli perquè la roda no canviï valors (incidència #1483). Abans d'obrir cap PR, cal el vistiplau de l'usuari. Proves a mitges: les específiques passaven; no consta el resultat de la bateria sencera |
 | moominot/openskp (*fork*) | `feat/instanced-definition-attribute-dictionaries` | atributs de definició a l'escena instanciada. L'usuari vol fer-ne una proposta més endavant (importar .skp sense aplanar) |
 
+## Render Studio: a `main` però encara sense publicar (després de la 0.29.0)
+
+- «Edita al Blender» amb el mateix acabat que el model i esfera amb UV a mida real.
+- Finestres de Materials i Llums refetes (guia d'estil, 5 bis), mode expert amb ulls, ajustos fins, tipus Fullatge i **mostra renderitzada** per un Blender en segon pla.
+- Tauler: etiquetes damunt, grups replegats en obrir un dibuix, acordió; els renders es desen com a `renderStudio-data-hora`.
+- Corregit un tancament intermitent: **no moveu mai amb `setParent()` un control ja posat en una disposició** (feia malbé la memòria i el programa queia més tard, en buidar una llista). Hi ha una prova que ho vigila.
+
+Abans de publicar-ne una versió:
+
+- Traduir els textos nous als altres 18 idiomes (ara només en anglès, català i castellà; algunes claus han canviat de nom).
+- Provar-ho a fons dins el programa (tema fosc, finestres estretes: les mostres tenen amplada fixa; Materials, Llums i vista prèvia oberts alhora).
+- Les mostres no s'han comparat amb el render final i encara tenen una llum pròpia per afinar. Decidir si es treu l'esbós de la llum.
+- Desar configuracions amb nom a les finestres (ara només hi ha «Vista per defecte»).
+- Les icones noves són només a Render Studio; `icons.py` hauria de ser igual a totes les extensions.
+- La detecció de l'acabat del nucli llegeix «Marès» com a aigua (li falten lletres accentuades): correcció preparada per proposar a IngeTrazo, encara no enviada.
+
 ## Render Studio: pendent
 
 Pla complet: [pla-render-studio.md](pla-render-studio.md).
 
 - Aplicar el criteri de l'**ull i la vista bàsica** a Principal i Estil (a Entorn i Secció ja hi és).
 - **Icones** davant el nom de cada grup: les targetes ja en tenen; comproveu que no en falti cap.
-- Revisar les finestres de **Llums i Materials** (encara tenen desplegables «Avançat»; l'usuari no ho va voler tocar quan es van treure del tauler).
 - **Fase 6**, blocs que falten: superfície d'un color i lux; gruix de la trama d'ombra, intensitat sobre color pla, aquarel·la, distància de la boirina i sol del panorama.
 - El botó d'ajuda «?» de la capçalera es veu massa fluix.
 - Potser reanomenar «Què renderitzar» a «Què es captura».
