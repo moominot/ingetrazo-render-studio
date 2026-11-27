@@ -16,7 +16,7 @@ from PySide6.QtCore import QObject, QSettings, Qt, QTimer, Signal
 from PySide6.QtWidgets import (QDialog, QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget,
                                QListWidgetItem, QProgressBar, QPushButton, QVBoxLayout, QWidget)
 
-from . import wheel_guard
+from . import labels_above, wheel_guard
 from . import output
 from .i18n import tr
 
@@ -27,7 +27,9 @@ DEFAULT_PATTERN = output.DEFAULT_PATTERN
 def scene_file_name(pattern: str, document: str, scene: str, ext: str, taken=(), look: str = "") -> str:
     """A file name from ``pattern`` ({document} {scene} {look} {date}), safe for any system and unlike the ones
     in ``taken`` (two scenes with the same name get -2, -3…)."""
-    name = (pattern or DEFAULT_PATTERN).replace("{document}", document or "render").replace("{scene}", scene or "scene") \
+    if not pattern or pattern == DEFAULT_PATTERN:
+        pattern = output.DEFAULT_SCENES_PATTERN
+    name = pattern.replace("{document}", document or "render").replace("{scene}", scene or "scene") \
         .replace("{look}", look or "").replace("{date}", time.strftime("%Y%m%d-%H%M%S"))
     name = re.sub(r'[\\/:*?"<>|\x00-\x1f]+', "_", name).strip(" .-_") or "render"
     base, n = name, 1
@@ -178,6 +180,7 @@ class BulkDialog(QDialog):
         self.close_btn.clicked.connect(self._close_or_cancel)
         brow.addWidget(self.close_btn)
         lay.addLayout(brow)
+        labels_above.apply(self)
         wheel_guard.watch(self)          # (the wheel scrolls; it changes only a picked field)
 
     def start(self, views, folder, pattern) -> bool:

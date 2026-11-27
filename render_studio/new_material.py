@@ -3,7 +3,7 @@
 what is selected with it."""
 from __future__ import annotations
 
-from . import wheel_guard
+from . import labels_above, wheel_guard
 from .i18n import tr, translate_on_show  # noqa: F401
 
 from pathlib import Path
@@ -65,6 +65,7 @@ class NewMaterialDialog(QDialog):
         box.rejected.connect(self.reject)
         lay.addWidget(box)
         self._refresh()
+        labels_above.apply(self)
         wheel_guard.watch(self)          # (the wheel scrolls; it changes only a picked field)
 
     def _swatch(self):

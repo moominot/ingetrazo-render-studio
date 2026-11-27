@@ -227,7 +227,7 @@ class OutputTab(QWidget):
         fbox.setLayout(frow)
         form3.addRow("Folder", fbox)
         stored = str(st.value(_SETTINGS + "autosave_name", O.DEFAULT_PATTERN) or "")
-        if stored == "{document}-{look}-{date}":               # the name this tab started with: the new one
+        if stored in O.OLD_DEFAULTS:                           # a name this tab started with before: the new one
             stored = O.DEFAULT_PATTERN
         self.pattern = QLineEdit(stored or O.DEFAULT_PATTERN)
         self.pattern.setToolTip("{document}: the document's name, {scene}: the scene's name («view» for the current "

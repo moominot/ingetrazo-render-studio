@@ -156,6 +156,8 @@ if "--no-gui" not in sys.argv:
     open(probe, "w").write("""
 import bpy
 m = bpy.data.materials["Bricks"]
+ball = next(o for o in bpy.data.objects if o.type == "MESH" and o.data.materials and o.data.materials[0] == m)
+print("OUTWARDS", all(p.normal.dot(p.center) > 0 for p in ball.data.polygons), flush=True)
 types = sorted(n.type for n in m.node_tree.nodes)
 linked = any(l.from_node.type == "TEX_IMAGE" and l.to_socket.name == "Base Color" for l in m.node_tree.links)
 spheres = [o.name for o in bpy.data.objects if o.type == "MESH" and o.data.materials and o.data.materials[0] == m]
@@ -163,6 +165,7 @@ print("PROBE", types, linked, spheres, len(bpy.data.materials))
 """)
     r = subprocess.run([BLENDER, "-b", one, "--python", probe], capture_output=True, text=True, timeout=120)
     line = next((l for l in r.stdout.splitlines() if l.startswith("PROBE")), "")
+    ok("OUTWARDS True" in r.stdout, "the sphere faces outwards (bumps stand out, grass grows out)")
     ok("TEX_IMAGE" in line and "BSDF_PRINCIPLED" in line and "True" in line and "['Bricks']" in line,
        f"…with its picture linked to the colour, one sphere, its nodes made ({line[:90]})")
 

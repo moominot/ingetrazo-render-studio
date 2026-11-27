@@ -464,6 +464,8 @@ class Card(QGroupBox):
     with a click; whether it is open is remembered under ``key``. Fill ``form`` (``kind`` "form") or ``body_layout``
     ("column"): both are in the card's body, so what the code shows or hides row by row is not disturbed by folding."""
 
+    unfolded = Signal()                         # it has just been opened (by a click or by the program)
+
     def __init__(self, title: str, key: str = "", parent=None, icon: str = "", kind: str = "form"):
         super().__init__(title, parent)
         from PySide6.QtCore import QSettings
@@ -565,6 +567,8 @@ class Card(QGroupBox):
             except Exception:  # noqa: BLE001
                 pass
         self.update()
+        if on:
+            self.unfolded.emit()
 
     def force_open(self, on: bool) -> None:
         """Open while ``on`` whatever was chosen (a search shows what it finds); the choice is kept."""
@@ -695,10 +699,11 @@ class ChoiceButtons(QWidget):
 
     currentIndexChanged = Signal(int)
 
-    def __init__(self, labels, parent=None, icons=()):
+    def __init__(self, labels, parent=None, icons=(), per_row: int = 0):
+        """``per_row``: more than one row, so many buttons in each (0: all in one)."""
         super().__init__(parent)
-        from PySide6.QtWidgets import QButtonGroup, QToolButton
-        lay = QHBoxLayout(self)
+        from PySide6.QtWidgets import QButtonGroup, QGridLayout, QToolButton
+        lay = QGridLayout(self) if per_row else QHBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(3)
         self.icon_keys = tuple(icons)
@@ -721,7 +726,10 @@ class ChoiceButtons(QWidget):
             b.setMinimumHeight(48 if self.icon_keys else 28)
             self._group.addButton(b, i)
             self._buttons.append(b)
-            lay.addWidget(b, 1)
+            if per_row:
+                lay.addWidget(b, i // per_row, i % per_row)
+            else:
+                lay.addWidget(b, 1)
         self._buttons[0].setChecked(True)
         self._group.idToggled.connect(lambda i, on: self.currentIndexChanged.emit(i) if on else None)
 

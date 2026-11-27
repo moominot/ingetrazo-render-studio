@@ -159,7 +159,17 @@ def retouchable(fmt: str) -> bool:
     return FORMATS.get(fmt, FORMATS["png"])[4]
 
 
-DEFAULT_PATTERN = "{document}-{scene}-{date}"
+DEFAULT_PATTERN = "renderStudio-{date}"
+#: …and for several scenes at once, which need telling apart.
+DEFAULT_SCENES_PATTERN = "renderStudio-{date}-{scene}"
+#: The names that were the default before: kept as they were stored, they give way to the new one.
+OLD_DEFAULTS = ("{document}-{look}-{date}", "{document}-{scene}-{date}")
+
+
+def save_name(stamp: str = "") -> str:
+    """The name a render is saved under (without its extension): renderStudio-date-time."""
+    import time
+    return DEFAULT_PATTERN.replace("{date}", stamp or time.strftime("%Y%m%d-%H%M%S"))
 
 
 def file_name(pattern: str, document: str, look: str, stamp: str, ext: str, scene: str = "view") -> str:

@@ -24,7 +24,7 @@ ok(all(label in page for label, *_ in presets.SLIDERS.values()), "every panel sl
 ok(all(f"<b>{label}</b>" in page for _k, label, *_ in ME._FIELDS), "every material setting is explained")
 ok("Transparency" in page, "the help explains the transparency")
 ok("Ripple size" in page, "the help explains the water ripples")
-ok("Cube preview" in page, "the help explains the cube preview")
+ok("Cube preview" not in page, "the help no longer speaks of a thumbnail that is not in the editor")
 ok("live view" in page and "saved in the document" in page, "the help explains the live view and the saved settings")
 ok("Open preview…" in page and "Render and save…" in page and "<b>Back to preview</b>" in page and "Two kinds of sliders" in page,
    "the help explains the preview window, Render, Render and save… and the two kinds of sliders")
@@ -64,7 +64,7 @@ btn[0].click(); qa.processEvents()
 ok(ui_help._dialog is d, "the same help window is reused")
 try:
     ed = ME.MaterialEditor(App(), "en")
-    mbtn = [b for b in ed.findChildren(type(panel.help_btn)) if b.text() == "?"]
+    mbtn = [ed.help_btn]
     ok(len(mbtn) == 1, "material editor has a ? button")
     mbtn[0].click(); qa.processEvents()
 except Exception as e:  # noqa: BLE001

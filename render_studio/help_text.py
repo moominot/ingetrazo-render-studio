@@ -164,9 +164,11 @@ capped at 80 % so they do not glow, and a light finish of saturation and vignett
 <a name="lights"></a>
 <h4>Lights</h4>
 <p>The <b>Lights…</b> button of the panel opens the lights window: the list and the adding on the left; on the right a
-sketch of the chosen light, its basic settings and, folded under <i>Advanced</i>, the exact place and aim, bulb size,
-soft edge, IES profile and the lights on objects. <b>Edit in Blender…</b> (for experts) opens the free lights in Blender
-over a floor and a cube; each time you save (Ctrl+S) they come back here, one undo step.</p>
+sketch of the chosen light, its name, its kind (big buttons) and its settings in folding groups. <b>Expert mode</b> adds
+the <b>Expert</b> tab with every setting of the light, a search box and an <b>eye</b> each: the exact place and aim, bulb
+size, soft edge, spread, the IES profile and putting it on an object start hidden there. A light edited in Blender shows
+only its name and place, with <b>Unlock</b>. <b>Edit in Blender…</b> (for experts) opens the free lights in Blender over
+a floor and a cube; each time you save (Ctrl+S) they come back here, one undo step.</p>
 <p>Lights place lights for the render, of the four kinds Blender has. They are drawn in
 the 3D view (a bulb, a spot's cone, an area light's outline and the way it faces, a sun's rays), in their colour,
 grey when off; <b>Show in the 3D view</b> hides them. Click one with the Select tool to choose it; Supr deletes it.</p>
@@ -246,7 +248,8 @@ the whole sphere, 2:1, for a panorama or VR viewer. Both are rendered from the c
 Engine setting is ignored).</td></tr>
 <tr><td valign='top'><b>What to render, Save</b></td><td><b>Current view</b> renders what the 3D window (or the preview) shows; <b>Scenes</b>
 lists the drawing's scenes: tick some and <b>Render</b> (or its arrow, <i>Render the selected scenes</i>) renders them one after another with this
-projection, size and format. Both save with the <b>folder and name</b> of <b>Save</b> ({{document}}, {{scene}}, {{look}}, {{date}}): the scenes always,
+projection, size and format. Both save with the <b>folder and name</b> of <b>Save</b> ({{document}}, {{scene}}, {{look}}, {{date}}; by itself
+<b>renderStudio-date-time</b>, with the scene's name after it for several scenes): the scenes always,
 the current view when <i>Save each render</i> is on. Each scene is recalled as its tab does; at the end (or if you cancel) the drawing goes back to the
 view it had.</td></tr>
 <tr><td valign='top'><b>Print resolution</b></td><td>Dots per inch: the paper sizes are worked out at it, and the line
@@ -259,7 +262,7 @@ beside the retouched PNG and JPEG.</td></tr>
 put another sky behind it; the exposure is still measured with the sky. Not for JPEG. The preview window shows it over
 a checkerboard.</td></tr>
 <tr><td valign='top'><b>Save every render</b></td><td>Each final render is also saved in a folder of this computer,
-named from {{document}}, {{look}} and {{date}}.</td></tr>
+named <b>renderStudio-date-time</b> unless you write another name.</td></tr>
 </table>
 
 <a name="hdri"></a>
@@ -330,9 +333,19 @@ double click goes between <b>Fit</b> and <b>100 %</b> (one picture pixel per scr
 </table>
 <a name="materials"></a>
 <h3>The material editor</h3>
+<p><b>The window.</b> At the top, the <b>Type</b> (big buttons) and <b>Start from</b>; below, the settings in
+folding groups, with the name above each control. Each type shows its own groups. Under the list: search, pick, paint, new, duplicate, save and load (and delete, when the material is painted on nothing); at the foot, <b>Back to automatic</b> and <b>Edit in Blender…</b>.</p>
+<p><b>Expert mode</b> adds the <b>Expert</b> tab (a group's <b>+</b> opens it there): every setting that applies to the
+material, with a search box and an <b>eye</b> each. An open eye keeps the setting in the Material tab too; <b>Default
+view</b> goes back. The eyes change what is in view, never a value. The finer settings start hidden and read
+<i>Automatic</i> until you move them: <b>Refraction index (IOR)</b>, <b>Varnish</b> and its roughness, <b>Sheen</b> and
+<b>Relief height</b> in millimetres. Also: the <b>lowest and highest roughness</b> a roughness map stands for, the
+<b>ambient occlusion</b> strength of a texture set, <b>Tone variation</b> and <b>Translucency</b>. <b>Break the
+repetition</b> (Variation group) hides a picture's repeat on irregular surfaces; not for bricks or tiles with joints.
+The <b>Foliage</b> type is for leaves and thin cloth: light comes through them. A normal map chosen by hand has <b>Green inverted (DirectX)</b>; choosing a relief
+source with the amount at 0 sets it to 0.5. With a texture set's relief, <b>Amount</b> is its strength.</p>
 <p>Controls how each material of the model <b>renders</b>, in a few simple settings. The list shows the
-materials used in the model (hover one for its number of faces). <b>From the selection</b> jumps to the material of the
-selected face or group. Changes apply to the <b>next render</b>, are saved in the document, and each one is an undo step.
+materials used in the model (hover one for its number of faces). The window opens on the material of what is <b>selected</b> in the model. Changes apply to the <b>next render</b>, are saved in the document, and each one is an undo step.
 The editor shows only the settings that change the render of the material as it is: those of its <b>type</b> (Metal for
 generic materials, Ripple size for water, Glow for glowing ones, the grass's height and density for grass), <b>Change
 picture…</b> only when it has a picture, and no Relief slider while its texture set gives the relief (choose a relief map
@@ -357,10 +370,6 @@ makes a copy of the chosen material, its render settings included, as <i>Name (2
 cut-out such as leaves, a fence or a lace. <b>White is opaque, black is transparent</b>, greys in between; <b>Invert</b> swaps
 them. With a picture on the material the map follows the picture's layout, so a map made for that picture lines up; without
 one it is tiled at the <i>map size</i>. The render and the preview use it; the 3D view shows only the Transparency slider.</td></tr>
-<tr><td valign='top'><b>Cube preview</b></td><td>At the top, a quick preview of the material on a one-metre cube. It follows
-the picture (and its tile size), the colour, the <b>type</b> (glass and water are see-through, glowing ones get a halo) and
-the <b>Roughness</b>, <b>Metal</b>, <b>Relief</b> and <b>Glow</b> sliders, instantly and without Blender. It is only an idea of the
-look: the <b>maps</b> and Blender's lighting show only in the render.</td></tr>
 <tr><td valign='top'><b>Change picture…</b></td><td>Replaces the material's picture <b>in the model itself</b>, not only in
 the render: the viewport changes too, on every face, component and object that wears the material, as <b>one undo
 step</b> (together with <b>Transparency</b>, the controls here that edit IngeTrazo's own material). Each face keeps where its texture was
@@ -393,7 +402,7 @@ broad ones read as water; the sun then glints on them.</td></tr>
 The blades exist <b>only in the render</b>: the model stays flat and light to work with. They grow on every face that wears
 the material, upright whatever the slope, in small tufts turned and sized at random. Their colour is the material's
 <b>picture</b> where each tuft stands (a lawn picture gives the lawn's patches), or its colour, darker at the root; the
-face under them fills the gaps. The cube preview shows the height.</td></tr>
+face under them fills the gaps.</td></tr>
 <tr><td valign='top'><b>Grass density</b></td><td>Grass only: how many tufts (of a few blades each) grow on a square metre,
 20 to 2000. A thick lawn is 250 to 400, long grass 60 to 120 (taller tufts are bigger). The live view and the render use
 the same density, whatever the camera sees. Only a huge lawn (more than 600 000 tufts in all) is thinned so Blender
@@ -438,7 +447,6 @@ A roughness map you chose here wins.</li>
 <li><b>Metal</b>: the set's map; the slider raises its lowest value. A metal map you chose here wins.</li>
 <li><b>Ambient occlusion</b> darkens the colour in the grooves; <b>opacity</b> cuts holes where it is black.</li>
 <li><b>Glass</b> and <b>Water</b> take only the normal map. <b>White model</b> ignores the sets.</li>
-<li>The cube preview shows the picture only; the sets show in the render.</li>
 </ul>
 <p>The editor shows the set: a line under the picture lists the maps found, and the first choice under <b>Roughness</b>,
 <b>Metal</b> and <b>Relief</b> reads <b>Texture set: …</b> with a small preview of that map (for a packed map, the channel used).

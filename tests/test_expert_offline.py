@@ -31,6 +31,8 @@ folder.delete("Meva/1")
 ok(folder.entries() == [], "deleted")
 
 panel = R.panel()
+panel.expert.accordion.setChecked(False)      # (a drawing opens with the groups folded: these checks look inside them)
+for card in panel._page_cards(): card.set_open(True)
 e = panel.expert
 def row_visible(key):
     form, row = e.filter.rows[key]
@@ -61,6 +63,7 @@ for index in (0, panel.tabs.count() - 1):               # Main and Expert
     for _ in range(8):
         qa.processEvents()
     area = panel.tabs.currentWidget()
+    area = panel.expert_scroll if area is panel.expert_page else area
     over[panel.tabs.tabText(index)] = _W.width(area.widget()) - area.viewport().width()
 ok(all(v <= 0 for v in over.values()), f"Main and Expert fit a narrow tray ({over})")
 panel.hide(); panel.set_expert_mode(False); panel.tabs.setCurrentIndex(0)

@@ -702,6 +702,307 @@ def _side_panel(p, ink):
     p.drawLine(QPointF(28, 10), QPointF(28, 38))
 
 
+# ---- the material editor -----------------------------------------------------------------------
+
+def _poly(*points):
+    return QPolygonF([QPointF(x, y) for x, y in points])
+
+
+def _disc(p, cx, cy, r, alpha=0):
+    path = QPainterPath()
+    path.addEllipse(QPointF(cx, cy), r, r)
+    if alpha:
+        _fill(p, path, alpha)
+    p.setBrush(Qt.NoBrush)
+    p.drawEllipse(QPointF(cx, cy), r, r)
+
+
+def _waveline(p, y, amp, x0=7.0, x1=41.0, waves=2):
+    path = QPainterPath()
+    path.moveTo(x0, y)
+    step = (x1 - x0) / (waves * 2)
+    for i in range(waves * 2):
+        a = x0 + i * step
+        path.quadTo(a + step / 2, y + (-amp if i % 2 == 0 else amp), a + step, y)
+    p.drawPath(path)
+
+
+def _type_generic(p, ink):
+    _disc(p, 24, 24, 15, 110)
+    p.drawArc(QRectF(15, 15, 18, 18), 100 * 16, 60 * 16)
+
+
+def _type_glass(p, ink):
+    pane = QPainterPath()
+    pane.addRect(QRectF(11, 8, 26, 32))
+    _fill(p, pane, 60)
+    p.setBrush(Qt.NoBrush)
+    p.drawRect(QRectF(11, 8, 26, 32))
+    p.drawLine(QPointF(17, 24), QPointF(26, 14))
+    p.drawLine(QPointF(22, 33), QPointF(32, 22))
+
+
+def _type_water(p, ink):
+    drop = QPainterPath()
+    drop.moveTo(24, 7)
+    drop.cubicTo(33, 19, 37, 24, 37, 29)
+    drop.cubicTo(37, 36, 31, 41, 24, 41)
+    drop.cubicTo(17, 41, 11, 36, 11, 29)
+    drop.cubicTo(11, 24, 15, 19, 24, 7)
+    _fill(p, drop, 110)
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(drop)
+
+
+def _type_grass(p, ink):
+    for a, b, c in (((10, 40), (11, 24), (7, 17)), ((18, 40), (19, 20), (14, 9)), ((25, 40), (25, 22), (29, 8)),
+                    ((32, 40), (33, 26), (41, 16))):
+        path = QPainterPath()
+        path.moveTo(*a)
+        path.quadTo(QPointF(*b), QPointF(*c))
+        p.drawPath(path)
+    p.drawLine(QPointF(6, 40), QPointF(42, 40))
+
+
+def _type_glow(p, ink):
+    _sun_at(p, 24, 24, 8, range(0, 360, 45))
+
+
+def _type_foliage(p, ink):
+    leaf = QPainterPath()
+    leaf.moveTo(10, 38)
+    leaf.cubicTo(8, 18, 22, 8, 40, 9)
+    leaf.cubicTo(41, 28, 30, 40, 10, 38)
+    _fill(p, leaf, 110)
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(leaf)
+    p.drawLine(QPointF(8, 41), QPointF(30, 19))
+
+
+def _body(p, waves, amp):
+    for i in range(waves):
+        _waveline(p, 16 + i * (22 / max(1, waves - 1)) if waves > 1 else 26, amp)
+
+
+def _body_pool(p, ink):
+    p.drawRoundedRect(QRectF(6, 12, 36, 26), 4, 4)
+    _waveline(p, 25, 4, 12, 36)
+
+
+def _body_lake(p, ink):
+    path = QPainterPath()
+    path.addEllipse(QRectF(6, 15, 36, 22))
+    _fill(p, path, 70)
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(path)
+    _waveline(p, 26, 3, 15, 33)
+
+
+def _body_sea(p, ink):
+    for y in (17, 27, 37):
+        _waveline(p, y, 6)
+
+
+def _body_ocean(p, ink):
+    _disc(p, 24, 24, 16)
+    _waveline(p, 20, 4, 11, 37)
+    _waveline(p, 30, 4, 11, 37)
+
+
+def _rel_auto(p, ink):
+    for x, y, r in ((20, 25, 11), (35, 13, 6)):
+        _fill(p, _poly((x, y - r), (x + r / 4, y - r / 4), (x + r, y), (x + r / 4, y + r / 4), (x, y + r),
+                       (x - r / 4, y + r / 4), (x - r, y), (x - r / 4, y - r / 4)), 190)
+
+
+def _rel_grain(p, ink):
+    for x, y in ((12, 13), (25, 10), (37, 17), (17, 24), (31, 26), (11, 35), (24, 38), (37, 36)):
+        _disc(p, x, y, 2.4, 190)
+
+
+def _rel_picture(p, ink):
+    p.drawRoundedRect(QRectF(7, 10, 34, 28), 3, 3)
+    _fill(p, _poly((10, 35), (20, 23), (27, 30), (32, 26), (38, 35)), 190)
+    _disc(p, 32, 18, 3)
+
+
+def _rel_height(p, ink):
+    hill = _poly((6, 38), (16, 20), (23, 29), (31, 12), (42, 38))
+    _fill(p, hill, 100)
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(hill)
+
+
+def _rel_normal(p, ink):
+    _waveline(p, 36, 5)
+    for x in (13, 24, 35):
+        p.drawLine(QPointF(x, 30), QPointF(x, 10))
+        p.drawPolyline(_poly((x - 4, 15), (x, 10), (x + 4, 15)))
+
+
+def _mat_colour(p, ink):
+    drop = QPainterPath()
+    drop.addRoundedRect(QRectF(10, 10, 28, 28), 6, 6)
+    _fill(p, drop, 200)
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(drop)
+
+
+def _mat_pick(p, ink):
+    p.drawLine(QPointF(10, 40), QPointF(13, 31))
+    p.drawLine(QPointF(13, 31), QPointF(28, 16))
+    p.drawLine(QPointF(19, 37), QPointF(34, 22))
+    p.drawLine(QPointF(10, 40), QPointF(19, 37))
+    _fill(p, _poly((26, 12), (34, 7), (41, 14), (36, 22)), 190)
+    p.drawLine(QPointF(25, 13), QPointF(36, 24))
+
+
+def _mat_paint(p, ink):
+    bucket = _poly((9, 22), (22, 9), (37, 24), (24, 37))
+    _fill(p, bucket, 90)
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(bucket)
+    p.drawLine(QPointF(15, 16), QPointF(9, 8))
+    drop = QPainterPath()
+    drop.addEllipse(QPointF(39, 37), 3.5, 4.5)
+    _fill(p, drop, 220)
+
+
+def _mat_selection(p, ink):
+    p.setPen(_pen(ink, style=Qt.DashLine))
+    p.drawRect(QRectF(7, 7, 27, 27))
+    p.setPen(_pen(ink))
+    _fill(p, _poly((24, 22), (42, 30), (34, 33), (31, 42)), 220)
+    p.drawPolygon(_poly((24, 22), (42, 30), (34, 33), (31, 42)))
+
+
+def _mat_duplicate(p, ink):
+    p.drawRoundedRect(QRectF(8, 8, 24, 24), 3, 3)
+    front = QPainterPath()
+    front.addRoundedRect(QRectF(16, 16, 24, 24), 3, 3)
+    _fill(p, front, 100)
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(front)
+
+
+def _light_point(p, ink):
+    _sun_at(p, 24, 24, 7, range(0, 360, 60), long=6.0)
+
+
+def _light_spot(p, ink):
+    head = _poly((18, 8), (30, 8), (33, 18), (15, 18))
+    _fill(p, head, 200)
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(head)
+    cone = _poly((16, 20), (32, 20), (42, 40), (6, 40))
+    _fill(p, cone, 70)
+    p.drawLine(QPointF(16, 20), QPointF(6, 40))
+    p.drawLine(QPointF(32, 20), QPointF(42, 40))
+
+
+def _light_area(p, ink):
+    panel = _poly((8, 12), (40, 12), (40, 19), (8, 19))
+    _fill(p, panel, 200)
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(panel)
+    for x, to in ((13, 9), (24, 24), (35, 39)):
+        p.drawLine(QPointF(x, 25), QPointF(to, 39))
+
+
+def _light_sun(p, ink):
+    _disc(p, 15, 15, 7, 190)
+    for dx in (0, 10, 20):
+        p.drawLine(QPointF(14 + dx, 41 - dx * 0.5), QPointF(26 + dx * 0.8, 29 - dx * 0.5))
+
+
+def _shape_square(p, ink):
+    body = _poly((12, 12), (36, 12), (36, 36), (12, 36))
+    _fill(p, body, 110)
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(body)
+
+
+def _shape_rectangle(p, ink):
+    body = _poly((6, 16), (42, 16), (42, 32), (6, 32))
+    _fill(p, body, 110)
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(body)
+
+
+def _shape_disc(p, ink):
+    _disc(p, 24, 24, 13, 110)
+
+
+def _shape_ellipse(p, ink):
+    path = QPainterPath()
+    path.addEllipse(QRectF(6, 14, 36, 20))
+    _fill(p, path, 110)
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(path)
+
+
+def _light_move(p, ink):
+    p.drawLine(QPointF(24, 8), QPointF(24, 40))
+    p.drawLine(QPointF(8, 24), QPointF(40, 24))
+    for tip, a, b in (((24, 8), (19, 13), (29, 13)), ((24, 40), (19, 35), (29, 35)),
+                      ((8, 24), (13, 19), (13, 29)), ((40, 24), (35, 19), (35, 29))):
+        p.drawPolyline(_poly(a, tip, b))
+
+
+def _light_aim(p, ink):
+    _disc(p, 24, 24, 13)
+    _disc(p, 24, 24, 4, 220)
+    for a, b in (((24, 6), (24, 14)), ((24, 34), (24, 42)), ((6, 24), (14, 24)), ((34, 24), (42, 24))):
+        p.drawLine(QPointF(*a), QPointF(*b))
+
+
+def _small_cube(p, alpha):
+    top = _poly((17, 18), (30, 12), (43, 18), (30, 24))
+    _fill(p, top, alpha)
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(top)
+    p.drawPolyline(_poly((17, 18), (17, 33), (30, 40), (43, 33), (43, 18)))
+    p.drawLine(QPointF(30, 24), QPointF(30, 40))
+
+
+def _light_attach(p, ink):
+    _small_cube(p, 130)
+    _disc(p, 10, 12, 4, 220)
+    p.drawPolyline(_poly((10, 19), (10, 27), (15, 27)))
+    p.drawPolyline(_poly((12, 24), (15, 27), (12, 30)))
+
+
+def _light_detach(p, ink):
+    _small_cube(p, 40)
+    _disc(p, 10, 12, 4, 220)
+    p.drawPolyline(_poly((14, 27), (7, 27), (7, 20)))
+    p.drawPolyline(_poly((4, 23), (7, 20), (10, 23)))
+
+
+def _mat_unlock(p, ink):
+    body = QPainterPath()
+    body.addRoundedRect(QRectF(9, 22, 26, 20), 3, 3)
+    _fill(p, body, 150)
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(body)
+    shackle = QPainterPath()
+    shackle.moveTo(26, 22)
+    shackle.lineTo(26, 15)
+    shackle.cubicTo(26, 5, 42, 5, 42, 15)
+    shackle.lineTo(42, 20)
+    p.drawPath(shackle)
+    p.drawLine(QPointF(22, 29), QPointF(22, 35))
+
+
+def _mat_blender(p, ink):
+    top = _poly((24, 7), (40, 16), (24, 25), (8, 16))
+    _fill(p, top, 130)
+    p.setBrush(Qt.NoBrush)
+    p.drawPolygon(top)
+    p.drawPolyline(_poly((8, 16), (8, 33), (24, 42), (40, 33), (40, 16)))
+    p.drawLine(QPointF(24, 25), QPointF(24, 42))
+
+
 _DRAW = {
     "side_panel": _side_panel,
     "eye": _eye, "eye_off": _eye_off,
@@ -722,6 +1023,40 @@ _DRAW = {
     "comp_options": _comp_options, "comp_attributes": _comp_attributes,
     "comp_manager": _comp_manager, "comp_online": _comp_online,
     "render_studio": _render_studio, "clock": _clock,
+    "type_generic": _type_generic,
+    "type_glass": _type_glass,
+    "type_foliage": _type_foliage,
+    "type_water": _type_water,
+    "type_grass": _type_grass,
+    "type_glow": _type_glow,
+    "body_pool": _body_pool,
+    "body_lake": _body_lake,
+    "body_sea": _body_sea,
+    "body_ocean": _body_ocean,
+    "rel_auto": _rel_auto,
+    "rel_grain": _rel_grain,
+    "rel_picture": _rel_picture,
+    "rel_height": _rel_height,
+    "rel_normal": _rel_normal,
+    "mat_colour": _mat_colour,
+    "mat_pick": _mat_pick,
+    "mat_paint": _mat_paint,
+    "mat_selection": _mat_selection,
+    "mat_duplicate": _mat_duplicate,
+    "mat_blender": _mat_blender,
+    "mat_unlock": _mat_unlock,
+    "light_point": _light_point,
+    "light_spot": _light_spot,
+    "light_area": _light_area,
+    "light_sun": _light_sun,
+    "shape_square": _shape_square,
+    "shape_rectangle": _shape_rectangle,
+    "shape_disc": _shape_disc,
+    "shape_ellipse": _shape_ellipse,
+    "light_move": _light_move,
+    "light_aim": _light_aim,
+    "light_attach": _light_attach,
+    "light_detach": _light_detach,
 }
 
 

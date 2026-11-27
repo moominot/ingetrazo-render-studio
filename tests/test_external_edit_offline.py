@@ -105,13 +105,29 @@ EE.remember_editor(str(fake))
 opened.clear()
 ed = ME.MaterialEditor(app, "en")
 ed.refresh(force=True); ed.select("Wall")
-ok(ed.edit_btn.isEnabled() and ed.editor_btn.isEnabled(), "the editor has Edit picture and the program's button")
+ok(ed.edit_btn.isEnabled() and not ed.edit_btn.icon().isNull() and not ed.edit_btn.text() and not hasattr(ed, "editor_btn")
+   and ed.choose_editor_act in ed.edit_btn.actions(), "Edit picture is one pencil button; its right click chooses the program")
 ed.edit_btn.click()
 ok(opened and opened[-1][0] == str(fake) and "Wall" in ed.hint.text() or "wall" in ed.hint.text().lower(), f"Edit picture opens it ({ed.hint.text()[:60]})")
 paths_before = app.scene.materials["Wall"].texture["path"]
 picture(Path(opened[-1][1]), (240, 240, 20), 8, 4)
 ok(wait(lambda: app.scene.materials["Wall"].texture["path"] != paths_before, 10), "a save in the program changes the material")
 ok(wait(lambda: "took" in ed.hint.text() or "wall" in ed.hint.text().lower()), f"the editor says so ({ed.hint.text()[:70]})")
+# no program at all opens it: one is asked for, and used
+for s_ in list(ed._edits.values()):
+    s_.stop()
+asked, tried = [], []
+before_open = EE.open_in_program
+EE.open_in_program = lambda program, path: (tried.append(program), program == "chosen.exe")[1]
+EE.find_editor = (lambda real=EE.find_editor: lambda: "")()
+ed.choose_editor = lambda: (asked.append(True), "chosen.exe")[1]
+ed.edit_picture()
+ok(asked and tried == ["", "chosen.exe"] and ed._edits, f"no program opens it: one is asked for and used ({tried})")
+ed.choose_editor = lambda: ""
+tried.clear()
+ed.edit_picture()
+ok(tried == [""] and not ed._edits, "…and with none given, nothing is left being watched")
+EE.open_in_program = before_open
 ed.close()
 ok(all(not s._timer.isActive() for s in ed._edits.values()) and not ed._edits, "closing the editor stops watching")
 

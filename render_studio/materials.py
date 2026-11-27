@@ -67,8 +67,8 @@ def grass_reach(density: float) -> float:
     return math.sqrt(GRASS_MAX_TUFTS / (math.pi * max(1.0, float(density))))
 
 
-TYPES = ("generic", "glass", "water", "glow", "grass")
-TYPE_LABELS = {"generic": "Generic", "glass": "Glass", "water": "Water", "glow": "Glowing", "grass": "Grass"}
+TYPES = ("generic", "glass", "water", "glow", "grass", "foliage")
+TYPE_LABELS = {"generic": "Generic", "glass": "Glass", "water": "Water", "glow": "Glowing", "grass": "Grass", "foliage": "Foliage"}
 
 #: Starting points, Enscape-like. key → (labels, spec)
 PRESETS = {
@@ -125,7 +125,8 @@ DEFAULT = {"type": "generic", "roughness": 0.5, "metallic": 0.0, "bump": 0.0, "g
 
 
 def shown_controls(kind: str, *, picture: bool = False, set_relief: bool = False,
-                   relief_source: str = "", file_maps: bool = False) -> set:
+                   relief_source: str = "", file_maps: bool = False, normal_by_hand: bool = False,
+                   rough_map: bool = False, set_ao: bool = False) -> set:
     """The editor's controls that change the render of a material of type ``kind``
     (the rest are hidden). ``picture``: it has a picture of its own; ``set_relief``:
     its texture set gives the relief (a normal or displacement map); ``relief_source``:
@@ -140,6 +141,14 @@ def shown_controls(kind: str, *, picture: bool = False, set_relief: bool = False
     * Transparency and its map (white opaque, black transparent): not grass (the blades cover the
       face). Picture adjustments: the same.
 
+    * The set's own relief strength: when the set gives the relief and no map is chosen.
+    * Relief height: a relief drawn from heights (not water, not a normal map chosen by hand).
+    * Refraction index: generic, glass and water. Varnish and sheen: generic.
+    * Roughness lowest and highest: when a map drives the roughness (``rough_map``).
+    * Ambient occlusion: when the texture set has one (``set_ao``); not glass or water.
+    * Breaking the repetition: generic with a picture. Tone variation: generic.
+    * Translucency: generic and foliage.
+
     * Map image size: a map file on a material without a picture (with one,
       maps follow the picture's size). Change picture: a material with one.
     """
@@ -152,6 +161,24 @@ def shown_controls(kind: str, *, picture: bool = False, set_relief: bool = False
         shown.add("map:bump")
         if not (set_relief and not relief_source):
             shown.add("bump")
+    if set_relief and not relief_source:
+        shown.add("set_relief")
+    elif kind != "water" and not normal_by_hand:
+        shown.add("relief_height")
+    if kind in ("generic", "glass", "water"):
+        shown.add("ior")
+    if kind == "generic":
+        shown |= {"coat", "coat_roughness", "sheen"}
+    if rough_map:
+        shown |= {"rough_min", "rough_max"}
+    if set_ao and kind not in ("glass", "water"):
+        shown.add("ao_strength")
+    if kind == "generic":
+        shown.add("variation")
+        if picture:
+            shown.add("untile")
+    if kind in ("generic", "foliage"):
+        shown.add("translucency")
     if kind == "glow":
         shown |= {"glow", "map:glow"}
     if kind == "grass":

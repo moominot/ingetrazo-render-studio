@@ -76,7 +76,7 @@ limitades a l'80 % perquè no brillin, i un lleuger acabat de saturació i vinye
 
 <a name="lights"></a>
 <h4>Llums</h4>
-<p>El botó <b>Llums…</b> del tauler obre la finestra de llums: la llista i l'afegir a l'esquerra; a la dreta un esbós de la llum triada, els seus ajustaments bàsics i, plegats sota <i>Avançat</i>, el lloc i la direcció exactes, la mida de la bombeta, la vora suau, el perfil IES i les llums sobre objectes. <b>Edita al Blender…</b> (per a experts) obre les llums lliures al Blender sobre un terra i un cub; cada cop que desis (Ctrl+S) tornen aquí, en un sol pas de desfer.</p>
+<p>El botó <b>Llums…</b> del tauler obre la finestra de llums: la llista i l'afegir a l'esquerra; a la dreta un esbós de la llum triada, el nom, el tipus (botons grans) i els ajustos en grups plegables. El <b>Mode expert</b> afegeix la pestanya <b>Expert</b> amb tots els ajustos de la llum, un cercador i un <b>ull</b> cadascun: el lloc i la direcció exactes, la mida de la bombeta, la vora suau, l'obertura, el perfil IES i posar-la sobre un objecte hi comencen amagats. Una llum editada al Blender només mostra el nom i el lloc, amb <b>Desbloqueja</b>. <b>Edita al Blender…</b> (per a experts) obre les llums lliures al Blender sobre un terra i un cub; cada cop que desis (Ctrl+S) tornen aquí, en un sol pas de desfer.</p>
 <p>Les llums es col·loquen per al render, dels quatre tipus que té Blender. Es dibuixen a
 la vista 3D (una bombeta, el con d'un focus, el contorn d'una llum d'àrea i cap on mira, els raigs d'un sol), del seu color,
 grises quan són apagades; <b>Mostra a la vista 3D</b> les amaga. Clica'n una amb l'eina Selecciona per triar-la; Supr l'elimina.</p>
@@ -162,7 +162,7 @@ al costat del PNG i JPEG retocats.</td></tr>
 posar-hi un altre cel al darrere; l'exposició continua mesurant-se amb el cel. No per a JPEG. La finestra de vista prèvia el mostra sobre
 un escacat.</td></tr>
 <tr><td valign='top'><b>Desa cada render</b></td><td>Cada render final es desa també en una carpeta d'aquest ordinador,
-amb nom format a partir de {document}, {look} i {date}.</td></tr>
+amb el nom <b>renderStudio-data-hora</b> si no n'escrius un altre.</td></tr>
 </table>
 
 <a name="hdri"></a>
@@ -235,9 +235,21 @@ doble clic va entre <b>Ajust</b> i <b>100 %</b> (un píxel de la imatge per píx
 </table>
 <a name="materials"></a>
 <h3>L'editor de materials</h3>
+<p><b>La finestra.</b> A dalt, el <b>Tipus</b> (botons grans) i <b>Parteix de</b>; a sota, els ajustos en
+grups plegables, amb el nom damunt de cada control. Cada tipus mostra els seus grups. Sota la llista: cercar, triar, pintar, nou, duplicar, desar i carregar (i esborrar, quan el material no pinta res); al peu, <b>Torna a automàtic</b> i <b>Edita al Blender…</b>.</p>
+<p>El <b>Mode expert</b> afegeix la pestanya <b>Expert</b> (el <b>+</b> d'un grup l'obre allà): tots els ajustos que
+pertoquen al material, amb cercador i un <b>ull</b> cadascun. Amb l'ull obert, l'ajust també surt a la pestanya
+Material; <b>Vista per defecte</b> ho torna a deixar com al principi. Els ulls canvien què es veu, mai cap valor.
+Els ajustos fins comencen amagats i diuen <i>Automàtic</i> fins que els mous: <b>Índex de refracció (IDR)</b>,
+<b>Vernís</b> i la seva rugositat, <b>Llustre</b> i <b>Alçada del relleu</b> en mil·límetres. També: la <b>rugositat mínima i màxima</b> que representa un mapa de
+rugositat, la força de l'<b>oclusió ambiental</b> d'un joc de textures, la <b>Variació de to</b> i la
+<b>Translucidesa</b>. <b>Trenca la repetició</b> (grup Variació) dissimula la repetició de la imatge en superfícies
+irregulars; no és per a maons o rajoles amb juntes. El tipus <b>Fullatge</b> és per a fulles i teles primes: la llum
+les travessa. Un mapa de normals
+triat a mà té <b>Verd invertit (DirectX)</b>; si tries d'on surt el relleu amb la quantitat a 0, puja a 0,5. Amb el
+relleu d'un joc de textures, <b>Quantitat</b> n'és la força.</p>
 <p>Controla com es <b>renderitza</b> cada material del model, en uns quants ajustos senzills. La llista mostra els
-materials usats al model (posa-hi el cursor al damunt per veure'n el nombre de cares). <b>De la selecció</b> salta al material de la
-cara o grup seleccionat. Els canvis s'apliquen al <b>render següent</b>, es desen al document, i cadascun és un pas de desfer.
+materials usats al model (posa-hi el cursor al damunt per veure'n el nombre de cares). La finestra s'obre amb el material del que hi ha <b>seleccionat</b> al model. Els canvis s'apliquen al <b>render següent</b>, es desen al document, i cadascun és un pas de desfer.
 L'editor només mostra els ajustos que canvien el render del material tal com és: els del seu <b>tipus</b> (Metall per als
 materials genèrics, Mida de l'ondulació per a l'aigua, Brillantor pròpia per als lluminosos, l'alçada i la densitat de la gespa per a la gespa), <b>Canvia la
 imatge…</b> només quan té una imatge, i cap control de Relleu mentre el seu joc de textures dona el relleu (tria un mapa de relleu
@@ -262,10 +274,6 @@ fa una còpia del material triat, amb els seus ajustos de render, com a <i>Nom (
 retall com fulles, una tanca o una punta. <b>El blanc és opac, el negre és transparent</b>, els grisos entremig; <b>Invertit</b> els
 intercanvia. Amb una imatge al material el mapa segueix la disposició de la imatge, de manera que un mapa fet per a aquella imatge quadra; sense
 una, es repeteix a la <i>mida del mapa</i>. El render i la vista prèvia el fan servir; la vista 3D només mostra el control Transparència.</td></tr>
-<tr><td valign='top'><b>Vista prèvia en cub</b></td><td>A dalt, una vista prèvia ràpida del material en un cub d'un metre. Segueix
-la imatge (i la seva mida de rajola), el color, el <b>tipus</b> (el vidre i l'aigua són transparents, els lluminosos tenen un halo) i
-els controls de <b>Rugositat</b>, <b>Metall</b>, <b>Relleu</b> i <b>Brillantor pròpia</b>, a l'instant i sense Blender. És només una idea de
-l'aspecte: els <b>mapes</b> i la il·luminació de Blender només es veuen al render.</td></tr>
 <tr><td valign='top'><b>Canvia la imatge…</b></td><td>Substitueix la imatge del material <b>al model mateix</b>, no només al
 render: la vista també canvia, a cada cara, component i objecte que porta el material, com a <b>un sol pas de
 desfer</b> (juntament amb <b>Transparència</b>, els controls d'aquí que editen el material propi d'IngeTrazo). Cada cara conserva on estava
@@ -298,7 +306,7 @@ les amples es llegeixen com aigua; el sol hi fa llampegar.</td></tr>
 Les fulles existeixen <b>només al render</b>: el model es queda pla i lleuger per treballar-hi. Creixen a cada cara que porta
 el material, drets sigui quin sigui el pendent, en petits flocs girats i amb mida aleatòria. El seu color és la <b>imatge</b> del
 material allà on és cada floc (una imatge de gespa dona les taques de la gespa), o el seu color, més fosc a l'arrel; la
-cara de sota omple els buits. La vista prèvia en cub en mostra l'alçada.</td></tr>
+cara de sota omple els buits.</td></tr>
 <tr><td valign='top'><b>Densitat de la gespa</b></td><td>Només gespa: quants flocs (de unes quantes fulles cadascun) creixen per metre quadrat,
 de 20 a 2000. Una gespa espessa és de 250 a 400, herba llarga de 60 a 120 (els flocs més alts són més grans). La vista en directe i el render usen
 la mateixa densitat, vegi el que vegi la càmera. Només una gespa enorme (més de 600 000 flocs en total) s'aprima perquè Blender
@@ -343,7 +351,6 @@ Un mapa de rugositat que triïs aquí guanya.</li>
 <li><b>Metall</b>: el mapa del joc; el control en puja el valor més baix. Un mapa de metall que triïs aquí guanya.</li>
 <li>L'<b>oclusió ambiental</b> enfosqueix el color a les ranures; l'<b>opacitat</b> fa forats on és negra.</li>
 <li>El <b>Vidre</b> i l'<b>Aigua</b> només prenen el mapa de normals. La <b>Maqueta blanca</b> ignora els jocs.</li>
-<li>La vista prèvia en cub només mostra la imatge; els jocs es veuen al render.</li>
 </ul>
 <p>L'editor mostra el joc: una línia sota la imatge llista els mapes trobats, i la primera opció sota <b>Rugositat</b>,
 <b>Metall</b> i <b>Relleu</b> diu <b>Joc de textures: …</b> amb una petita vista prèvia d'aquell mapa (per a un mapa empaquetat, el canal usat).

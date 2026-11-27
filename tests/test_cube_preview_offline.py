@@ -13,6 +13,7 @@ from core.group import Group
 from core.mesh import Mesh
 from core.materials import Material
 from render_studio import cube_preview as C, material_editor as ME
+ME.SHOW_PREVIEW = True
 
 fails = []
 def ok(c, w):

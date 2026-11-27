@@ -44,6 +44,8 @@ def group_of(w):
     return w
 
 doc = Doc(); panel = P.StudioPanel(doc); doc.panels.append(panel)
+panel.expert.accordion.setChecked(False)      # (a drawing opens with the groups folded: these checks look inside them)
+for card in panel._page_cards(): card.set_open(True)
 panel.show()
 TAB = {panel.tabs.tabText(i): i for i in range(panel.tabs.count())}
 panel.expert.filter.set_shown(set(panel.expert.controls))      # every control in view: what is checked here is what applies

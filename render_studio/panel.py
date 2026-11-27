@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDoubleSpinBo
                                QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMenu, QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QTabWidget,
                                QToolButton, QVBoxLayout, QWidget)
 
-from . import wheel_guard
+from . import labels_above, wheel_guard
 from . import drawing_fog, lights as studio_lights, materials as mats, fast_export, output, pbr, presets, proxies, section, settings_store, studio_data, visibility, widgets
 from . import look_model, params, view_camera
 from .style_groups import StyleGroups
@@ -1084,7 +1084,16 @@ class StudioPanel(QWidget):
         # Every setting's control is in place: the layout takes out of the pages what it does not show (expert.py).
         self.section_tab.after_paint = self._filter_layout
         self.expert = ExpertTab(self, layouts.Folder(presets_folder().parent / "layouts"))
-        self.expert_page = scrolled(self.expert)
+        self.expert_scroll = scrolled(self.expert)
+        self.expert_page = QWidget()                 # the search at the top, fixed; the groups scroll under it
+        page = QVBoxLayout(self.expert_page)
+        page.setContentsMargins(0, 0, 0, 0)
+        page.setSpacing(6)
+        top = QVBoxLayout()
+        top.setContentsMargins(0, 8, 4, 0)
+        top.addWidget(self.expert.search)
+        page.addLayout(top)
+        page.addWidget(self.expert_scroll, 1)
         self.expert_mode.setChecked(str(QSettings().value(_SETTINGS + "expert_mode", "false")).lower() == "true")
         self.expert_page.setStyleSheet(flat)
         for button in (self.materials_btn, self.lights_btn, self.preview_btn, self.expert_mode, self.help_btn):
@@ -1104,7 +1113,12 @@ class StudioPanel(QWidget):
         for box in self.findChildren(QCheckBox):           # a long label must not widen a narrow tray either
             box.setSizePolicy(QSizePolicy.Ignored, box.sizePolicy().verticalPolicy())
         self._init_document_settings()
+        for card in self._page_cards():
+            card.unfolded.connect(lambda c=card: self._accordion(c))
+        self._drawings = set()                       # the drawings already seen: one just opened starts folded
+        self._note_drawing()
         self.check_blender()
+        labels_above.apply(self)
         wheel_guard.watch(self)          # (the wheel scrolls; it changes only a picked field)
 
     @staticmethod
@@ -2112,6 +2126,47 @@ class StudioPanel(QWidget):
         self._expert_peek = False                  # what the button says is what stays
         QSettings().setValue(_SETTINGS + "expert_mode", "true" if on else "false")
 
+    # -- the groups: folded when a drawing opens, one at a time as an accordion ----------------------
+    def _pages(self) -> list:
+        """The panel's pages, the Expert one too (also while its tab is not there)."""
+        pages = [self.tabs.widget(i) for i in range(self.tabs.count())]
+        return [p for p in pages if p is not self.expert_page] + [self.expert_scroll]
+
+    def _page_cards(self) -> list:
+        return [card for page in self._pages() for card in page.findChildren(widgets.Card)]
+
+    def _accordion(self, card) -> None:
+        """With the accordion on, a group that opens folds the others of its page (not one that holds it, nor one
+        inside it)."""
+        if not self.expert.accordion.isChecked():
+            return
+        for page in self._pages():
+            if not page.isAncestorOf(card):
+                continue
+            for other in page.findChildren(widgets.Card):
+                if other is not card and not other.isAncestorOf(card) and not card.isAncestorOf(other):
+                    other.set_open(False)
+
+    def fold_groups(self) -> None:
+        """Every group folded but the presets."""
+        for card in self._page_cards():
+            if card is not self.gallery:
+                card.set_open(False)
+        self.gallery.set_open(True)
+
+    def _note_drawing(self) -> None:
+        """A drawing just opened (or a new one) starts at the Main page with the groups folded. Coming back to its
+        tab changes nothing, nor does saving it under a name: it has things to undo, so it was not just opened."""
+        scene = getattr(self.app, "scene", None)
+        key = (id(scene), self.doc_path())
+        if key in self._drawings:
+            return
+        self._drawings.add(key)
+        history = getattr(getattr(self.app, "viewport", None), "history", None)
+        if not getattr(history, "undo_stack", None):
+            self.tabs.setCurrentIndex(0)                 # the Main page, whatever was in view
+            self.fold_groups()
+
     # -- a group's «+»: all its settings, in the Expert page ----------------------------------------
     def _add_more_buttons(self) -> None:
         """Each group of the pages that has settings in the Expert page gets a «+» in its header that opens them there."""
@@ -2145,7 +2200,7 @@ class StudioPanel(QWidget):
     def _scroll_to(self, card) -> None:
         try:
             self.expert.layout().activate()
-            self.expert_page.verticalScrollBar().setValue(max(0, card.mapTo(self.expert, card.rect().topLeft()).y() - 4))
+            self.expert_scroll.verticalScrollBar().setValue(max(0, card.mapTo(self.expert, card.rect().topLeft()).y() - 4))
         except RuntimeError:                                  # the panel gone meanwhile
             _log.debug("no group to scroll to", exc_info=True)
 
@@ -2519,6 +2574,7 @@ class StudioPanel(QWidget):
             from .material_editor import clear_swatches
             clear_swatches()                 # a picture that changed on disk shows now
             self.editor.refresh(force=True)
+        self.editor.follow_selection()           # (also when the window was already open)
         self.editor.show()
         self.editor.raise_()
         self.editor.activateWindow()
@@ -2527,6 +2583,8 @@ class StudioPanel(QWidget):
     def document_changed(self):
         if self.editor is not None and self.editor.isVisible():
             self.editor.refresh()
+        if getattr(self, "_drawings", None) is not None:
+            self._note_drawing()
         for tab in (getattr(self, "lights_tab", None), getattr(self, "sun_tab", None),
                     getattr(self, "section_tab", None), getattr(self, "output_tab", None)):
             if tab is not None:
@@ -2933,7 +2991,7 @@ class StudioPanel(QWidget):
         fmt = self.output_tab.format.currentData()
         ext = output.extension(fmt)
         start = str(Path(QSettings().value(_SETTINGS + "save_dir", str(Path.home()))) /
-                    f"render-{time.strftime('%Y%m%d-%H%M%S')}{ext}")
+                    f"{output.save_name()}{ext}")
         path, _f = QFileDialog.getSaveFileName(self.window or self, tr("Render and save"), start,
                                                f"{output.FORMATS[fmt][0]} (*{ext})")
         if path and not path.lower().endswith(ext) and not (fmt == "jpeg" and path.lower().endswith(".jpeg")):

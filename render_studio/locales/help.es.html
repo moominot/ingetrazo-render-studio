@@ -76,7 +76,7 @@ limitadas al 80 % para que no brillen, y un ligero acabado de saturación y viñ
 
 <a name="lights"></a>
 <h4>Luces</h4>
-<p>El botón <b>Luces…</b> del panel abre la ventana de luces: la lista y el añadir a la izquierda; a la derecha un boceto de la luz elegida, sus ajustes básicos y, plegados bajo <i>Avanzado</i>, el lugar y la dirección exactos, el tamaño de la bombilla, el borde suave, el perfil IES y las luces sobre objetos. <b>Editar en Blender…</b> (para expertos) abre las luces libres en Blender sobre un suelo y un cubo; cada vez que guardes (Ctrl+S) vuelven aquí, en un solo paso de deshacer.</p>
+<p>El botón <b>Luces…</b> del panel abre la ventana de luces: la lista y el añadir a la izquierda; a la derecha un boceto de la luz elegida, el nombre, el tipo (botones grandes) y los ajustes en grupos plegables. El <b>Modo experto</b> añade la pestaña <b>Experto</b> con todos los ajustes de la luz, un buscador y un <b>ojo</b> cada uno: el lugar y la dirección exactos, el tamaño de la bombilla, el borde suave, la apertura, el perfil IES y ponerla sobre un objeto empiezan ocultos allí. Una luz editada en Blender solo muestra el nombre y el lugar, con <b>Desbloquear</b>. <b>Editar en Blender…</b> (para expertos) abre las luces libres en Blender sobre un suelo y un cubo; cada vez que guardes (Ctrl+S) vuelven aquí, en un solo paso de deshacer.</p>
 <p>Las luces se colocan para el render, de los cuatro tipos que tiene Blender. Se dibujan en
 la vista 3D (una bombilla, el cono de un foco, el contorno de una luz de área y hacia dónde mira, los rayos de un sol), de su color,
 grises cuando están apagadas; <b>Mostrar en la vista 3D</b> las oculta. Haz clic en una con la herramienta Seleccionar para elegirla; Supr la elimina.</p>
@@ -162,7 +162,7 @@ junto al PNG y JPEG retocados.</td></tr>
 poner otro cielo detrás; la exposición sigue midiéndose con el cielo. No para JPEG. La ventana de vista previa lo muestra sobre
 un tablero de ajedrez.</td></tr>
 <tr><td valign='top'><b>Guardar cada render</b></td><td>Cada render final se guarda también en una carpeta de este ordenador,
-con nombre formado a partir de {document}, {look} y {date}.</td></tr>
+con el nombre <b>renderStudio-fecha-hora</b> si no escribes otro.</td></tr>
 </table>
 
 <a name="hdri"></a>
@@ -235,9 +235,22 @@ doble clic va entre <b>Ajuste</b> y <b>100 %</b> (un píxel de la imagen por pí
 </table>
 <a name="materials"></a>
 <h3>El editor de materiales</h3>
+<p><b>La ventana.</b> Arriba, el <b>Tipo</b> (botones grandes) y <b>Partir de</b>; debajo, los ajustes en
+grupos plegables, con el nombre encima de cada control. Cada tipo muestra sus grupos. Bajo la lista: buscar, elegir, pintar, nuevo, duplicar, guardar y cargar (y borrar, cuando el material no pinta nada); al pie, <b>Volver a automático</b> y <b>Editar en
+Blender…</b>.</p>
+<p>El <b>Modo experto</b> añade la pestaña <b>Experto</b> (el <b>+</b> de un grupo la abre allí): todos los ajustes que
+corresponden al material, con buscador y un <b>ojo</b> cada uno. Con el ojo abierto, el ajuste también aparece en la
+pestaña Material; <b>Vista por defecto</b> lo deja como al principio. Los ojos cambian lo que se ve, nunca un valor.
+Los ajustes finos empiezan ocultos y dicen <i>Automático</i> hasta que los mueves: <b>Índice de refracción (IOR)</b>,
+<b>Barniz</b> y su rugosidad, <b>Lustre</b> y <b>Altura del relieve</b> en milímetros. También: la <b>rugosidad mínima y máxima</b> que representa un mapa de
+rugosidad, la fuerza de la <b>oclusión ambiental</b> de un juego de texturas, la <b>Variación de tono</b> y la
+<b>Translucidez</b>. <b>Romper la repetición</b> (grupo Variación) disimula la repetición de la imagen en superficies
+irregulares; no es para ladrillos o baldosas con juntas. El tipo <b>Follaje</b> es para hojas y telas finas: la luz
+las atraviesa. Un mapa de normales elegido a
+mano tiene <b>Verde invertido (DirectX)</b>; si eliges el origen del relieve con la cantidad a 0, sube a 0,5. Con el
+relieve de un juego de texturas, <b>Cantidad</b> es su fuerza.</p>
 <p>Controla cómo se <b>renderiza</b> cada material del modelo, en unos pocos ajustes sencillos. La lista muestra los
-materiales usados en el modelo (pasa el cursor por encima para ver su número de caras). <b>De la selección</b> salta al material de la
-cara o grupo seleccionado. Los cambios se aplican al <b>siguiente render</b>, se guardan en el documento, y cada uno es un paso de deshacer.
+materiales usados en el modelo (pasa el cursor por encima para ver su número de caras). La ventana se abre con el material de lo que está <b>seleccionado</b> en el modelo. Los cambios se aplican al <b>siguiente render</b>, se guardan en el documento, y cada uno es un paso de deshacer.
 El editor solo muestra los ajustes que cambian el render del material tal como es: los de su <b>tipo</b> (Metal para los
 materiales genéricos, Tamaño de la ondulación para el agua, Brillo propio para los luminosos, la altura y la densidad del césped para el césped), <b>Cambiar la
 imagen…</b> solo cuando tiene una imagen, y ningún control de Relieve mientras su juego de texturas da el relieve (elige un mapa de relieve
@@ -262,10 +275,6 @@ hace una copia del material elegido, con sus ajustes de render, como <i>Nombre (
 recorte como hojas, una valla o un encaje. <b>El blanco es opaco, el negro es transparente</b>, los grises entremedio; <b>Invertido</b> los
 intercambia. Con una imagen en el material el mapa sigue la disposición de la imagen, de modo que un mapa hecho para esa imagen encaja; sin
 una, se repite al <i>tamaño del mapa</i>. El render y la vista previa lo usan; la vista 3D solo muestra el control Transparencia.</td></tr>
-<tr><td valign='top'><b>Vista previa en cubo</b></td><td>Arriba, una vista previa rápida del material en un cubo de un metro. Sigue
-la imagen (y su tamaño de azulejo), el color, el <b>tipo</b> (el vidrio y el agua son transparentes, los luminosos tienen un halo) y
-los controles de <b>Rugosidad</b>, <b>Metal</b>, <b>Relieve</b> y <b>Brillo propio</b>, al instante y sin Blender. Es solo una idea del
-aspecto: los <b>mapas</b> y la iluminación de Blender solo se ven en el render.</td></tr>
 <tr><td valign='top'><b>Cambiar la imagen…</b></td><td>Sustituye la imagen del material <b>en el modelo mismo</b>, no solo en el
 render: la vista también cambia, en cada cara, componente y objeto que lleva el material, como <b>un solo paso de
 deshacer</b> (junto con <b>Transparencia</b>, los controles de aquí que editan el material propio de IngeTrazo). Cada cara conserva dónde estaba
@@ -298,7 +307,7 @@ las anchas se leen como agua; el sol brilla en ellas.</td></tr>
 Las hojas existen <b>solo en el render</b>: el modelo se queda plano y ligero para trabajar. Crecen en cada cara que lleva
 el material, erguidas sea cual sea la pendiente, en pequeños mechones girados y de tamaño aleatorio. Su color es la <b>imagen</b> del
 material donde está cada mechón (una imagen de césped da las manchas del césped), o su color, más oscuro en la raíz; la
-cara de debajo rellena los huecos. La vista previa en cubo muestra la altura.</td></tr>
+cara de debajo rellena los huecos.</td></tr>
 <tr><td valign='top'><b>Densidad del césped</b></td><td>Solo césped: cuántos mechones (de unas cuantas hojas cada uno) crecen por metro cuadrado,
 de 20 a 2000. Un césped espeso es de 250 a 400, hierba larga de 60 a 120 (los mechones más altos son más grandes). La vista en vivo y el render usan
 la misma densidad, vea lo que vea la cámara. Solo un césped enorme (más de 600 000 mechones en total) se aclara para que Blender
@@ -343,7 +352,6 @@ Un mapa de rugosidad que elijas aquí gana.</li>
 <li><b>Metal</b>: el mapa del juego; el control sube su valor más bajo. Un mapa de metal que elijas aquí gana.</li>
 <li>La <b>oclusión ambiental</b> oscurece el color en las ranuras; la <b>opacidad</b> hace agujeros donde es negra.</li>
 <li>El <b>Vidrio</b> y el <b>Agua</b> solo toman el mapa de normales. La <b>Maqueta blanca</b> ignora los juegos.</li>
-<li>La vista previa en cubo solo muestra la imagen; los juegos se ven en el render.</li>
 </ul>
 <p>El editor muestra el juego: una línea bajo la imagen lista los mapas encontrados, y la primera opción bajo <b>Rugosidad</b>,
 <b>Metal</b> y <b>Relieve</b> dice <b>Juego de texturas: …</b> con una pequeña vista previa de ese mapa (para un mapa empaquetado, el canal usado).

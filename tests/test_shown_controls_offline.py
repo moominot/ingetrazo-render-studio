@@ -83,10 +83,10 @@ ok(seen(ed.map_size), "a map file on a material without a picture: Map image siz
 kind("water")
 ok(seen(ed.ripple) and seen(ed.sliders["bump"]) and not seen(ed.maps["bump"]) and not seen(ed.sliders["metallic"]),
    "water: ripple size and wave height, no relief map, no metal")
-ok(ed.form.labelForField(ed._rows["bump"]).text() == "Ripple height", "water: Relief reads «Ripple height»")
+ok(ed.blocks["bump"].name.text() == "Ripple height", "water: Relief reads «Ripple height»")
 kind("glow"); maps_open()
 ok(seen(ed.sliders["glow"]) and seen(ed.maps["glow"]) and not seen(ed.ripple), "glowing: glow and its map")
-ok(ed.form.labelForField(ed._rows["bump"]).text() == "Relief", "…and Relief is Relief again")
+ok(ed.blocks["bump"].name.text() == "Amount", "…and Relief is Relief again")
 kind("glass")
 ok(not seen(ed.sliders["metallic"]) and seen(ed.transparency), "glass: no metal, transparency shown")
 ed.maps["metallic"].set_file(tmp / "ph" / "tiles_rough_1k.png"); ed._flush()

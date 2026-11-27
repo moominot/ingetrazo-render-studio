@@ -9,10 +9,10 @@ import logging
 import unicodedata
 
 from PySide6.QtCore import QSettings, QSize, Qt, QTimer
-from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMenu, QMessageBox, QToolButton, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMenu, QMessageBox,
+                               QSizePolicy, QToolButton, QVBoxLayout, QWidget)
 
-from . import bindings, icons, layouts, look_model, params, presets, user_presets, widgets
+from . import bindings, icons, labels_above, layouts, look_model, params, presets, user_presets, widgets
 from .i18n import tr
 
 _log = logging.getLogger(__name__)
@@ -85,6 +85,12 @@ class _Row(QWidget):
         if param.hint:
             self.setToolTip(tr(param.hint))
         v.addWidget(self.mirror.widget)
+        original = labels_above.value_of(self.mirror.widget)       # a slider's value: at the right of the name's line
+        self.value = None if original is None else labels_above.copy_of(original)
+        if self.value is not None:
+            self.value.setMinimumWidth(0)
+            self.name.setMinimumWidth(48)                      # (it wraps: the row must not widen a narrow tray)
+            top.insertWidget(1, self.value)
 
     def show_eye(self, on: bool) -> None:
         self.eye.setChecked(on)
@@ -101,29 +107,40 @@ class ExpertTab(QWidget):
         self.layout_name, shown = self._stored()
         self._pending = False
         v = QVBoxLayout(self)
-        v.setContentsMargins(0, 8, 4, 2)                    # (as the other pages: room above, under the tabs)
+        v.setContentsMargins(0, 0, 4, 2)                    # (the room above is the search's)
+        # what is the extension's own (not the render's) has a group of its own, the first one
+        self.config = widgets.Card("Panel configuration", "expert_config", icon="tools", kind="column")
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search a setting…")
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(lambda _t: self._filter_rows())
-        v.addWidget(self.search)
+        # (the search is not in the page: the panel puts it above, where it does not scroll away)
         self.layout_box = QComboBox()
-        self.layout_box.setToolTip("The layout: which settings each page shows. It changes no value of the render.")
+        self.layout_box.setToolTip("The panel's configuration: which settings each page shows. It changes no value of "
+                                   "the render.")
         self.layout_box.activated.connect(lambda _i: self.load_layout(self.layout_box.currentData()))
         self.menu_btn = QToolButton()
         self.menu_btn.setIcon(icons.icon("more"))
         self.menu_btn.setPopupMode(QToolButton.InstantPopup)
-        self.menu_btn.setToolTip("Save the layout, delete it, or go back to the default one")
+        self.menu_btn.setToolTip("Save the panel's configuration, delete it, or go back to the default one")
         menu = QMenu(self.menu_btn)
-        self.save_act = menu.addAction(tr("Save layout…"), lambda: self.save_layout())
-        self.delete_act = menu.addAction(tr("Delete this layout"), lambda: self.delete_layout())
+        self.save_act = menu.addAction(tr("Save configuration…"), lambda: self.save_layout())
+        self.delete_act = menu.addAction(tr("Delete this configuration"), lambda: self.delete_layout())
         menu.addSeparator()
-        self.reset_act = menu.addAction(tr("Default layout"), lambda: self.load_layout(_DEFAULT))
+        self.reset_act = menu.addAction(tr("Default configuration"), lambda: self.load_layout(_DEFAULT))
         self.menu_btn.setMenu(menu)
         row = QHBoxLayout()
         row.addWidget(self.layout_box, 1)
         row.addWidget(self.menu_btn)
-        v.addLayout(row)
+        self.config.body_layout.addLayout(row)
+        self.accordion = QCheckBox("Groups as an accordion")
+        self.accordion.setToolTip("On: opening a group of the panel folds the others of its page. Off: each group "
+                                  "opens and folds on its own.")
+        self.accordion.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        self.accordion.setChecked(str(QSettings().value(_SETTINGS + "accordion", "true")).lower() != "false")
+        self.accordion.toggled.connect(lambda on: QSettings().setValue(_SETTINGS + "accordion", "true" if on else "false"))
+        self.config.body_layout.addWidget(self.accordion)
+        v.addWidget(self.config)
         self.layout_box.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.layout_box.setMinimumContentsLength(8)
 
@@ -183,7 +200,7 @@ class ExpertTab(QWidget):
         box = self.layout_box
         box.blockSignals(True)
         box.clear()
-        box.addItem(tr("Default layout"), _DEFAULT)
+        box.addItem(tr("Default configuration"), _DEFAULT)
         for _path, name, _shown in self.folder.entries():
             box.addItem(name, name)
         index = max(0, box.findData(self.layout_name))
@@ -211,12 +228,12 @@ class ExpertTab(QWidget):
 
     def save_layout(self, name: str = "") -> None:
         if not name:
-            name, ok = QInputDialog.getText(self.window(), tr("Save layout…"), tr("Name of the layout"), text=self.layout_name)
+            name, ok = QInputDialog.getText(self.window(), tr("Save configuration…"), tr("Name of the configuration"), text=self.layout_name)
             name = user_presets.clean_name(name)
             if not ok or not name:
                 return
             if name != self.layout_name and self.folder.find(name) is not None and QMessageBox.question(
-                    self.window(), tr("Save layout…"), tr("A layout called «{name}» exists. Replace it?", name=name)) != QMessageBox.Yes:
+                    self.window(), tr("Save configuration…"), tr("A configuration called «{name}» exists. Replace it?", name=name)) != QMessageBox.Yes:
                 return
         try:
             self.folder.save(name, self.filter.shown)
@@ -229,7 +246,7 @@ class ExpertTab(QWidget):
 
     def delete_layout(self) -> None:
         if not self.layout_name or QMessageBox.question(
-                self.window(), tr("Delete"), tr("Delete the layout «{name}»?", name=self.layout_name)) != QMessageBox.Yes:
+                self.window(), tr("Delete"), tr("Delete the configuration «{name}»?", name=self.layout_name)) != QMessageBox.Yes:
             return
         self.folder.delete(self.layout_name)
         self.load_layout(_DEFAULT)
@@ -277,6 +294,8 @@ class ExpertTab(QWidget):
             applies = params.applies(row.param, model)
             row.mirror.widget.setEnabled(applies)
             row.name.setEnabled(applies)
+            if row.value is not None:
+                row.value.setEnabled(applies)
             differs = applies and row.param.kind != "program" and \
                 not same(model[key], default_value(key, model["ambient.look"]))
             row.mark.setVisible(differs)

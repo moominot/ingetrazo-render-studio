@@ -120,6 +120,23 @@ def _pbr(scene) -> dict:
         return {}
 
 
+def _finish(name: str, mat) -> dict:
+    """IngeTrazo's finish for a material, as its export to Blender gives it (the one chosen, or guessed from
+    the name and the picture), with the finish's numbers. Empty when it cannot be told."""
+    try:
+        from core.finish import PBR, resolve
+    except Exception:  # noqa: BLE001 - an IngeTrazo without finishes
+        return {}
+    tex = getattr(mat, "texture", None) or {}
+    picture = str(tex.get("path") or "").replace("\\", "/").rsplit("/", 1)[-1] or None
+    opacity = getattr(mat, "opacity", None)
+    finish = resolve(getattr(mat, "finish", None), name, picture, opacity)
+    if finish not in PBR:
+        return {}
+    return {"finish": finish, "finish_pbr": [float(v) for v in PBR[finish]],
+            "opacity": None if opacity is None else float(opacity)}
+
+
 def materials_to_blender(scene, specs: dict, names: list, limit: int = 64) -> list:
     """One entry per material: its colour and its render settings (the automatic ones where it has none)."""
     from . import materials as M
@@ -134,7 +151,7 @@ def materials_to_blender(scene, specs: dict, names: list, limit: int = 64) -> li
         mat = scene.materials.get(name) if getattr(scene, "materials", None) is not None else None
         color = (getattr(mat, "color", None) or (0.8, 0.8, 0.8))[:3]
         tex = (getattr(mat, "texture", None) or {}) if mat is not None else {}
-        plain = {k: v for k, v in spec.items() if k != "blender"}
+        plain = {k: v for k, v in (full.get(name) or {}).items() if k != "blender"}    # nothing: the finish alone
         grass = None
         if spec.get("type") == "grass":
             h = float(spec.get("grass_height", M.DEFAULT_GRASS_HEIGHT))
@@ -142,7 +159,8 @@ def materials_to_blender(scene, specs: dict, names: list, limit: int = 64) -> li
                      "grass_density": float(spec.get("grass_density") or M.auto_grass_density(h))}
         out.append({"name": name, "grass": grass, "spec": plain, "pbr": _pbr(scene), "package": (full.get(name) or {}).get("blender"), "color": [float(c) for c in color], "roughness": float(spec.get("roughness", 0.5)),
                     "metallic": float(spec.get("metallic", 0.0)), "glow": float(spec.get("glow", 0.0)),
-                    "texture": {"path": str(tex["path"]), "sw": float(tex.get("sw", 1.0) or 1.0), "sh": float(tex.get("sh", 1.0) or 1.0)} if tex.get("path") else None})
+                    "texture": {"path": str(tex["path"]), "sw": float(tex.get("sw", 1.0) or 1.0), "sh": float(tex.get("sh", 1.0) or 1.0)} if tex.get("path") else None,
+                    **_finish(name, mat)})
     return out
 
 
@@ -157,13 +175,16 @@ def materials_from_blender(specs: dict, read: list, current: dict | None = None)
         base = dict(M.DEFAULT)
         base.update(old)
         new = dict(base)
+        opened = r.get("opened") or {}                     # the numbers the material was opened with
         for key, hi in (("roughness", 1.0), ("metallic", 1.0), ("glow", 50.0)):
             v = max(0.0, min(hi, float(r[key])))
-            if not _near(v, base.get(key, 0.0), 5e-3):
+            if not _near(v, float(opened.get(key, base.get(key, 0.0))), 5e-3):
                 new[key] = round(v, 3)
         if r.get("package") and r["package"].get("blend"):
             new["blender"] = r["package"]                  # the whole material as it was left: the render uses it as it is
         if new != base:
+            if not old and r.get("finish") in ("glass", "water"):
+                new["type"] = r["finish"]                  # (a generic one would take the glass or water away)
             new.pop("preset", None)                        # no longer the preset it started from
             changed[name] = new
     return changed

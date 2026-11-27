@@ -49,6 +49,8 @@ class App:
 app = App(); scene = app.scene; hist = app.viewport.history
 scene.mesh.add_face([QVector3D(*p) for p in ((-3, -3, 0), (3, -3, 0), (3, 3, 0), (-3, 3, 0))])
 panel = P.StudioPanel(app); app.on_document_changed(panel.document_changed)
+panel.expert.accordion.setChecked(False)      # (a drawing opens with the groups folded: these checks look inside them)
+for card in panel._page_cards(): card.set_open(True)
 sun = panel.sun_tab
 
 # ---- Sun ---------------------------------------------------------------------------------
@@ -227,7 +229,7 @@ for e in L.all_lights(scene):
     tab.select(e["key"]); qa.processEvents()
     widest = max(widest, QWidget.width(sc.widget()) - sc.viewport().width())
 ok(widest <= 0, f"the lights window fits with every light chosen ({widest} px too wide)")
-ok(not tab.adv.body.isVisible(), "the advanced lights rows start folded")
+ok(not tab.eyes.on("radius") and not tab.expert_view(), "the finer lights settings start out of sight (Expert has them)")
 ok(not tab.power.isHidden() and not tab.name.isHidden(), "power and name are in view")
 
 

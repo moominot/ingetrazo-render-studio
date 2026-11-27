@@ -136,7 +136,7 @@ real = QFileDialog.getSaveFileName
 QFileDialog.getSaveFileName = fake_dialog
 win.snapshot_btn.click(); qa.processEvents()
 QFileDialog.getSaveFileName = real
-ok((tmp / "picked.jpg").is_file() and "view-" in asked["start"] and "picked.jpg" in win.status.text(), f"the button asks for a name and saves: {win.status.text()}")
+ok((tmp / "picked.jpg").is_file() and "renderStudio-" in asked["start"] and "picked.jpg" in win.status.text(), f"the button asks for a name and saves: {win.status.text()}")
 
 # the bar: one height, and the way back to the panel
 quality = win.quality_buttons._buttons

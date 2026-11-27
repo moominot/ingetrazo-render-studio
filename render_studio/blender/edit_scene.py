@@ -84,18 +84,19 @@ def _sphere(radius, seg=24, rings=12):
             f.append((a + s_, a + (s_ + 1) % seg, a + seg + (s_ + 1) % seg, a + seg + s_))
     last, b = len(v) - 1, 1 + (rings - 2) * seg
     f += [(last, b + s_, b + (s_ + 1) % seg) for s_ in range(seg)]
-    return v, f
+    return v, [face[::-1] for face in f]      # facing outwards: bumps stand out and grass grows out, not in
 
 
-def _stage(scene, size=14.0):
-    """A floor and a one-metre cube to see the light on, a dim world, a camera looking at them."""
+def _stage(scene, size=14.0, cube=True):
+    """A floor, a dim world, a camera and (``cube``, for the lights) a one-metre cube to see the light on."""
     mat = bpy.data.materials.new("Reference grey")
     _principled(mat).inputs["Base Color"].default_value = (0.5, 0.5, 0.5, 1.0)
     h = size / 2.0
     _mesh_object(scene, "Floor (reference, not saved)", [(-h, -h, 0), (h, -h, 0), (h, h, 0), (-h, h, 0)],
                  [(0, 1, 2, 3)], material=mat)
-    v, f = _box(1.0)
-    _mesh_object(scene, "Cube 1 m (reference, not saved)", v, f, (0, 0, 0.5), mat)
+    if cube:
+        v, f = _box(1.0)
+        _mesh_object(scene, "Cube 1 m (reference, not saved)", v, f, (0, 0, 0.5), mat)
     world = bpy.data.worlds.new("World")
     world.use_nodes = True
     bg = next((n for n in world.node_tree.nodes if n.type == "BACKGROUND"), None)
@@ -119,15 +120,19 @@ def _stage(scene, size=14.0):
 
 
 def _look_through_the_camera():
-    """Open the 3D view in rendered shading, seen through the camera, so the light shows at once."""
-    try:
-        for win in bpy.context.window_manager.windows:
-            for area in win.screen.areas:
-                if area.type == "VIEW_3D":
-                    area.spaces[0].shading.type = "RENDERED"       # the scene's own lights, not a studio HDRI
-                    area.spaces[0].region_3d.view_perspective = "CAMERA"
-    except Exception:  # noqa: BLE001 - the window is there anyway
-        pass
+    """Every 3D view in rendered shading (live), seen through the camera: of every screen, since the
+    workspace just chosen is not on the window yet."""
+    for screen in bpy.data.screens:
+        for area in screen.areas:
+            if area.type != "VIEW_3D":
+                continue
+            try:
+                space = area.spaces[0]
+                space.shading.type = "RENDERED"                    # the scene's own lights, not a studio HDRI
+                if space.region_3d is not None:
+                    space.region_3d.view_perspective = "CAMERA"
+            except Exception:  # noqa: BLE001 - the window is there anyway
+                pass
 
 
 
@@ -344,6 +349,30 @@ def _lay_out_nodes(mat, bsdf):
         out.location = (320.0, 0.0)
 
 
+def _arrange_nodes(tree):
+    """The nodes in columns, each one left of what it feeds (the render's steps add theirs on top of each other).
+    The positions do not count as a change of the material."""
+    out = next((n for n in tree.nodes if n.type == "OUTPUT_MATERIAL"), None)
+    if out is None:
+        return
+    depth = {out.name: 0}
+    for _pass in range(len(tree.nodes)):                       # the longest way to the output
+        moved = False
+        for link in tree.links:
+            a, b = link.from_node.name, link.to_node.name
+            if b in depth and depth.get(a, -1) < depth[b] + 1:
+                depth[a] = depth[b] + 1
+                moved = True
+        if not moved:
+            break
+    columns = {}
+    for node in tree.nodes:
+        columns.setdefault(depth.get(node.name, 0), []).append(node)
+    for column, nodes in columns.items():                      # each column centred, so all of them are in sight
+        for row, node in enumerate(nodes):
+            node.location = (320.0 - 340.0 * column, 170.0 * (len(nodes) - 1) - 340.0 * row)
+
+
 def _picture_node(mat, bsdf, tex):
     """The material's own picture (``tex`` = {path}) on the Base Color, as the render has it."""
     path = (tex or {}).get("path")
@@ -359,14 +388,31 @@ def _picture_node(mat, bsdf, tex):
         nodes.remove(node)
         return None
     links.new(node.outputs["Color"], bsdf.inputs["Base Color"])
-    sw, sh = float((tex or {}).get("sw") or 1.0), float((tex or {}).get("sh") or 1.0)
-    if abs(sw - 1.0) > 1e-6 or abs(sh - 1.0) > 1e-6:            # the picture repeats every sw x sh metres: so on the sphere
-        uv = nodes.new("ShaderNodeTexCoord")
-        mp = nodes.new("ShaderNodeMapping")
-        mp.inputs["Scale"].default_value = (1.0 / max(0.01, sw), 1.0 / max(0.01, sh), 1.0)
-        links.new(uv.outputs["UV"], mp.inputs["Vector"])
-        links.new(mp.outputs["Vector"], node.inputs["Vector"])
     return node
+
+
+def _tile(sp):
+    """(width, height) in metres of one repeat of the material's picture."""
+    tex = sp.get("texture") or {}
+    return max(0.01, float(tex.get("sw") or 1.0)), max(0.01, float(tex.get("sh") or 1.0))
+
+
+def _sphere_uvs(me, radius, tile):
+    """UVs as the model's export makes them, counted in repeats of the picture (so the nodes need no Mapping
+    and the material reads the same on the model): metres along the equator and from pole to pole."""
+    sw, sh = tile
+    layer = me.uv_layers.new(name="UVMap")
+    for poly in me.polygons:
+        cos = [me.vertices[me.loops[i].vertex_index].co for i in poly.loop_indices]
+        phis = [math.atan2(c.y, c.x) % (2 * math.pi) if math.hypot(c.x, c.y) > 1e-6 else None for c in cos]
+        known = [p for p in phis if p is not None]
+        if max(known) - min(known) > math.pi:                  # a face on the seam: all on the same side of it
+            phis = [None if p is None else (p + 2 * math.pi if p < math.pi else p) for p in phis]
+            known = [p for p in phis if p is not None]
+        middle = sum(known) / len(known)                       # (a pole has no angle of its own)
+        for i, c, phi in zip(poly.loop_indices, cos, phis):
+            down = math.acos(max(-1.0, min(1.0, c.z / radius)))
+            layer.data[i].uv = ((middle if phi is None else phi) * radius / sw, (math.pi - down) * radius / sh)
 
 
 def _show_shader_editor(scene):
@@ -418,7 +464,7 @@ def _grass_patch(scene, sp, mat, at, folder):
     me.uv_layers.new(name="UVMap")
     for loop in me.loops:
         co = me.vertices[loop.vertex_index].co
-        me.uv_layers[0].data[loop.index].uv = (co.x / 2.0 + 0.5, co.y / 2.0 + 0.5)
+        me.uv_layers[0].data[loop.index].uv = (co.x / _tile(sp)[0], co.y / _tile(sp)[1])
     me.materials.append(mat)
     ob = bpy.data.objects.new(sp["name"] + " patch", me)
     ob.location = at
@@ -533,7 +579,7 @@ def _patch_from_group(scene, sp, mat, group, tuft, at):
     me.uv_layers.new(name="UVMap")
     for loop in me.loops:
         co = me.vertices[loop.vertex_index].co
-        me.uv_layers[0].data[loop.index].uv = (co.x / 2.0 + 0.5, co.y / 2.0 + 0.5)
+        me.uv_layers[0].data[loop.index].uv = (co.x / _tile(sp)[0], co.y / _tile(sp)[1])
     me.materials.append(mat)
     ob = bpy.data.objects.new(sp["name"] + " patch", me)
     ob.location = at
@@ -549,32 +595,54 @@ def _patch_from_group(scene, sp, mat, group, tuft, at):
     return ob
 
 
+def _as_exported(mat, bsdf, sp):
+    """The material as the model arrives in Blender: IngeTrazo's finish (its name on the material, its numbers
+    on the BSDF, as the glTF export writes them) and the model's opacity."""
+    finish, values = sp.get("finish"), sp.get("finish_pbr")
+    if not finish or not values:
+        return
+    mat["ingetrazo_finish"] = finish
+    rough, metal, transmission, ior = (float(v) for v in values)
+    bsdf.inputs["Roughness"].default_value = rough
+    bsdf.inputs["Metallic"].default_value = metal
+    bsdf.inputs["IOR"].default_value = ior
+    for name in ("Transmission Weight", "Transmission"):
+        if name in bsdf.inputs:
+            bsdf.inputs[name].default_value = transmission
+            break
+    if sp.get("opacity") is not None:
+        bsdf.inputs["Alpha"].default_value = max(0.0, min(1.0, float(sp["opacity"])))
+
+
 def _as_the_render_makes_it(studio, mat, sp):
     """The material with every step of the render's own pipeline on it, so what Blender shows is what the render
     would have made from the editor's settings: the finish of its type (glass, water, glow), its roughness, metal and
     relief, the maps that drive them, the picture's adjustments and its texture set. Then the person edits THAT."""
-    spec = dict(sp.get("spec") or {})
+    spec = dict(sp.get("spec") or {})       # its own (or named) render settings; none: IngeTrazo's finish alone
     spec.pop("blender", None)
-    if not spec:
-        return False
-    specs = {mat.name: spec}
+    specs = {mat.name: spec} if spec else {}
     names = {mat.name}
-    studio["mark_material_types"](specs, names)
+    if specs:
+        studio["mark_material_types"](specs, names)
     studio["finishes_for"](names)
     sets = studio["match_texture_sets"](sp.get("pbr") or {})
-    studio["apply_material_specs"](specs, sets, names)
+    if specs:
+        studio["apply_material_specs"](specs, sets, names)
     mine = {k: v for k, v in sets.items() if k in names}
     if mine:
         studio["apply_texture_sets"](mine, specs)
+    if specs:
+        studio["apply_last_touches"](specs, names)
     return True
 
 
 def make_materials(specs, folder=None):
     scene = _clear()
     studio = None
-    _stage(scene, 40.0)
+    _stage(scene, 40.0, cube=False)
     n = len(specs)
     cols = max(1, min(8, int(math.ceil(math.sqrt(n)))))
+    shown = []                                      # what the camera frames
     for i, sp in enumerate(specs):
         loaded = None
         if (sp.get("package") or {}).get("blend"):            # edited in Blender before: it opens as it was left
@@ -599,6 +667,7 @@ def make_materials(specs, folder=None):
             glow = float(sp.get("glow", 0.0))
             b.inputs["Emission Color"].default_value = (r, g, bl, 1.0)
             b.inputs["Emission Strength"].default_value = glow
+            _as_exported(mat, b, sp)
             mat.diffuse_color = (r, g, bl, 1.0)
             if studio is None and folder:
                 try:
@@ -613,9 +682,12 @@ def make_materials(specs, folder=None):
                 except Exception:  # noqa: BLE001 - the plain material then
                     import traceback
                     print(traceback.format_exc())
+            _arrange_nodes(mat.node_tree)
         mat["rs_name"] = sp["name"]
         v, f = _sphere(0.5)
-        _mesh_object(scene, sp["name"], v, f, ((i % cols) * 1.3 - cols * 0.65, (i // cols) * -1.3, 0.5), mat, True)
+        ball = _mesh_object(scene, sp["name"], v, f, ((i % cols) * 1.3 - cols * 0.65, (i // cols) * -1.3, 0.5), mat, True)
+        _sphere_uvs(ball.data, 0.5, _tile(sp))
+        shown.append(ball)
         at = ((i % cols) * 1.3 - cols * 0.65 + 2.2, (i // cols) * -1.3, 0.0)
         patch = None
         if group is not None:
@@ -627,6 +699,9 @@ def make_materials(specs, folder=None):
                 import traceback
                 print(traceback.format_exc())
         mat["rs_sig"] = _tree_sig(mat.node_tree)                # what it is now: a change from it is the person's
+        mat["rs_open"] = json.dumps(_numbers(mat))              # …and its three numbers
+        if patch is not None:
+            shown.append(patch)
         g0, _t0 = _patch_group(patch)
         if patch is not None and g0 is not None:
             patch["rs_gsig"] = _tree_sig(g0)
@@ -639,9 +714,33 @@ def make_materials(specs, folder=None):
         o.location = loc
         o.rotation_euler = (Vector(loc) * -1).to_track_quat("-Z", "Y").to_euler()
         o["rs_reference"] = True
+    _frame(scene, shown)
+
+
+def _frame(scene, objects):
+    """The camera on the spheres (and grass patches), all of them in the picture."""
+    bpy.context.view_layer.update()
+    points = [ob.matrix_world @ Vector(c) for ob in objects for c in ob.bound_box]
+    if not points:
+        return
+    low = Vector(min(p[i] for p in points) for i in range(3))
+    high = Vector(max(p[i] for p in points) for i in range(3))
+    centre, radius = (low + high) / 2.0, max(0.5, (high - low).length / 2.0)
     cam = scene.camera
-    cam.location = (0.0, -cols * 1.3 - 4.0, cols * 0.9 + 2.0)
-    cam.rotation_euler = (Vector((0.0, cols * 1.3 + 4.0, -(cols * 0.9 + 1.5)))).to_track_quat("-Z", "Y").to_euler()
+    cam.data.lens = 50.0
+    away = Vector((0.0, -1.0, 0.5)).normalized()
+    cam.location = centre + away * (radius * 3.6)
+    cam.rotation_euler = (-away).to_track_quat("-Z", "Y").to_euler()
+
+
+def _numbers(mat):
+    """Roughness, metal and glow of a material's Principled BSDF, as Render Studio takes them."""
+    b = next((n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+    if b is None:
+        return {"roughness": 0.5, "metallic": 0.0, "glow": 0.0}
+    em = b.inputs["Emission Color"].default_value
+    return {"roughness": b.inputs["Roughness"].default_value, "metallic": b.inputs["Metallic"].default_value,
+            "glow": b.inputs["Emission Strength"].default_value if (em[0] + em[1] + em[2]) > 0.0 else 0.0}
 
 
 def read_materials():
@@ -650,12 +749,11 @@ def read_materials():
         name = mat.get("rs_name")
         if not name or not mat.use_nodes:
             continue
-        b = next((n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
-        item = {"name": name, "roughness": 0.5, "metallic": 0.0, "glow": 0.0}
-        if b is not None:
-            em = b.inputs["Emission Color"].default_value
-            item.update(roughness=b.inputs["Roughness"].default_value, metallic=b.inputs["Metallic"].default_value,
-                        glow=b.inputs["Emission Strength"].default_value if (em[0] + em[1] + em[2]) > 0.0 else 0.0)
+        item = dict(_numbers(mat), name=name)
+        if mat.get("rs_open"):
+            item["opened"] = json.loads(mat["rs_open"])         # only what differs from this is the person's
+        if mat.get("ingetrazo_finish"):
+            item["finish"] = str(mat["ingetrazo_finish"])
         # what is different from the nodes the material was opened with comes back whole, as a package
         patch = bpy.data.objects.get(name + " patch")
         group, tuft = _patch_group(patch)
@@ -685,8 +783,11 @@ def main():
             else:
                 make_materials(data, os.path.dirname(os.path.abspath(argv[2])))
             bpy.ops.wm.save_as_mainfile(filepath=argv[3])
-            if not (kind == "materials" and _show_shader_editor(bpy.context.scene)):
-                _look_through_the_camera()                  # (materials: the Shading workspace shows them)
+            if kind == "materials":
+                _show_shader_editor(bpy.context.scene)      # the Shading workspace: the view and the nodes
+            _look_through_the_camera()
+            # again once the window has changed workspace
+            bpy.app.timers.register(lambda: (_look_through_the_camera(), None)[1], first_interval=0.3)
         except Exception:  # noqa: BLE001 - say it where the person can find it
             import traceback
             text = traceback.format_exc()

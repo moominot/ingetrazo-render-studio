@@ -25,8 +25,9 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QFileDialog, QFormLayout
                                QMenu, QScrollArea, QProgressBar, QPushButton, QSizePolicy, QToolButton, QVBoxLayout,
                                QWidget)
 
-from . import icons, wheel_guard
+from . import labels_above, icons, wheel_guard
 from . import post
+from .output import save_name
 from .preview_nav import Navigator, PreviewView
 from .widgets import Card, ChoiceButtons, SliderRow, flat_style, slider, split_button, value, set_value
 
@@ -308,6 +309,7 @@ class ImageWindow(QWidget):
         self._side_open = str(QSettings().value(_SETTINGS + "side_open", "true")).lower() != "false"
         self._build_side_handle()
         self.set_mode("final" if panel is None else "preview")
+        labels_above.apply(self)
         wheel_guard.watch(self)          # (the wheel scrolls; it changes only a picked field)
 
     # -- the side panel's handle: IngeTrazo's own (a chevron on the line between the picture and the panel) --------------------
@@ -769,8 +771,7 @@ class ImageWindow(QWidget):
         on meanwhile, so a picture that was still being refined is saved refined."""
         if self.picture().isNull():
             return
-        from time import strftime
-        start = Path(QSettings().value(_SETTINGS + "save_dir", str(Path.home()))) / f"view-{strftime('%Y%m%d-%H%M%S')}.png"
+        start = Path(QSettings().value(_SETTINGS + "save_dir", str(Path.home()))) / f"{save_name()}.png"
         path, chosen = QFileDialog.getSaveFileName(self, tr("Save this picture"), str(start), "PNG (*.png);;JPEG (*.jpg)")
         if not path:
             return
@@ -885,8 +886,7 @@ class ImageWindow(QWidget):
         self.rendered_label = label
 
     def _save(self):
-        start = str(Path(QSettings().value(_SETTINGS + "save_dir", str(Path.home()))) /
-                    ((self.path.stem if self.path else "render") + ".png"))
+        start = str(Path(QSettings().value(_SETTINGS + "save_dir", str(Path.home()))) / f"{save_name()}.png")
         filters = "PNG (*.png);;JPEG (*.jpg)"
         extra = self.rendered_file if self.rendered_file is not None and self.rendered_file.is_file() else None
         if extra is not None:

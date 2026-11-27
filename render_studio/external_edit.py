@@ -78,6 +78,7 @@ class PictureEdit(QObject):
         self.app, self.name = app, name
         self.folder = None
         self.file = None
+        self.could_not_open = False                     # the picture was ready, no program opened it
         self._seen = {}                                  # file → (mtime, size) already taken into the model
         self._watcher = QFileSystemWatcher(self)
         self._watcher.directoryChanged.connect(self._schedule)
@@ -108,6 +109,7 @@ class PictureEdit(QObject):
         self._watcher.addPath(str(self.folder))
         self._watcher.addPath(str(self.file))
         if not open_in_program(program, self.file):
+            self.could_not_open = True
             self.stop()
             self.failed.emit(tr("Could not open the picture in {program}.", program=program or tr("the system's program")))
             return False

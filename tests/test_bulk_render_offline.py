@@ -54,7 +54,12 @@ from render_studio import bulk_render as BR
 ok(BR.scene_file_name("{document}-{scene}", "Casa", "Planta/1", ".png") == "Casa-Planta_1.png", "a scene's file name is safe")
 ok(BR.scene_file_name("{scene}", "x", "A", ".png", taken=["a.png"]) == "A-2.png", "two scenes with one name get a number")
 _n = BR.scene_file_name("", "", "", ".jpg")
-ok(_n.startswith("render-scene-") and _n.endswith(".jpg"), f"empty pieces still make a name ({_n})")
+import re as _re
+ok(_re.fullmatch(r"renderStudio-\d{8}-\d{6}-scene\.jpg", _n) is not None, f"no name given: renderStudio, date, time and the scene ({_n})")
+from render_studio import output as OUT_
+ok(_re.fullmatch(r"renderStudio-\d{8}-\d{6}", OUT_.save_name()) is not None
+   and _re.fullmatch(r"renderStudio-\d{8}-\d{6}\.png", OUT_.file_name("", "Casa", "x", "20261127-101112", ".png")) is not None,
+   f"a render is saved as renderStudio-date-time ({OUT_.save_name()})")
 
 app = App(); scene = app.scene
 app.viewport.camera = OrbitCamera()
@@ -70,6 +75,8 @@ choices = BR.scene_choices(scene)
 ok([c[1] for c in choices] == ["Scene 1", "Alçats / Scene 2", "Scene 3"], f"the scenes are listed with their folder ({[c[1] for c in choices]})")
 
 panel = P.StudioPanel(app)
+panel.expert.accordion.setChecked(False)      # (a drawing opens with the groups folded: these checks look inside them)
+for card in panel._page_cards(): card.set_open(True)
 tab = panel.output_tab
 panel.show()
 ok(hasattr(panel.render_btn, "menu") and panel.render_btn.menu() is not None, "the Render button has an arrow with a menu")

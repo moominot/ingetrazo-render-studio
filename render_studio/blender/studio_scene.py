@@ -909,6 +909,7 @@ def _synth_ground_source(gm, st):
             mine = {k: v for k, v in sets.items() if k in names}
             if mine:
                 apply_texture_sets(mine, specs)
+            apply_last_touches(specs, names)
             if (_spec_for(mat, specs) or {}).get("blender"):
                 apply_blender_packages(specs, names)           # a material edited in Blender: as it was left
                 mat = bpy.data.materials.get(name) or mat
@@ -1437,6 +1438,218 @@ RELIEF_SOFTNESS = 1.0 / 256.0
 RELIEF_MAX_SIDE = 1024
 
 
+# ---- the last touches: roughness range, repetition, tone, translucency ------------------------
+
+#: How much of the light goes through at «Translucency» 100 %, and a leaf's translucency by itself.
+TRANSLUCENT_MOST = 0.6
+FOLIAGE_TRANSLUCENCY = 0.5
+
+
+def _roughness_range(mat, bsdf, lo, hi):
+    """A roughness map read between ``lo`` (its black) and ``hi`` (its white)."""
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    link = next(iter(bsdf.inputs["Roughness"].links), None)
+    if link is None:
+        return                                      # no map: the slider is the roughness
+    rng = nodes.new("ShaderNodeMapRange")
+    rng.label = "Roughness range"
+    rng.clamp = True
+    rng.inputs["To Min"].default_value = lo
+    rng.inputs["To Max"].default_value = hi
+    links.new(link.from_socket, rng.inputs["Value"])
+    links.new(rng.outputs["Result"], bsdf.inputs["Roughness"])
+
+
+def _math(nodes, links, op, a, b=None):
+    node = nodes.new("ShaderNodeMath")
+    node.operation = op
+    for i, v in enumerate((a, b)):
+        if v is None:
+            continue
+        if isinstance(v, (int, float)):
+            node.inputs[i].default_value = float(v)
+        else:
+            links.new(v, node.inputs[i])
+    return node.outputs[0]
+
+
+def _untile(mat, bsdf):
+    """The picture's repeat broken: patches of the surface read the picture shifted by an amount of their own,
+    one patch melting into the next. Every map that follows the picture's coordinates is shifted with it, so
+    colour, relief and roughness stay together. Only shifted (never turned), so a normal map stays right.
+    For irregular surfaces: a pattern with joints (bricks, tiles) would stop lining up."""
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    _sock, pic = _colour_source(nodes, bsdf)
+    if pic is None:
+        return False
+    first = next(iter(pic.inputs["Vector"].links), None)
+    source = first.from_socket if first is not None else None
+
+    def follows(node):
+        if node.type != "TEX_IMAGE" or node.image is None or node.projection != "FLAT":
+            return False
+        link = next(iter(node.inputs["Vector"].links), None)
+        return (link is None and source is None) or (link is not None and link.from_socket == source)
+
+    images = [n for n in nodes if follows(n)]
+    if source is None:
+        coord = nodes.new("ShaderNodeTexCoord")
+        source = coord.outputs["UV"]
+    # which patch we are in (a slow noise cut into steps) and how far between two of them
+    noise = nodes.new("ShaderNodeTexNoise")
+    noise.noise_dimensions = "2D"
+    noise.inputs["Scale"].default_value = 0.22      # patches of a few repeats
+    noise.inputs["Detail"].default_value = 0.0
+    links.new(source, noise.inputs["Vector"])
+    steps = nodes.new("ShaderNodeMapRange")
+    steps.clamp = False
+    for name, v in (("From Min", 0.3), ("From Max", 0.7), ("To Min", 0.0), ("To Max", 4.0)):
+        steps.inputs[name].default_value = v
+    links.new(noise.outputs["Fac"], steps.inputs["Value"])
+    patch = _math(nodes, links, "FLOOR", steps.outputs["Result"])
+    part = _math(nodes, links, "FRACT", steps.outputs["Result"])
+    melt = nodes.new("ShaderNodeMapRange")
+    melt.interpolation_type = "SMOOTHSTEP"
+    melt.inputs["From Min"].default_value = 0.1     # a wide melt: a narrow one cuts the picture's shapes in half
+    melt.inputs["From Max"].default_value = 0.9
+    links.new(part, melt.inputs["Value"])
+
+    def shifted(number):
+        off = nodes.new("ShaderNodeCombineXYZ")
+        links.new(_math(nodes, links, "SINE", _math(nodes, links, "MULTIPLY", number, 3.0)), off.inputs["X"])
+        links.new(_math(nodes, links, "SINE", _math(nodes, links, "MULTIPLY", number, 7.0)), off.inputs["Y"])
+        add = nodes.new("ShaderNodeVectorMath")
+        add.operation = "ADD"
+        links.new(source, add.inputs[0])
+        links.new(off.outputs["Vector"], add.inputs[1])
+        return add.outputs["Vector"]
+
+    one, other = shifted(patch), shifted(_math(nodes, links, "ADD", patch, 1.0))
+    for node in images:
+        twin = nodes.new("ShaderNodeTexImage")
+        twin.image, twin.label = node.image, node.label
+        twin.interpolation, twin.extension = node.interpolation, node.extension
+        links.new(one, node.inputs["Vector"])
+        links.new(other, twin.inputs["Vector"])
+        for name, kind in (("Color", "RGBA"), ("Alpha", "FLOAT")):
+            users = [l.to_socket for l in node.outputs[name].links]
+            if not users:
+                continue
+            mix = nodes.new("ShaderNodeMix")
+            mix.data_type = kind
+            mix.label = "Repetition " + name
+            suffix = "Color" if kind == "RGBA" else "Float"
+            links.new(melt.outputs["Result"], _socket(mix, "Factor_Float", 0))
+            links.new(node.outputs[name], next(s for s in mix.inputs if s.identifier == "A_" + suffix))
+            links.new(twin.outputs[name], next(s for s in mix.inputs if s.identifier == "B_" + suffix))
+            result = next(s for s in mix.outputs if s.identifier == "Result_" + suffix)
+            for to in users:
+                links.new(result, to)
+    return True
+
+
+def _tone_variation(mat, bsdf, amount):
+    """Large soft patches a little lighter and darker, by the place in the world (metres), so a big surface is
+    not one even tone."""
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    base = bsdf.inputs["Base Color"]
+    link = next(iter(base.links), None)
+    place = nodes.new("ShaderNodeNewGeometry")
+    noise = nodes.new("ShaderNodeTexNoise")
+    noise.noise_dimensions = "3D"
+    noise.inputs["Scale"].default_value = 0.6       # patches of a metre or two
+    noise.inputs["Detail"].default_value = 3.0
+    links.new(place.outputs["Position"], noise.inputs["Vector"])
+    rng = nodes.new("ShaderNodeMapRange")
+    rng.label = "Tone variation"
+    rng.clamp = True
+    for name, v in (("From Min", 0.35), ("From Max", 0.65), ("To Min", 1.0 - 0.3 * amount),
+                    ("To Max", 1.0 + 0.3 * amount)):
+        rng.inputs[name].default_value = v
+    links.new(noise.outputs["Fac"], rng.inputs["Value"])
+    scale = nodes.new("ShaderNodeVectorMath")
+    scale.operation = "SCALE"
+    if link is not None:
+        links.new(link.from_socket, scale.inputs[0])
+    else:
+        scale.inputs[0].default_value = tuple(base.default_value)[:3]
+    links.new(rng.outputs["Result"], scale.inputs["Scale"])
+    links.new(scale.outputs["Vector"], base)
+
+
+def _translucent(mat, bsdf, amount):
+    """Light through a thin surface (a leaf, a curtain, paper): part of the BSDF is replaced by a translucent
+    one of the same colour. A cut-out stays cut out: its alpha is moved outside the two."""
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    out = next((n for n in nodes if n.type == "OUTPUT_MATERIAL" and n.is_active_output), None)
+    surface = next(iter(out.inputs["Surface"].links), None) if out is not None else None
+    if surface is None:
+        return
+    shader = surface.from_socket
+    through = nodes.new("ShaderNodeBsdfTranslucent")
+    colour = next(iter(bsdf.inputs["Base Color"].links), None)
+    if colour is not None:
+        links.new(colour.from_socket, through.inputs["Color"])
+    else:
+        through.inputs["Color"].default_value = tuple(bsdf.inputs["Base Color"].default_value)
+    normal = next(iter(bsdf.inputs["Normal"].links), None)
+    if normal is not None:
+        links.new(normal.from_socket, through.inputs["Normal"])
+    mix = nodes.new("ShaderNodeMixShader")
+    mix.label = "Translucency"
+    mix.inputs[0].default_value = TRANSLUCENT_MOST * amount
+    links.new(shader, mix.inputs[1])
+    links.new(through.outputs["BSDF"], mix.inputs[2])
+    result = mix.outputs[0]
+    alpha = bsdf.inputs["Alpha"]
+    cut = next(iter(alpha.links), None)
+    if cut is not None or alpha.default_value < 0.999:
+        clear = nodes.new("ShaderNodeBsdfTransparent")
+        outer = nodes.new("ShaderNodeMixShader")
+        outer.label = "Cut-out"
+        if cut is not None:
+            links.new(cut.from_socket, outer.inputs[0])
+            links.remove(alpha.links[0])
+        else:
+            outer.inputs[0].default_value = alpha.default_value
+        alpha.default_value = 1.0
+        links.new(clear.outputs["BSDF"], outer.inputs[1])
+        links.new(result, outer.inputs[2])
+        result = outer.outputs[0]
+    links.new(result, out.inputs["Surface"])
+
+
+def apply_last_touches(specs, only=None):
+    """The steps that work on the material as all the others left it. A material edited in Blender is left as
+    it is."""
+    done = []
+    for mat in _live_materials(only):
+        spec = _spec_for(mat, specs)
+        if not spec or spec.get("blender") or not mat.node_tree:
+            continue
+        bsdf = next((n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None)
+        if bsdf is None:
+            continue
+        kind = spec.get("type", "generic")
+        what = []
+        if "rough_min" in spec or "rough_max" in spec:
+            _roughness_range(mat, bsdf, float(spec.get("rough_min", 0.0)), float(spec.get("rough_max", 1.0)))
+        if kind == "generic" and spec.get("untile") and _untile(mat, bsdf):
+            what.append("repetition broken")
+        if kind == "generic" and float(spec.get("variation", 0.0)) > 0.0:
+            _tone_variation(mat, bsdf, min(1.0, float(spec["variation"])))
+            what.append("tone variation")
+        if kind in ("generic", "foliage"):
+            through = float(spec.get("translucency", FOLIAGE_TRANSLUCENCY if kind == "foliage" else 0.0))
+            if through > 0.0:
+                _translucent(mat, bsdf, min(1.0, through))
+                what.append("translucent")
+        if what:
+            done.append(f"{mat.name}: {', '.join(what)}")
+    if done:
+        say("last touches", "; ".join(done))
+
+
 def _box_blur(a, r, axis):
     """A box average of half-width ``r`` along ``axis`` that wraps round, as a
     tiling texture does (cumulative sums: cost independent of ``r``)."""
@@ -1528,7 +1741,20 @@ def _height_node(mat, node, m):
     return new
 
 
-def _add_bump(mat, bsdf, amount, m=None):
+def _flip_green(mat, colour):
+    """A normal map drawn the other way (DirectX): its green channel turned over."""
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    r, g, b = _channels(mat, colour)
+    inv = nodes.new("ShaderNodeMath"); inv.operation = "SUBTRACT"
+    inv.inputs[0].default_value = 1.0
+    links.new(g, inv.inputs[1])
+    comb = nodes.new("ShaderNodeCombineColor")
+    links.new(r, comb.inputs["Red"]); links.new(inv.outputs[0], comb.inputs["Green"])
+    links.new(b, comb.inputs["Blue"])
+    return comb.outputs["Color"]
+
+
+def _add_bump(mat, bsdf, amount, m=None, height_mm=None):
     """Relief. ``m["source"]``: «picture» (its light and dark: mortar
     joints, wood grain), «file» (a height map), «normal» (a normal map),
     «grain» (a fine noise: plaster, concrete); none = the picture when
@@ -1543,7 +1769,10 @@ def _add_bump(mat, bsdf, amount, m=None):
             return
         nmap = nodes.new("ShaderNodeNormalMap")
         nmap.inputs["Strength"].default_value = 2.0 * amount
-        links.new(node.outputs["Color"], nmap.inputs["Color"])
+        colour = node.outputs["Color"]
+        if m.get("flip_green"):
+            colour = _flip_green(mat, colour)
+        links.new(colour, nmap.inputs["Color"])
         links.new(nmap.outputs["Normal"], bsdf.inputs["Normal"])
         return
     _sock, pic = _colour_source(nodes, bsdf)
@@ -1586,6 +1815,8 @@ def _add_bump(mat, bsdf, amount, m=None):
         links.new(coord.outputs["Object"], noise.inputs["Vector"])
         links.new(noise.outputs["Fac"], bump.inputs["Height"])
         bump.inputs["Distance"].default_value = 0.004
+    if height_mm is not None:              # the relief's true height, chosen in the editor
+        bump.inputs["Distance"].default_value = max(0.0, float(height_mm)) / 1000.0
     if old is not None:                    # a normal map: bump on top of it
         links.new(old.from_socket, bump.inputs["Normal"])
     links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
@@ -1891,16 +2122,21 @@ def apply_material_specs(specs, with_sets=(), only=None):
             if val is not None:
                 _apply_opacity_map(mat, bsdf, val)
                 mat["studio_opacity_map"] = True
-        if kind in ("generic", "glow", "grass"):
+        if kind in ("generic", "glow", "grass", "foliage"):
             core["_set"](bsdf, ("Transmission Weight", "Transmission"), 0.0)
         elif kind == "glass" and "transparency" in spec:
             # Glass refracts instead of blending: the slider is how much it lets through.
             core["_set"](bsdf, ("Transmission Weight", "Transmission"),
                          max(0.0, min(1.0, float(spec["transparency"]))))
-        if spec.get("coat"):
+        # The finer settings: only when the spec says them, else the finish's own stay.
+        if "ior" in spec:
+            core["_set"](bsdf, ("IOR",), max(1.0, float(spec["ior"])))
+        if "coat" in spec:                             # 0 takes away the coat a finish put on
             core["_set"](bsdf, ("Coat Weight", "Clearcoat"), float(spec["coat"]))
-            core["_set"](bsdf, ("Coat Roughness", "Clearcoat Roughness"), 0.05)
-        if spec.get("sheen"):
+            core["_set"](bsdf, ("Coat Roughness", "Clearcoat Roughness"), float(spec.get("coat_roughness", 0.05)))
+        elif "coat_roughness" in spec:
+            core["_set"](bsdf, ("Coat Roughness", "Clearcoat Roughness"), float(spec["coat_roughness"]))
+        if "sheen" in spec:
             core["_set"](bsdf, ("Sheen Weight", "Sheen"), float(spec["sheen"]))
         if kind == "water" and "ripple_size" in spec:
             _water_ripples(mat, bsdf, float(spec.get("bump", 0.0)), float(spec["ripple_size"]))
@@ -1909,7 +2145,7 @@ def apply_material_specs(specs, with_sets=(), only=None):
             if mat.name in with_sets and not m.get("source"):
                 say("relief", mat.name, "from its texture set, not guessed from the picture")
             else:
-                _add_bump(mat, bsdf, float(spec["bump"]), m)
+                _add_bump(mat, bsdf, float(spec["bump"]), m, spec.get("relief_height"))
         if kind == "glow" and float(spec.get("glow", 0.0)) > 0.0:
             sock, _img = _colour_source(mat.node_tree.nodes, bsdf)
             if sock is not None and "Emission Color" in bsdf.inputs:
@@ -2361,20 +2597,13 @@ def apply_texture_sets(matched, specs):
             if node is not None:
                 col = node.outputs["Color"]
                 if ts.get("normal_flip_green"):
-                    r, g, b = _channels(mat, col)
-                    inv = nodes.new("ShaderNodeMath"); inv.operation = "SUBTRACT"
-                    inv.inputs[0].default_value = 1.0
-                    links.new(g, inv.inputs[1])
-                    comb = nodes.new("ShaderNodeCombineColor")
-                    links.new(r, comb.inputs["Red"]); links.new(inv.outputs[0], comb.inputs["Green"])
-                    links.new(b, comb.inputs["Blue"])
-                    col = comb.outputs["Color"]
+                    col = _flip_green(mat, col)
                 nmap = nodes.new("ShaderNodeNormalMap")
                 nmap.space = "TANGENT"
                 uv = _uv_map_of(pic)
                 if uv:
                     nmap.uv_map = uv
-                nmap.inputs["Strength"].default_value = 1.0
+                nmap.inputs["Strength"].default_value = max(0.0, float(spec.get("set_relief", 1.0)))
                 links.new(col, nmap.inputs["Color"])
                 links.new(nmap.outputs["Normal"], end)
                 used.append("normal (green flipped)" if ts.get("normal_flip_green") else "normal")
@@ -2383,7 +2612,8 @@ def apply_texture_sets(matched, specs):
             if node is not None:
                 bump = nodes.new("ShaderNodeBump")
                 bump.inputs["Strength"].default_value = 1.0
-                bump.inputs["Distance"].default_value = PBR_DISPLACEMENT_DISTANCE
+                bump.inputs["Distance"].default_value = (PBR_DISPLACEMENT_DISTANCE
+                                                         * max(0.0, float(spec.get("set_relief", 1.0))))
                 links.new(node.outputs["Color"], bump.inputs["Height"])
                 links.new(bump.outputs["Normal"], end)
                 used.append("displacement as relief")
@@ -2431,7 +2661,8 @@ def apply_texture_sets(matched, specs):
             mix.data_type = "RGBA"
             mix.blend_type = "MULTIPLY"
             mix.clamp_result = True
-            _socket(mix, "Factor_Float", 0).default_value = PBR_AO_STRENGTH
+            _socket(mix, "Factor_Float", 0).default_value = max(0.0, min(1.0, float(spec.get("ao_strength",
+                                                                                               PBR_AO_STRENGTH))))
             links.new(colour, _socket(mix, "A_Color", 6))
             links.new(ao, _socket(mix, "B_Color", 7))
             out = next(s for s in mix.outputs if s.identifier == "Result_Color")
@@ -3514,6 +3745,7 @@ def update(job):
         glass_see_through(specs, names)
     if st.get("albedo_cap", 0.8):
         cap_albedo(float(st.get("albedo_cap", 0.8)), names)
+    apply_last_touches(specs, names)
     _STATE["specs"] = json.loads(json.dumps(specs))
     _STATE["pbr"] = json.loads(json.dumps(st.get("pbr") or {}))
     gm = st.get("ground_material")
@@ -3554,7 +3786,7 @@ def build(job):
     scene = bpy.context.scene
     core["import_model"](job["glb"])
     place_proxies(scene, st.get("proxies") or [], st.get("section"))
-    if not st.get("section") and not st.get("white_model"):
+    if not job.get("expert") and not st.get("section") and not st.get("white_model"):
         keep_pristine()                  # to change a material later without building the scene again
     if st.get("section"):
         clip_section(st["section"])
@@ -3583,6 +3815,8 @@ def build(job):
         apply_blender_packages(specs)
     if st.get("albedo_cap", 0.8):
         cap_albedo(float(st.get("albedo_cap", 0.8)))
+    if specs and not st.get("white_model"):
+        apply_last_touches(specs)
     if st.get("white_model"):
         white_model()
     figures = core["find_figures"]()
